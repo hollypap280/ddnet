@@ -385,6 +385,35 @@ jobs:
         name: ddnet-${{ matrix.name }}
         path: release/artifacts
 
+    - name: Create public Actions artifact mirror
+      if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+      shell: pwsh
+      run: |
+        @'
+        from pathlib import Path
+        from zipfile import ZIP_DEFLATED, ZipFile
+
+        source_dir = Path("release/artifacts")
+        output_path = Path("release/ddnet-windows-latest-mingw.zip")
+        files = sorted(path for path in source_dir.rglob("*") if path.is_file())
+        if not files:
+            raise SystemExit("No packaged Windows build was found")
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with ZipFile(output_path, "w", ZIP_DEFLATED) as archive:
+            for path in files:
+                archive.write(path, path.relative_to(source_dir).as_posix())
+
+        with ZipFile(output_path, "r") as archive:
+            bad_file = archive.testzip()
+            if bad_file is not None:
+                raise SystemExit(f"Public artifact ZIP is corrupted: {bad_file}")
+            package_files = [name for name in archive.namelist() if name.lower().endswith("-win64.zip")]
+            if len(package_files) != 1:
+                raise SystemExit(f"Expected exactly one Windows package, found {len(package_files)}")
+        print(f"Created public mirror: {output_path} ({output_path.stat().st_size} bytes)")
+        '@ | python -
+
     - name: Publish latest Windows build on GitHub Releases
       if: github.event_name == 'push' && github.ref == 'refs/heads/master'
       uses: softprops/action-gh-release@v3
@@ -393,12 +422,16 @@ jobs:
         name: Latest Windows x64 client
         body: |
           Automatically updated Windows x64 build from the master branch.
-          Download the ZIP, extract the complete folder, and run DDNet.exe.
+
+          Direct Actions artifact mirror: ddnet-windows-latest-mingw.zip
+          The archive contains the same packaged files as the ddnet-windows-latest-mingw Actions artifact.
         target_commitish: ${{ github.sha }}
         prerelease: true
         overwrite_files: true
         fail_on_unmatched_files: true
-        files: release/artifacts/*-win64.zip
+        files: |
+          release/artifacts/*-win64.zip
+          release/ddnet-windows-latest-mingw.zip
 
   build-android:
     if: false # This fork currently builds the Windows desktop client only.
