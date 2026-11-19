@@ -19,6 +19,8 @@ jobs:
   build-cmake:
     timeout-minutes: 35
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
     env:
       CARGO_HTTP_MULTIPLEXING: false
     strategy:
@@ -382,6 +384,21 @@ jobs:
       with:
         name: ddnet-${{ matrix.name }}
         path: release/artifacts
+
+    - name: Publish latest Windows build on GitHub Releases
+      if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+      uses: softprops/action-gh-release@v3
+      with:
+        tag_name: windows-latest
+        name: Latest Windows x64 client
+        body: |
+          Automatically updated Windows x64 build from the master branch.
+          Download the ZIP, extract the complete folder, and run DDNet.exe.
+        target_commitish: ${{ github.sha }}
+        prerelease: true
+        overwrite_files: true
+        fail_on_unmatched_files: true
+        files: release/artifacts/*-win64.zip
 
   build-android:
     if: false # This fork currently builds the Windows desktop client only.
