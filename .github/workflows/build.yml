@@ -300,7 +300,7 @@ jobs:
       with:
         msystem: MINGW64
         update: true
-        install: mingw-w64-x86_64-libwinpthread
+        install: mingw-w64-x86_64-libwinpthread mingw-w64-x86_64-binutils
 
     - name: Copy and verify MinGW pthread runtime
       if: contains(matrix.name, 'mingw')
