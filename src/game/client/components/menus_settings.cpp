@@ -422,7 +422,8 @@ void CMenus::RenderSettingsGame(CUIRect MainView)
 	Ui()->DoLabel(&Label, Localize("Game automation"), 20.0f, TEXTALIGN_ML);
 	MainView.HSplitTop(5.0f, nullptr, &MainView);
 
-	static CButtonContainer s_AutoHook, s_Hook360, s_Radius, s_Avoid;
+	static CButtonContainer s_AutoHook, s_Hook360, s_Radius, s_Avoid, s_Edge;
+	static CButtonContainer s_Gun, s_Shotgun, s_Grenade, s_Laser;
 	MainView.HSplitTop(24.0f, &Row, &MainView);
 	if(DoButton_CheckBox(&g_Config.m_ClAutoHook, Localize("Auto Hook"), g_Config.m_ClAutoHook, &Row))
 		g_Config.m_ClAutoHook ^= 1;
@@ -445,6 +446,31 @@ void CMenus::RenderSettingsGame(CUIRect MainView)
 	if(DoButton_CheckBox(&g_Config.m_ClAutoAvoid, Localize("Avoid assist"), g_Config.m_ClAutoAvoid, &Row))
 		g_Config.m_ClAutoAvoid ^= 1;
 	Ui()->DoToolTip(&s_Avoid, &Row, Localize("While rising, searches below for a wall; while falling, searches for side walls slightly above you"));
+
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	if(DoButton_CheckBox(&g_Config.m_ClAutoEdge, Localize("Edge pixel assist"), g_Config.m_ClAutoEdge, &Row))
+		g_Config.m_ClAutoEdge ^= 1;
+	Ui()->DoToolTip(&s_Edge, &Row, Localize("When you hold hook, scans a narrow angle around your aim to select an exact hookable point near corners"));
+
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	if(DoButton_CheckBox(&g_Config.m_ClAutoHookWeaponGun, Localize("Auto Hook fire: Gun"), g_Config.m_ClAutoHookWeaponGun, &Row))
+		g_Config.m_ClAutoHookWeaponGun ^= 1;
+	Ui()->DoToolTip(&s_Gun, &Row, Localize("Fire the selected weapon at the tee currently targeted by Auto Hook"));
+
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	if(DoButton_CheckBox(&g_Config.m_ClAutoHookWeaponShotgun, Localize("Auto Hook fire: Shotgun"), g_Config.m_ClAutoHookWeaponShotgun, &Row))
+		g_Config.m_ClAutoHookWeaponShotgun ^= 1;
+	Ui()->DoToolTip(&s_Shotgun, &Row, Localize("Fire the selected weapon at the tee currently targeted by Auto Hook"));
+
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	if(DoButton_CheckBox(&g_Config.m_ClAutoHookWeaponGrenade, Localize("Auto Hook fire: Grenade"), g_Config.m_ClAutoHookWeaponGrenade, &Row))
+		g_Config.m_ClAutoHookWeaponGrenade ^= 1;
+	Ui()->DoToolTip(&s_Grenade, &Row, Localize("Fire the selected weapon at the tee currently targeted by Auto Hook"));
+
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	if(DoButton_CheckBox(&g_Config.m_ClAutoHookWeaponLaser, Localize("Auto Hook fire: Laser"), g_Config.m_ClAutoHookWeaponLaser, &Row))
+		g_Config.m_ClAutoHookWeaponLaser ^= 1;
+	Ui()->DoToolTip(&s_Laser, &Row, Localize("Fire the selected weapon at the tee currently targeted by Auto Hook"));
 }
 
 void CMenus::RenderSettingsMacros(CUIRect MainView)

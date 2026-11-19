@@ -228,6 +228,11 @@ MACRO_CONFIG_INT(ClAutoHook360, cl_auto_hook_360, 0, 0, 1, CFGFLAG_CLIENT | CFGF
 MACRO_CONFIG_INT(ClAutoHookRange, cl_auto_hook_range, 360, 32, 360, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Maximum auto hook target distance in world units")
 MACRO_CONFIG_INT(ClAutoHookShowRadius, cl_auto_hook_show_radius, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show the auto hook range around your tee")
 MACRO_CONFIG_INT(ClAutoAvoid, cl_auto_avoid, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "When moving vertically, automatically hook a nearby wall to reduce momentum")
+MACRO_CONFIG_INT(ClAutoEdge, cl_auto_edge, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Adjust manual hook aim to the nearest hookable edge pixel")
+MACRO_CONFIG_INT(ClAutoHookWeaponGun, cl_auto_hook_weapon_gun, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Automatically fire gun at the selected auto hook target")
+MACRO_CONFIG_INT(ClAutoHookWeaponShotgun, cl_auto_hook_weapon_shotgun, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Automatically fire shotgun at the selected auto hook target")
+MACRO_CONFIG_INT(ClAutoHookWeaponGrenade, cl_auto_hook_weapon_grenade, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Automatically fire grenade at the selected auto hook target")
+MACRO_CONFIG_INT(ClAutoHookWeaponLaser, cl_auto_hook_weapon_laser, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Automatically fire laser at the selected auto hook target")
 
 // Client-side word censoring
 // MACRO_CONFIG_INT(ClCensorChat, cl_censor_chat, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Toggles chat censoring")

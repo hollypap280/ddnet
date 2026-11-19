@@ -21,6 +21,7 @@
 #include <game/client/components/scoreboard.h>
 #include <game/client/gameclient.h>
 #include <game/collision.h>
+#include <game/mapitems.h>
 #include <game/localization.h>
 
 #include <algorithm>
@@ -49,7 +50,9 @@ void CControls::OnReset()
 	m_MacroPlaying = false;
 	m_MacroPlaybackIndex = 0;
 	m_vMacroFrames.clear();
+	std::fill(std::begin(m_aManualHook), std::end(m_aManualHook), false);
 	std::fill(std::begin(m_aAutoHookActive), std::end(m_aAutoHookActive), false);
+	std::fill(std::begin(m_aAutoHookFireActive), std::end(m_aAutoHookFireActive), false);
 	std::fill(std::begin(m_aAutoAvoidActive), std::end(m_aAutoAvoidActive), false);
 }
 
@@ -77,6 +80,7 @@ struct CInputState
 	CControls *m_pControls;
 	int *m_apVariables[NUM_DUMMIES];
 	bool m_IsMouseAction;
+	bool m_IsHookAction = false;
 };
 
 void CControls::ConKeyInputState(IConsole::IResult *pResult, void *pUserData)
@@ -88,6 +92,8 @@ void CControls::ConKeyInputState(IConsole::IResult *pResult, void *pUserData)
 
 	const int Stroke = pResult->GetInteger(0);
 	*pState->m_apVariables[g_Config.m_ClDummy] = Stroke;
+	if(pState->m_IsHookAction)
+		pState->m_pControls->m_aManualHook[g_Config.m_ClDummy] = Stroke != 0;
 
 	if(Stroke != 0 && pState->m_IsMouseAction && g_Config.m_ClSubTickAiming && pState->m_pControls->GameClient()->m_Binds.m_HandlingNewBind)
 		pState->m_pControls->m_aMouseOnAction[g_Config.m_ClDummy] = true;
@@ -151,6 +157,7 @@ void CControls::OnConsoleInit()
 	}
 	{
 		static CInputState s_State = {this, {&m_aInputData[0].m_Hook, &m_aInputData[1].m_Hook}, true};
+		s_State.m_IsHookAction = true;
 		Console()->Register("+hook", "", CFGFLAG_CLIENT, ConKeyInputState, &s_State, "Hook");
 	}
 	{
@@ -402,40 +409,56 @@ void CControls::OnMessage(int Msg, void *pRawMsg)
 void CControls::ApplyHookAutomation(int Dummy)
 {
 	const CNetObj_Character *pLocal = GameClient()->m_Snap.m_pLocalCharacter;
+	const bool ManualHook = m_aManualHook[Dummy];
 	if(!pLocal)
+	{
+		m_aInputData[Dummy].m_Hook = ManualHook ? 1 : 0;
+		m_aAutoHookActive[Dummy] = false;
+		m_aAutoAvoidActive[Dummy] = false;
+		m_aAutoHookFireActive[Dummy] = false;
 		return;
+	}
 
 	const vec2 LocalPos((float)pLocal->m_X, (float)pLocal->m_Y);
 	bool FoundTarget = false;
+	vec2 BestTarget(0.0f, 0.0f);
 
-	if(g_Config.m_ClAutoHook)
+	// Manual hook always has priority. Automatic targeting never changes the
+	// visible cursor and sends only a replacement input direction to the server.
+	if(g_Config.m_ClAutoHook && !ManualHook)
 	{
 		const float Range = std::clamp((float)g_Config.m_ClAutoHookRange, 32.0f, 360.0f);
 		float BestDistanceSquared = Range * Range;
 		const vec2 ManualAim = m_aMousePos[Dummy];
 		const float AimLength = length(ManualAim);
-		vec2 BestTarget(0.0f, 0.0f);
 		const int LocalId = GameClient()->m_Snap.m_LocalClientId;
 
 		for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
 		{
 			if(ClientId == LocalId || !GameClient()->m_Snap.m_aCharacters[ClientId].m_Active)
 				continue;
+			if(GameClient()->m_aClients[ClientId].m_Solo || GameClient()->m_aClients[ClientId].m_HookHitDisabled)
+				continue;
 
 			const CNetObj_Character &Character = GameClient()->m_Snap.m_aCharacters[ClientId].m_Cur;
-			const vec2 Delta((float)Character.m_X - LocalPos.x, (float)Character.m_Y - LocalPos.y);
+			const vec2 TargetPos((float)Character.m_X, (float)Character.m_Y);
+			const vec2 Delta = TargetPos - LocalPos;
 			const float DistanceSquared = dot(Delta, Delta);
 			if(DistanceSquared < 1.0f || DistanceSquared > BestDistanceSquared)
 				continue;
 
-			// Normal mode keeps a broad forward cone. 360° mode also considers
-			// targets behind the tee and never changes the visible cursor position.
 			if(!g_Config.m_ClAutoHook360 && AimLength > 1.0f)
 			{
 				const float AimDot = dot(ManualAim, Delta) / (AimLength * std::sqrt(DistanceSquared));
 				if(AimDot < 0.35f)
 					continue;
 			}
+
+			// Do not target a tee hidden behind a hook-blocking map tile.
+			vec2 CollisionPos;
+			vec2 BeforeCollision;
+			if(Collision()->IntersectLineTeleHook(LocalPos, TargetPos, &CollisionPos, &BeforeCollision) != 0)
+				continue;
 
 			BestDistanceSquared = DistanceSquared;
 			BestTarget = Delta;
@@ -449,21 +472,66 @@ void CControls::ApplyHookAutomation(int Dummy)
 			m_aInputData[Dummy].m_Hook = 1;
 			m_aAutoHookActive[Dummy] = true;
 		}
-		else if(m_aAutoHookActive[Dummy])
+		else
 		{
 			m_aInputData[Dummy].m_Hook = 0;
 			m_aAutoHookActive[Dummy] = false;
 		}
 	}
-	else if(m_aAutoHookActive[Dummy])
+	else
 	{
-		m_aInputData[Dummy].m_Hook = 0;
+		m_aInputData[Dummy].m_Hook = ManualHook ? 1 : 0;
 		m_aAutoHookActive[Dummy] = false;
 	}
 
-	// Avoid assist: rising tees search below; falling tees search for a side
-	// surface slightly above them to reduce downward speed.
-	if(!FoundTarget && g_Config.m_ClAutoAvoid && m_aInputData[Dummy].m_Hook == 0)
+	// Optional weapon fire is aimed at exactly the same tee selected by Auto
+	// Hook. Weapon ownership and ammunition are checked before switching.
+	int AutoWeapon = -1;
+	if(FoundTarget && !ManualHook)
+	{
+		const CCharacterCore &Predicted = GameClient()->m_PredictedChar;
+		const bool UnlimitedAmmo = GameClient()->m_GameInfo.m_UnlimitedAmmo;
+		const int aWeapons[] = {WEAPON_LASER, WEAPON_SHOTGUN, WEAPON_GRENADE, WEAPON_GUN};
+		const bool aEnabled[] = {
+			g_Config.m_ClAutoHookWeaponLaser != 0,
+			g_Config.m_ClAutoHookWeaponShotgun != 0,
+			g_Config.m_ClAutoHookWeaponGrenade != 0,
+			g_Config.m_ClAutoHookWeaponGun != 0};
+		for(int i = 0; i < 4; ++i)
+		{
+			const int Weapon = aWeapons[i];
+			if(aEnabled[i] && Predicted.m_aWeapons[Weapon].m_Got &&
+				(UnlimitedAmmo || Predicted.m_aWeapons[Weapon].m_Ammo != 0))
+			{
+				AutoWeapon = Weapon;
+				break;
+			}
+		}
+	}
+
+	if(AutoWeapon >= 0)
+	{
+		m_aInputData[Dummy].m_WantedWeapon = AutoWeapon + 1;
+		if(!(m_aInputData[Dummy].m_Fire & 1))
+			m_aInputData[Dummy].m_Fire++;
+		m_aAutoHookFireActive[Dummy] = true;
+	}
+	else if(m_aAutoHookFireActive[Dummy])
+	{
+		if(m_aInputData[Dummy].m_Fire & 1)
+			m_aInputData[Dummy].m_Fire++;
+		m_aAutoHookFireActive[Dummy] = false;
+	}
+
+	// Avoid assist: when rising, hook a surface below; when falling, hook a
+	// side surface slightly above the tee to reduce downward momentum.
+	// Recompute the assist every tick so a previous automatic hook cannot stick.
+	if(m_aAutoAvoidActive[Dummy])
+	{
+		m_aInputData[Dummy].m_Hook = ManualHook ? 1 : 0;
+		m_aAutoAvoidActive[Dummy] = false;
+	}
+	if(!FoundTarget && !ManualHook && g_Config.m_ClAutoAvoid)
 	{
 		const float VelX = pLocal->m_VelX / 256.0f;
 		const float VelY = pLocal->m_VelY / 256.0f;
@@ -486,7 +554,8 @@ void CControls::ApplyHookAutomation(int Dummy)
 		{
 			vec2 CollisionPos;
 			vec2 BeforeCollision;
-			if(Collision()->IntersectLine(LocalPos, LocalPos + Candidates[i] * 260.0f, &CollisionPos, &BeforeCollision) == 0)
+			const int Hit = Collision()->IntersectLineTeleHook(LocalPos, LocalPos + Candidates[i] * 260.0f, &CollisionPos, &BeforeCollision);
+			if(Hit == 0 || Hit == TILE_NOHOOK)
 				continue;
 			const vec2 Aim = BeforeCollision - LocalPos;
 			const float AimLength = length(Aim);
@@ -503,16 +572,57 @@ void CControls::ApplyHookAutomation(int Dummy)
 			m_aInputData[Dummy].m_Hook = 1;
 			m_aAutoAvoidActive[Dummy] = true;
 		}
-		else if(m_aAutoAvoidActive[Dummy])
+	}
+}
+
+void CControls::ApplyEdgeAssist(int Dummy)
+{
+	if(!g_Config.m_ClAutoEdge || !m_aManualHook[Dummy] || m_aAutoHookActive[Dummy] || m_aAutoAvoidActive[Dummy])
+		return;
+
+	const CNetObj_Character *pLocal = GameClient()->m_Snap.m_pLocalCharacter;
+	if(!pLocal)
+		return;
+
+	const vec2 LocalPos((float)pLocal->m_X, (float)pLocal->m_Y);
+	const vec2 ManualAim((float)m_aInputData[Dummy].m_TargetX, (float)m_aInputData[Dummy].m_TargetY);
+	if(length(ManualAim) < 1.0f)
+		return;
+
+	const float BaseAngle = std::atan2(ManualAim.y, ManualAim.x);
+	float BestScore = 1000000.0f;
+	vec2 BestAim(0.0f, 0.0f);
+	bool Found = false;
+
+	// Scan a narrow fan around the requested angle. The point immediately
+	// before the first hookable collision gives a stable edge/corner pixel.
+	for(int Offset = -8; Offset <= 8; ++Offset)
+	{
+		const float Angle = BaseAngle + Offset * (pi / 180.0f);
+		const vec2 Direction(std::cos(Angle), std::sin(Angle));
+		vec2 CollisionPos;
+		vec2 BeforeCollision;
+		const int Hit = Collision()->IntersectLineTeleHook(LocalPos, LocalPos + Direction * 360.0f, &CollisionPos, &BeforeCollision);
+		if(Hit == 0 || Hit == TILE_NOHOOK)
+			continue;
+
+		const vec2 Candidate = BeforeCollision - LocalPos;
+		const float CandidateLength = length(Candidate);
+		if(CandidateLength < 12.0f || CandidateLength > 360.0f)
+			continue;
+		const float Score = std::abs((float)Offset) * 1000.0f + CandidateLength;
+		if(Score < BestScore)
 		{
-			m_aInputData[Dummy].m_Hook = 0;
-			m_aAutoAvoidActive[Dummy] = false;
+			BestScore = Score;
+			BestAim = Candidate;
+			Found = true;
 		}
 	}
-	else if(m_aAutoAvoidActive[Dummy] && !g_Config.m_ClAutoAvoid)
+
+	if(Found)
 	{
-		m_aInputData[Dummy].m_Hook = 0;
-		m_aAutoAvoidActive[Dummy] = false;
+		m_aInputData[Dummy].m_TargetX = round_to_int(BestAim.x);
+		m_aInputData[Dummy].m_TargetY = round_to_int(BestAim.y);
 	}
 }
 
@@ -594,6 +704,7 @@ int CControls::SnapInput(int *pData)
 			m_aInputData[g_Config.m_ClDummy].m_Direction = 1;
 
 		ApplyHookAutomation(g_Config.m_ClDummy);
+		ApplyEdgeAssist(g_Config.m_ClDummy);
 
 		// dummy copy moves
 		if(g_Config.m_ClDummyCopyMoves)

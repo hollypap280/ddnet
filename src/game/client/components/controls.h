@@ -90,9 +90,12 @@ private:
 	std::size_t m_MacroPlaybackIndex = 0;
 	bool m_MacroRecording = false;
 	bool m_MacroPlaying = false;
+	bool m_aManualHook[NUM_DUMMIES]{};
 	bool m_aAutoHookActive[NUM_DUMMIES]{};
+	bool m_aAutoHookFireActive[NUM_DUMMIES]{};
 	bool m_aAutoAvoidActive[NUM_DUMMIES]{};
 	void ApplyHookAutomation(int Dummy);
+	void ApplyEdgeAssist(int Dummy);
 	bool MacroFilePath(const char *pName, char *pBuffer, unsigned BufferSize) const;
 	static void ConMacroRecord(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroStop(IConsole::IResult *pResult, void *pUserData);
