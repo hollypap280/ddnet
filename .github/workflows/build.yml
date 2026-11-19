@@ -321,6 +321,63 @@ jobs:
         mkdir artifacts
         mv ${{ matrix.package-file }} artifacts
 
+    - name: Replace packaged MinGW pthread runtime
+      if: contains(matrix.name, 'mingw')
+      shell: pwsh
+      run: |
+        @'
+        from pathlib import Path, PurePosixPath
+        from zipfile import ZipFile
+
+        archives = list(Path("release/artifacts").glob("*-win64.zip"))
+        if len(archives) != 1:
+            raise SystemExit(f"Expected one Windows package, found {len(archives)}")
+
+        archive_path = archives[0]
+        runtime_path = Path("release/libwinpthread-1.dll")
+        if not runtime_path.is_file():
+            raise SystemExit("Verified MinGW runtime DLL is missing")
+
+        with ZipFile(archive_path, "r") as source:
+            entries = source.infolist()
+            dll_entries = [entry for entry in entries if PurePosixPath(entry.filename).name.lower() == "libwinpthread-1.dll"]
+            exe_entries = [entry for entry in entries if PurePosixPath(entry.filename).name.lower() == "ddnet.exe"]
+            if len(dll_entries) != 1 or len(exe_entries) != 1:
+                raise SystemExit(f"Expected one DDNet.exe and one libwinpthread-1.dll, got {len(exe_entries)} and {len(dll_entries)}")
+
+            replacement = runtime_path.read_bytes()
+            temp_path = archive_path.with_name(archive_path.stem + ".runtime-fixed.zip")
+            with ZipFile(temp_path, "w") as target:
+                for entry in entries:
+                    data = replacement if entry.filename == dll_entries[0].filename else source.read(entry.filename)
+                    target.writestr(entry, data)
+
+        temp_path.replace(archive_path)
+
+        verify_dir = Path("release/verify")
+        verify_dir.mkdir(parents=True, exist_ok=True)
+        with ZipFile(archive_path, "r") as package:
+            dll_name = next(name for name in package.namelist() if PurePosixPath(name).name.lower() == "libwinpthread-1.dll")
+            exe_name = next(name for name in package.namelist() if PurePosixPath(name).name.lower() == "ddnet.exe")
+            packaged_dll = package.read(dll_name)
+            if packaged_dll != runtime_path.read_bytes():
+                raise SystemExit("The packaged pthread DLL does not match the verified runtime DLL")
+            (verify_dir / "libwinpthread-1.dll").write_bytes(packaged_dll)
+            (verify_dir / "DDNet.exe").write_bytes(package.read(exe_name))
+        '@ | python -
+
+    - name: Verify pthread imports in final Windows package
+      if: contains(matrix.name, 'mingw')
+      shell: msys2 {0}
+      run: |
+        objdump -p release/verify/DDNet.exe > release/verify/ddnet-imports.txt
+        objdump -p release/verify/libwinpthread-1.dll > release/verify/pthread-exports.txt
+        grep -q 'clock_gettime64' release/verify/ddnet-imports.txt
+        grep -q 'nanosleep64' release/verify/ddnet-imports.txt
+        grep -q 'clock_gettime64' release/verify/pthread-exports.txt
+        grep -q 'nanosleep64' release/verify/pthread-exports.txt
+        cmp -s release/libwinpthread-1.dll release/verify/libwinpthread-1.dll
+
     - name: Upload Artifacts
       uses: actions/upload-artifact@v6
       with:
