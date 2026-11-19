@@ -1,13 +1,6 @@
 name: Check clang-tidy
 
 on:
-  push:
-    branches-ignore:
-      - gh-readonly-queue/**
-    # Avoid a full clang-tidy build when only project notes or CI wiring change.
-    paths-ignore:
-      - 'CLIENT_TODO.md'
-      - '.github/workflows/clang-tidy.yml'
   pull_request:
     paths-ignore:
       - 'CLIENT_TODO.md'

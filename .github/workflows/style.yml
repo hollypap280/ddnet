@@ -1,11 +1,6 @@
 name: Check style
 
 on:
-  push:
-    branches-ignore:
-      - gh-readonly-queue/**
-    paths-ignore:
-      - 'CLIENT_TODO.md'
   pull_request:
     paths-ignore:
       - 'CLIENT_TODO.md'
