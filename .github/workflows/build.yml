@@ -294,6 +294,12 @@ jobs:
       with:
         flags: integrationtests
 
+    - name: Copy compiler-matched MinGW runtime DLL
+      if: contains(matrix.name, 'mingw')
+      shell: bash
+      run: |
+        cp "$(dirname "$(command -v g++)")/libwinpthread-1.dll" release/libwinpthread-1.dll
+
     - name: Package
       run: |
         cd release
