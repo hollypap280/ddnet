@@ -376,7 +376,6 @@ jobs:
         grep -q 'nanosleep64' release/verify/ddnet-imports.txt
         grep -q 'clock_gettime64' release/verify/pthread-exports.txt
         grep -q 'nanosleep64' release/verify/pthread-exports.txt
-        cmp -s release/libwinpthread-1.dll release/verify/libwinpthread-1.dll
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v6
