@@ -294,11 +294,25 @@ jobs:
       with:
         flags: integrationtests
 
-    - name: Copy compiler-matched MinGW runtime DLL
+    - name: Install current MinGW pthread runtime
       if: contains(matrix.name, 'mingw')
-      shell: bash
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: true
+        install: mingw-w64-x86_64-libwinpthread
+
+    - name: Copy and verify MinGW pthread runtime
+      if: contains(matrix.name, 'mingw')
+      shell: msys2 {0}
       run: |
-        cp "$(dirname "$(command -v g++)")/libwinpthread-1.dll" release/libwinpthread-1.dll
+        cp /mingw64/bin/libwinpthread-1.dll release/libwinpthread-1.dll
+        objdump -p release/DDNet.exe > ddnet-imports.txt
+        objdump -p release/libwinpthread-1.dll > pthread-exports.txt
+        grep -q 'clock_gettime64' ddnet-imports.txt
+        grep -q 'nanosleep64' ddnet-imports.txt
+        grep -q 'clock_gettime64' pthread-exports.txt
+        grep -q 'nanosleep64' pthread-exports.txt
 
     - name: Package
       run: |
