@@ -564,6 +564,10 @@ protected:
 	void RenderSettings(CUIRect MainView);
 	bool RenderHslaScrollbars(CUIRect *pRect, unsigned int *pColor, bool Alpha, float DarkestLight);
 
+	// found in menus_settings.cpp
+	void RenderSettingsGame(CUIRect MainView);
+	void RenderSettingsMacros(CUIRect MainView);
+
 	// found in menus_settings_assets.cpp
 	void RenderSettingsAssets(CUIRect MainView);
 
@@ -717,6 +721,8 @@ public:
 		SETTINGS_DDNET,
 		SETTINGS_ASSETS,
 		SETTINGS_CREDITS,
+		SETTINGS_GAME,
+		SETTINGS_MACROS,
 
 		SETTINGS_LENGTH,
 	};

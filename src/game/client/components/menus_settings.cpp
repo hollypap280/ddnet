@@ -51,7 +51,9 @@ void CMenus::RenderSettings(CUIRect MainView)
 		Localize("Sound"),
 		Localize("DDNet"),
 		Localize("Assets"),
-		Localize("Credits")};
+		Localize("Credits"),
+		Localize("Game"),
+		Localize("Macros")};
 	static CButtonContainer s_aTabButtons[SETTINGS_LENGTH];
 
 	for(int i = 0; i < SETTINGS_LENGTH; i++)
@@ -119,6 +121,16 @@ void CMenus::RenderSettings(CUIRect MainView)
 	{
 		GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_CREDITS);
 		RenderSettingsCredits(MainView);
+	}
+	else if(g_Config.m_UiSettingsPage == SETTINGS_GAME)
+	{
+		GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_DDNET);
+		RenderSettingsGame(MainView);
+	}
+	else if(g_Config.m_UiSettingsPage == SETTINGS_MACROS)
+	{
+		GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_DDNET);
+		RenderSettingsMacros(MainView);
 	}
 	else
 	{
@@ -400,4 +412,113 @@ bool CMenus::RenderHslaScrollbars(CUIRect *pRect, unsigned int *pColor, bool Alp
 		*pColor = Color.Pack(Alpha);
 	}
 	return PrevPackedColor != *pColor;
+}
+
+
+void CMenus::RenderSettingsGame(CUIRect MainView)
+{
+	CUIRect Row, Label;
+	MainView.HSplitTop(28.0f, &Label, &MainView);
+	Ui()->DoLabel(&Label, Localize("Game automation"), 20.0f, TEXTALIGN_ML);
+	MainView.HSplitTop(5.0f, nullptr, &MainView);
+
+	static CButtonContainer s_AutoHook, s_Hook360, s_Radius, s_Avoid;
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	if(DoButton_CheckBox(&g_Config.m_ClAutoHook, Localize("Auto Hook"), g_Config.m_ClAutoHook, &Row))
+		g_Config.m_ClAutoHook ^= 1;
+	Ui()->DoToolTip(&s_AutoHook, &Row, Localize("Automatically hooks the nearest visible tee inside the configured range"));
+
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	if(DoButton_CheckBox(&g_Config.m_ClAutoHook360, Localize("360° Hook"), g_Config.m_ClAutoHook360, &Row))
+		g_Config.m_ClAutoHook360 ^= 1;
+	Ui()->DoToolTip(&s_Hook360, &Row, Localize("Searches the full circle, including targets behind your tee. The visible cursor is not moved."));
+
+	MainView.HSplitTop(28.0f, &Row, &MainView);
+	Ui()->DoScrollbarOption(&g_Config.m_ClAutoHookRange, &g_Config.m_ClAutoHookRange, &Row, Localize("Auto Hook range"), 32, 360);
+
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	if(DoButton_CheckBox(&g_Config.m_ClAutoHookShowRadius, Localize("Show Auto Hook radius"), g_Config.m_ClAutoHookShowRadius, &Row))
+		g_Config.m_ClAutoHookShowRadius ^= 1;
+	Ui()->DoToolTip(&s_Radius, &Row, Localize("Draws a dotted range circle around your tee"));
+
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	if(DoButton_CheckBox(&g_Config.m_ClAutoAvoid, Localize("Avoid assist"), g_Config.m_ClAutoAvoid, &Row))
+		g_Config.m_ClAutoAvoid ^= 1;
+	Ui()->DoToolTip(&s_Avoid, &Row, Localize("While rising, searches below for a wall; while falling, searches for side walls slightly above you"));
+}
+
+void CMenus::RenderSettingsMacros(CUIRect MainView)
+{
+	CUIRect Row, Label, NameRect, Button;
+	MainView.HSplitTop(28.0f, &Label, &MainView);
+	Ui()->DoLabel(&Label, Localize("Input macros"), 20.0f, TEXTALIGN_ML);
+	MainView.HSplitTop(5.0f, nullptr, &MainView);
+
+	static CLineInputBuffered<64> s_MacroName;
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	Row.VSplitLeft(120.0f, &Label, &NameRect);
+	Ui()->DoLabel(&Label, Localize("Macro name"), 14.0f, TEXTALIGN_ML);
+	Ui()->DoEditBox(&s_MacroName, &NameRect, 14.0f);
+
+	static CButtonContainer s_Record, s_Stop, s_Save, s_Play, s_Delete, s_Confirm, s_Cancel;
+	static bool s_ConfirmDelete = false;
+	MainView.HSplitTop(8.0f, nullptr, &MainView);
+	MainView.HSplitTop(26.0f, &Row, &MainView);
+	Row.VSplitLeft(145.0f, &Button, &Row);
+	if(DoButton_Menu(&s_Record, Localize("Start recording"), 0, &Button))
+		GameClient()->m_Controls.StartMacroRecording();
+	Row.VSplitLeft(8.0f, nullptr, &Row);
+	Row.VSplitLeft(110.0f, &Button, &Row);
+	if(DoButton_Menu(&s_Stop, Localize("Stop"), 0, &Button))
+		GameClient()->m_Controls.StopMacroRecording();
+
+	MainView.HSplitTop(6.0f, nullptr, &MainView);
+	MainView.HSplitTop(26.0f, &Row, &MainView);
+	Row.VSplitLeft(110.0f, &Button, &Row);
+	if(DoButton_Menu(&s_Save, Localize("Save"), 0, &Button))
+	{
+		if(!s_MacroName.IsEmpty() && !GameClient()->m_Controls.SaveMacro(s_MacroName.GetString()))
+			GameClient()->Echo(Localize("Could not save macro. Stop recording first."));
+		else if(!s_MacroName.IsEmpty())
+			GameClient()->Echo(Localize("Macro saved in the macros folder"));
+	}
+	Row.VSplitLeft(8.0f, nullptr, &Row);
+	Row.VSplitLeft(110.0f, &Button, &Row);
+	if(DoButton_Menu(&s_Play, Localize("Play"), 0, &Button))
+	{
+		if(s_MacroName.IsEmpty() || !GameClient()->m_Controls.PlayMacro(s_MacroName.GetString()))
+			GameClient()->Echo(Localize("Could not play macro. Check the name or saved file."));
+	}
+	Row.VSplitLeft(8.0f, nullptr, &Row);
+	Row.VSplitLeft(110.0f, &Button, &Row);
+	if(DoButton_Menu(&s_Delete, Localize("Delete"), 0, &Button) && !s_MacroName.IsEmpty())
+		s_ConfirmDelete = true;
+
+	if(s_ConfirmDelete)
+	{
+		MainView.HSplitTop(8.0f, nullptr, &MainView);
+		MainView.HSplitTop(24.0f, &Row, &MainView);
+		Ui()->DoLabel(&Row, Localize("Delete this saved macro? This cannot be undone."), 14.0f, TEXTALIGN_ML);
+		MainView.HSplitTop(26.0f, &Row, &MainView);
+		Row.VSplitLeft(110.0f, &Button, &Row);
+		if(DoButton_Menu(&s_Confirm, Localize("Confirm delete"), 0, &Button))
+		{
+			if(!s_MacroName.IsEmpty() && !GameClient()->m_Controls.DeleteMacro(s_MacroName.GetString()))
+				GameClient()->Echo(Localize("Could not delete macro. Check its name."));
+			else
+				GameClient()->Echo(Localize("Macro deleted"));
+			s_ConfirmDelete = false;
+		}
+		Row.VSplitLeft(8.0f, nullptr, &Row);
+		Row.VSplitLeft(110.0f, &Button, &Row);
+		if(DoButton_Menu(&s_Cancel, Localize("Cancel"), 0, &Button))
+			s_ConfirmDelete = false;
+	}
+	MainView.HSplitTop(10.0f, nullptr, &MainView);
+	char aStatus[128];
+	str_format(aStatus, sizeof(aStatus), "%s | %s",
+		GameClient()->m_Controls.MacroRecording() ? Localize("Recording") : Localize("Not recording"),
+		GameClient()->m_Controls.MacroPlaying() ? Localize("Playing") : Localize("Not playing"));
+	Ui()->DoLabel(&MainView, aStatus, 14.0f, TEXTALIGN_ML);
+	Ui()->DoLabel(&MainView, Localize("Macros are stored under the client's save folder in macros/*.dmacro"), 12.0f, TEXTALIGN_ML);
 }

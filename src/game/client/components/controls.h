@@ -10,6 +10,9 @@
 
 #include <generated/protocol.h>
 
+#include <cstddef>
+#include <vector>
+
 #include <game/client/component.h>
 
 class CControls : public CComponent
@@ -55,6 +58,14 @@ public:
 	void ClampMousePos();
 	void ResetInput(int Dummy);
 
+	bool MacroRecording() const { return m_MacroRecording; }
+	bool MacroPlaying() const { return m_MacroPlaying; }
+	void StartMacroRecording();
+	void StopMacroRecording();
+	bool SaveMacro(const char *pName);
+	bool PlayMacro(const char *pName);
+	bool DeleteMacro(const char *pName);
+
 private:
 	static void ConKeyInputState(IConsole::IResult *pResult, void *pUserData);
 	static void ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData);
@@ -63,6 +74,31 @@ private:
 	static void ConTpToCursor(IConsole::IResult *pResult, void *pUserData);
 	static void ConTpDummyToCursor(IConsole::IResult *pResult, void *pUserData);
 	vec2 CursorWorldPos() const;
+	struct SMacroFrame
+	{
+		int m_Direction;
+		int m_Jump;
+		int m_Fire;
+		int m_Hook;
+		int m_WantedWeapon;
+		int m_NextWeapon;
+		int m_PrevWeapon;
+		int m_TargetX;
+		int m_TargetY;
+	};
+	std::vector<SMacroFrame> m_vMacroFrames;
+	std::size_t m_MacroPlaybackIndex = 0;
+	bool m_MacroRecording = false;
+	bool m_MacroPlaying = false;
+	bool m_aAutoHookActive[NUM_DUMMIES]{};
+	bool m_aAutoAvoidActive[NUM_DUMMIES]{};
+	void ApplyHookAutomation(int Dummy);
+	bool MacroFilePath(const char *pName, char *pBuffer, unsigned BufferSize) const;
+	static void ConMacroRecord(IConsole::IResult *pResult, void *pUserData);
+	static void ConMacroStop(IConsole::IResult *pResult, void *pUserData);
+	static void ConMacroSave(IConsole::IResult *pResult, void *pUserData);
+	static void ConMacroPlay(IConsole::IResult *pResult, void *pUserData);
+	static void ConMacroDelete(IConsole::IResult *pResult, void *pUserData);
 	void SendPracticeTeleportToCursor(int Conn);
 };
 #endif
