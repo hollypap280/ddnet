@@ -50,7 +50,6 @@ void CControls::OnReset()
 	m_MacroPlaying = false;
 	m_MacroPlaybackIndex = 0;
 	m_MacroCurrentFrame = {};
-	m_MacroPlaybackAccumulator = 0.0f;
 	m_MacroHasCurrentFrame = false;
 	m_MacroHoldCurrentFrame = false;
 	m_vMacroFrames.clear();
@@ -58,6 +57,7 @@ void CControls::OnReset()
 	std::fill(std::begin(m_aAutoHookActive), std::end(m_aAutoHookActive), false);
 	std::fill(std::begin(m_aAutoHookFireActive), std::end(m_aAutoHookFireActive), false);
 	std::fill(std::begin(m_aAutoAvoidActive), std::end(m_aAutoAvoidActive), false);
+	std::fill(std::begin(m_aAutoEdgeJumpActive), std::end(m_aAutoEdgeJumpActive), false);
 }
 
 void CControls::ResetInput(int Dummy)
@@ -410,15 +410,14 @@ void CControls::ConMacroDelete(IConsole::IResult *pResult, void *pUserData)
 		pSelf->GameClient()->Echo("Macro deleted");
 }
 
-void CControls::SetMacroPlaybackSpeed(float Speed)
+int CControls::MacroSeekStep() const
 {
-	if(Speed >= 0.1f && Speed <= 4.0f)
-		m_MacroPlaybackSpeed = Speed;
+	return g_Config.m_ClMacroRewindStep;
 }
 
 void CControls::SetMacroSeekStep(int Step)
 {
-	m_MacroSeekStep = std::clamp(Step, 1, 18000);
+	g_Config.m_ClMacroRewindStep = std::clamp(Step, 1, 18000);
 }
 
 bool CControls::SeekMacro(int Offset)
@@ -446,24 +445,22 @@ bool CControls::OnInput(const IInput::CEvent &Event)
 		!(Event.m_Flags & IInput::FLAG_PRESS))
 		return false;
 
-	switch(Event.m_Key)
-	{
-	case KEY_LEFT:
-		return SeekMacro(-m_MacroSeekStep);
-	case KEY_RIGHT:
-		return SeekMacro(m_MacroSeekStep);
-	case KEY_UP:
-		SetMacroSeekStep(std::min(m_MacroSeekStep * 2, 18000));
-		break;
-	case KEY_DOWN:
-		SetMacroSeekStep(std::max(m_MacroSeekStep / 2, 1));
-		break;
-	default:
+	// Shift+Comma types '<' and Shift+Period types '>'. They seek by ticks only.
+	if(Input()->ShiftIsPressed() && Event.m_Key == KEY_COMMA)
+		return SeekMacro(-MacroSeekStep());
+	if(Input()->ShiftIsPressed() && Event.m_Key == KEY_PERIOD)
+		return SeekMacro(MacroSeekStep());
+
+	if(Event.m_Key == KEY_UP)
+		SetMacroSeekStep(std::min(MacroSeekStep() * 2, 18000));
+	else if(Event.m_Key == KEY_DOWN)
+		SetMacroSeekStep(std::max(MacroSeekStep() / 2, 1));
+	else
 		return false;
-	}
 
 	char aMessage[96];
-	str_format(aMessage, sizeof(aMessage), "Macro seek step: %d frames", m_MacroSeekStep);
+	str_format(aMessage, sizeof(aMessage), "Macro rewind step: %d ticks (%.2f s)",
+		MacroSeekStep(), MacroSeekStep() / 50.0f);
 	GameClient()->Echo(aMessage);
 	return true;
 }
@@ -499,12 +496,15 @@ void CControls::ApplyHookAutomation(int Dummy)
 
 	// Manual hook always has priority. Automatic targeting never changes the
 	// visible cursor and sends only a replacement input direction to the server.
-	if(g_Config.m_ClAutoHook && !ManualHook)
+	if((g_Config.m_ClAutoHook || g_Config.m_ClAutoTriplefly) && !ManualHook)
 	{
 		const float Range = std::clamp((float)g_Config.m_ClAutoHookRange, 32.0f, 360.0f);
-		float BestDistanceSquared = Range * Range;
+		const float RangeSquared = Range * Range;
+		float aBestDistances[3] = {RangeSquared + 1.0f, RangeSquared + 1.0f, RangeSquared + 1.0f};
+		vec2 aBestTargets[3] = {};
 		const vec2 ManualAim = m_aMousePos[Dummy];
 		const float AimLength = length(ManualAim);
+		const float AimAngle = std::clamp((float)g_Config.m_ClAutoHookAngle, 10.0f, 360.0f);
 		const int LocalId = GameClient()->m_Snap.m_LocalClientId;
 
 		for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
@@ -518,11 +518,10 @@ void CControls::ApplyHookAutomation(int Dummy)
 			const vec2 TargetPos((float)Character.m_X, (float)Character.m_Y);
 			const vec2 Delta = TargetPos - LocalPos;
 			const float DistanceSquared = dot(Delta, Delta);
-			if(DistanceSquared < 1.0f || DistanceSquared > BestDistanceSquared)
+			if(DistanceSquared < 1.0f || DistanceSquared > RangeSquared)
 				continue;
 
-			const float AimAngle = std::clamp((float)g_Config.m_ClAutoHookAngle, 10.0f, 360.0f);
-			if(AimLength > 1.0f && AimAngle < 359.9f)
+			if(!g_Config.m_ClAutoHookBackhook && AimLength > 1.0f && AimAngle < 359.9f)
 			{
 				const float AimDot = dot(ManualAim, Delta) / (AimLength * std::sqrt(DistanceSquared));
 				const float MinimumAimDot = std::cos(AimAngle * 0.5f * pi / 180.0f);
@@ -530,23 +529,38 @@ void CControls::ApplyHookAutomation(int Dummy)
 					continue;
 			}
 
-			// Do not target a tee hidden behind a hook-blocking map tile.
 			vec2 CollisionPos;
 			vec2 BeforeCollision;
 			if(Collision()->IntersectLineTeleHook(LocalPos, TargetPos, &CollisionPos, &BeforeCollision) != 0)
 				continue;
 
-			BestDistanceSquared = DistanceSquared;
-			BestTarget = Delta;
-			FoundTarget = true;
+			for(int Rank = 0; Rank < 3; ++Rank)
+			{
+				if(DistanceSquared < aBestDistances[Rank])
+				{
+					for(int Shift = 2; Shift > Rank; --Shift)
+					{
+						aBestDistances[Shift] = aBestDistances[Shift - 1];
+						aBestTargets[Shift] = aBestTargets[Shift - 1];
+					}
+					aBestDistances[Rank] = DistanceSquared;
+					aBestTargets[Rank] = Delta;
+					break;
+				}
+			}
 		}
 
-		if(FoundTarget)
+		const int TargetRank = g_Config.m_ClAutoTriplefly ? 2 : 0;
+		if(aBestDistances[TargetRank] <= RangeSquared)
 		{
+			BestTarget = aBestTargets[TargetRank];
+			FoundTarget = true;
 			m_aInputData[Dummy].m_TargetX = round_to_int(BestTarget.x);
 			m_aInputData[Dummy].m_TargetY = round_to_int(BestTarget.y);
 			m_aInputData[Dummy].m_Hook = 1;
 			m_aAutoHookActive[Dummy] = true;
+			if(g_Config.m_ClAutoHookAimAtTee && !g_Config.m_ClAutoHookBackhook)
+				m_aMousePos[Dummy] = BestTarget;
 		}
 		else
 		{
@@ -560,10 +574,65 @@ void CControls::ApplyHookAutomation(int Dummy)
 		m_aAutoHookActive[Dummy] = false;
 	}
 
-	// Optional weapon fire is aimed at exactly the same tee selected by Auto
-	// Hook. Weapon ownership and ammunition are checked before switching.
+	// Auto unfreeze targets the nearest visible frozen teammate with the laser.
 	int AutoWeapon = -1;
-	if(FoundTarget && !ManualHook)
+	if(g_Config.m_ClAutoUnfreezeLaser && !ManualHook)
+	{
+		const CCharacterCore &Predicted = GameClient()->m_PredictedChar;
+		if(Predicted.m_aWeapons[WEAPON_LASER].m_Got &&
+			(GameClient()->m_GameInfo.m_UnlimitedAmmo || Predicted.m_aWeapons[WEAPON_LASER].m_Ammo != 0))
+		{
+			const float Range = std::clamp((float)g_Config.m_ClAutoHookRange, 32.0f, 360.0f);
+			float BestFrozenDistance = Range * Range;
+			const vec2 ManualAim = m_aMousePos[Dummy];
+			const float AimLength = length(ManualAim);
+			const float AimAngle = std::clamp((float)g_Config.m_ClAutoHookAngle, 10.0f, 360.0f);
+			const int LocalId = GameClient()->m_Snap.m_LocalClientId;
+			for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
+			{
+				if(ClientId == LocalId || !GameClient()->m_Snap.m_aCharacters[ClientId].m_Active || GameClient()->IsOtherTeam(ClientId))
+					continue;
+				const bool Frozen = GameClient()->m_aClients[ClientId].m_FreezeEnd != 0 ||
+					GameClient()->m_aClients[ClientId].m_LiveFrozen ||
+					(GameClient()->m_Snap.m_aCharacters[ClientId].m_HasExtendedData &&
+						GameClient()->m_Snap.m_aCharacters[ClientId].m_ExtendedData.m_FreezeEnd != 0);
+				if(!Frozen)
+					continue;
+
+				const CNetObj_Character &Character = GameClient()->m_Snap.m_aCharacters[ClientId].m_Cur;
+				const vec2 TargetPos((float)Character.m_X, (float)Character.m_Y);
+				const vec2 Delta = TargetPos - LocalPos;
+				const float DistanceSquared = dot(Delta, Delta);
+				if(DistanceSquared < 1.0f || DistanceSquared > BestFrozenDistance)
+					continue;
+				if(!g_Config.m_ClAutoHookBackhook && AimLength > 1.0f && AimAngle < 359.9f)
+				{
+					const float AimDot = dot(ManualAim, Delta) / (AimLength * std::sqrt(DistanceSquared));
+					if(AimDot < std::cos(AimAngle * 0.5f * pi / 180.0f))
+						continue;
+				}
+				vec2 CollisionPos;
+				vec2 BeforeCollision;
+				if(Collision()->IntersectLine(LocalPos, TargetPos, &CollisionPos, &BeforeCollision) != 0)
+					continue;
+
+				BestFrozenDistance = DistanceSquared;
+				BestTarget = Delta;
+				FoundTarget = true;
+				AutoWeapon = WEAPON_LASER;
+			}
+			if(AutoWeapon == WEAPON_LASER)
+			{
+				m_aInputData[Dummy].m_TargetX = round_to_int(BestTarget.x);
+				m_aInputData[Dummy].m_TargetY = round_to_int(BestTarget.y);
+				if(g_Config.m_ClAutoHookAimAtTee && !g_Config.m_ClAutoHookBackhook)
+					m_aMousePos[Dummy] = BestTarget;
+			}
+		}
+	}
+
+	// Optional weapon fire is aimed at the same selected tee.
+	if(AutoWeapon < 0 && FoundTarget && !ManualHook)
 	{
 		const CCharacterCore &Predicted = GameClient()->m_PredictedChar;
 		const bool UnlimitedAmmo = GameClient()->m_GameInfo.m_UnlimitedAmmo;
@@ -584,7 +653,6 @@ void CControls::ApplyHookAutomation(int Dummy)
 			}
 		}
 	}
-
 	if(AutoWeapon >= 0)
 	{
 		m_aInputData[Dummy].m_WantedWeapon = AutoWeapon + 1;
@@ -702,6 +770,35 @@ void CControls::ApplyEdgeAssist(int Dummy)
 	}
 }
 
+void CControls::ApplyEdgeJump(int Dummy)
+{
+	if(!g_Config.m_ClAutoEdgeJump || !GameClient()->m_Snap.m_pLocalCharacter)
+	{
+		m_aAutoEdgeJumpActive[Dummy] = false;
+		return;
+	}
+	const int Direction = m_aInputData[Dummy].m_Direction;
+	if(Direction == 0)
+	{
+		m_aAutoEdgeJumpActive[Dummy] = false;
+		return;
+	}
+	const CNetObj_Character *pLocal = GameClient()->m_Snap.m_pLocalCharacter;
+	const vec2 Pos((float)pLocal->m_X, (float)pLocal->m_Y);
+	const bool Grounded = Collision()->CheckPoint(Pos + vec2(0.0f, 20.0f));
+	const bool GroundAhead = Collision()->CheckPoint(Pos + vec2(Direction * 20.0f, 20.0f));
+	const bool AtEdge = Grounded && !GroundAhead;
+	if(AtEdge && !m_aAutoEdgeJumpActive[Dummy])
+	{
+		m_aInputData[Dummy].m_Jump = 1;
+		m_aAutoEdgeJumpActive[Dummy] = true;
+	}
+	else if(!AtEdge)
+	{
+		m_aAutoEdgeJumpActive[Dummy] = false;
+	}
+}
+
 int CControls::SnapInput(int *pData)
 {
 	// update player state
@@ -781,6 +878,7 @@ int CControls::SnapInput(int *pData)
 
 		ApplyHookAutomation(g_Config.m_ClDummy);
 		ApplyEdgeAssist(g_Config.m_ClDummy);
+		ApplyEdgeJump(g_Config.m_ClDummy);
 
 		// dummy copy moves
 		if(g_Config.m_ClDummyCopyMoves)
@@ -837,43 +935,23 @@ int CControls::SnapInput(int *pData)
 			m_aInputData[g_Config.m_ClDummy].m_TargetY = (int)(std::cos(t * 3) * 100.0f);
 		}
 
-		// Macro playback has priority over live input. Speeds below 1.0
-		// hold each recorded frame for multiple ticks; higher speeds skip frames.
+		// Macro playback runs at original recording speed: one saved input
+		// frame per game tick. Seeking never changes playback speed.
 		if(m_MacroPlaying)
 		{
-			if(!m_MacroHasCurrentFrame)
-			{
-				if(m_MacroPlaybackIndex < m_vMacroFrames.size())
-				{
-					m_MacroCurrentFrame = m_vMacroFrames[m_MacroPlaybackIndex++];
-					m_MacroHasCurrentFrame = true;
-				}
-				else
-				{
-					m_MacroPlaying = false;
-				}
-			}
-			else if(m_MacroHoldCurrentFrame)
+			if(m_MacroHoldCurrentFrame)
 			{
 				m_MacroHoldCurrentFrame = false;
 			}
+			else if(m_MacroPlaybackIndex < m_vMacroFrames.size())
+			{
+				m_MacroCurrentFrame = m_vMacroFrames[m_MacroPlaybackIndex++];
+				m_MacroHasCurrentFrame = true;
+			}
 			else
 			{
-				m_MacroPlaybackAccumulator += m_MacroPlaybackSpeed;
-				const int FramesToAdvance = (int)m_MacroPlaybackAccumulator;
-				if(FramesToAdvance > 0)
-				{
-					m_MacroPlaybackAccumulator -= FramesToAdvance;
-					if(m_MacroPlaybackIndex >= m_vMacroFrames.size())
-					{
-						m_MacroPlaying = false;
-					}
-					else
-					{
-						for(int i = 0; i < FramesToAdvance && m_MacroPlaybackIndex < m_vMacroFrames.size(); ++i)
-							m_MacroCurrentFrame = m_vMacroFrames[m_MacroPlaybackIndex++];
-					}
-				}
+				m_MacroPlaying = false;
+				m_MacroHasCurrentFrame = false;
 			}
 
 			if(m_MacroPlaying && m_MacroHasCurrentFrame)
@@ -898,12 +976,9 @@ int CControls::SnapInput(int *pData)
 				m_aInputData[g_Config.m_ClDummy].m_Hook = 0;
 				if(m_aInputData[g_Config.m_ClDummy].m_Fire & 1)
 					m_aInputData[g_Config.m_ClDummy].m_Fire++;
-				m_MacroHasCurrentFrame = false;
-				m_MacroPlaying = false;
 				Send = true;
 			}
 		}
-
 		if(m_MacroRecording && !m_MacroPlaying && m_vMacroFrames.size() < 18000)
 		{
 			const CNetObj_PlayerInput &Input = m_aInputData[g_Config.m_ClDummy];
