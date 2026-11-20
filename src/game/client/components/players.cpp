@@ -492,8 +492,9 @@ void CPlayers::RenderHook(
 
 	CTeeRenderInfo RenderInfo = *pRenderInfo;
 
-	// don't render hooks to not active character cores
-	if(pPlayerChar->m_HookedPlayer != -1 && !GameClient()->m_Snap.m_aCharacters[pPlayerChar->m_HookedPlayer].m_Active)
+	// Practice-copy hooks target copied characters, not the live snapshot.
+	if(ClientId != -3 && pPlayerChar->m_HookedPlayer != -1 &&
+		!GameClient()->m_Snap.m_aCharacters[pPlayerChar->m_HookedPlayer].m_Active)
 		return;
 
 	if(ClientId >= 0)
@@ -501,8 +502,12 @@ void CPlayers::RenderHook(
 
 	bool OtherTeam = GameClient()->IsOtherTeam(ClientId);
 	float Alpha = (OtherTeam || ClientId < 0) ? g_Config.m_ClShowOthersAlpha / 100.0f : 1.0f;
-	if(ClientId == -2) // ghost
+	if(ClientId == -2) // race ghost
 		Alpha = g_Config.m_ClRaceGhostAlpha / 100.0f;
+	else if(ClientId == -3) // macro practice copy
+		Alpha = 1.0f;
+	else if(GameClient()->m_Controls.MacroPracticeActive() && ClientId == GameClient()->m_Snap.m_LocalClientId)
+		Alpha *= 0.22f;
 
 	RenderInfo.m_Size = 64.0f;
 
@@ -520,7 +525,7 @@ void CPlayers::RenderHook(
 	vec2 Pos = Position;
 	vec2 HookPos;
 
-	if(in_range(pPlayerChar->m_HookedPlayer, MAX_CLIENTS - 1))
+	if(ClientId != -3 && in_range(pPlayerChar->m_HookedPlayer, MAX_CLIENTS - 1))
 		HookPos = GameClient()->m_aClients[pPlayerChar->m_HookedPlayer].m_RenderPos;
 	else
 		HookPos = mix(vec2(Prev.m_HookX, Prev.m_HookY), vec2(Player.m_HookX, Player.m_HookY), Intra);
@@ -590,8 +595,12 @@ void CPlayers::RenderPlayer(
 	bool Local = GameClient()->m_Snap.m_LocalClientId == ClientId;
 	bool OtherTeam = GameClient()->IsOtherTeam(ClientId);
 	float Alpha = (OtherTeam || ClientId < 0) ? g_Config.m_ClShowOthersAlpha / 100.0f : 1.0f;
-	if(ClientId == -2) // ghost
+	if(ClientId == -2) // race ghost
 		Alpha = g_Config.m_ClRaceGhostAlpha / 100.0f;
+	else if(ClientId == -3) // macro practice copy
+		Alpha = 1.0f;
+	else if(GameClient()->m_Controls.MacroPracticeActive() && ClientId == GameClient()->m_Snap.m_LocalClientId)
+		Alpha *= 0.22f;
 	// TODO: snd_game_volume_others
 	const float Volume = 1.0f;
 
