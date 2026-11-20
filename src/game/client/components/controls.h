@@ -61,11 +61,9 @@ public:
 
 	bool MacroRecording() const { return m_MacroRecording; }
 	bool MacroPlaying() const { return m_MacroPlaying; }
-	float MacroPlaybackSpeed() const { return m_MacroPlaybackSpeed; }
 	int MacroPosition() const { return (int)m_MacroPlaybackIndex; }
 	int MacroFrameCount() const { return (int)m_vMacroFrames.size(); }
-	int MacroSeekStep() const { return m_MacroSeekStep; }
-	void SetMacroPlaybackSpeed(float Speed);
+	int MacroSeekStep() const { return g_Config.m_ClMacroRewindStep; }
 	void SetMacroSeekStep(int Step);
 	void StartMacroRecording();
 	void StopMacroRecording();
@@ -96,9 +94,6 @@ private:
 	std::vector<SMacroFrame> m_vMacroFrames;
 	std::size_t m_MacroPlaybackIndex = 0;
 	SMacroFrame m_MacroCurrentFrame{};
-	float m_MacroPlaybackSpeed = 1.0f;
-	float m_MacroPlaybackAccumulator = 0.0f;
-	int m_MacroSeekStep = 25;
 	bool m_MacroHasCurrentFrame = false;
 	bool m_MacroHoldCurrentFrame = false;
 	bool m_MacroRecording = false;
@@ -107,8 +102,10 @@ private:
 	bool m_aAutoHookActive[NUM_DUMMIES]{};
 	bool m_aAutoHookFireActive[NUM_DUMMIES]{};
 	bool m_aAutoAvoidActive[NUM_DUMMIES]{};
+	bool m_aAutoEdgeJumpActive[NUM_DUMMIES]{};
 	void ApplyHookAutomation(int Dummy);
 	void ApplyEdgeAssist(int Dummy);
+	void ApplyEdgeJump(int Dummy);
 	bool MacroFilePath(const char *pName, char *pBuffer, unsigned BufferSize) const;
 	bool SeekMacro(int Offset);
 	static void ConMacroRecord(IConsole::IResult *pResult, void *pUserData);
