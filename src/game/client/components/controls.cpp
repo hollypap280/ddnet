@@ -60,7 +60,7 @@ void CControls::OnReset()
 	std::fill(std::begin(m_aAutoHookActive), std::end(m_aAutoHookActive), false);
 	std::fill(std::begin(m_aAutoHookFireActive), std::end(m_aAutoHookFireActive), false);
 	std::fill(std::begin(m_aAutoAvoidActive), std::end(m_aAutoAvoidActive), false);
-	std::fill(std::begin(m_aAutoEdgeHookActive), std::end(m_aAutoEdgeJumpActive), false);
+	std::fill(std::begin(m_aAutoEdgeHookActive), std::end(m_aAutoEdgeHookActive), false);
 }
 
 void CControls::ResetInput(int Dummy)
