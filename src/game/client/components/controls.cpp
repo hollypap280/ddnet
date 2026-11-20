@@ -362,6 +362,7 @@ bool CControls::StartMacroPractice()
 		return false;
 	}
 
+	m_MacroPracticeLocalId = LocalId;
 	m_MacroPracticeWorld.CopyWorld(&GameClient()->m_PredictedWorld);
 	PopulateMacroPracticeWorld();
 	if(!m_MacroPracticeWorld.GetCharacterById(LocalId))
@@ -371,7 +372,6 @@ bool CControls::StartMacroPractice()
 		return false;
 	}
 
-	m_MacroPracticeLocalId = LocalId;
 	str_copy(m_aMacroMapName, "Неизвестная карта");
 	const char *pMapName = Client()->MapDownloadName();
 	if(pMapName && pMapName[0])
