@@ -436,14 +436,17 @@ void CControls::PopulateMacroPracticeWorld()
 {
 	m_MacroPracticeWorld.m_LocalClientId = m_MacroPracticeLocalId;
 
+	// Read extended freeze timers against the real snapshot tick, while keeping
+	// the controlled practice tee on its own slower virtual clock.
+	const int PracticeTick = m_MacroPracticeWorld.GameTick();
+	m_MacroPracticeWorld.m_GameTick = Client()->GameTick(g_Config.m_ClDummy);
+
 	for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
 	{
 		CCharacter *pPracticeCharacter = m_MacroPracticeWorld.GetCharacterById(ClientId);
 		const auto &Info = GameClient()->m_Snap.m_aCharacters[ClientId];
 
-		// Keep the recording tee private. Every other character is refreshed
-		// from the current main-world snapshot so teammates and dummies remain
-		// present and hookable while the private tee runs at a slower rate.
+		// The local practice tee is never overwritten by live server snapshots.
 		if(ClientId == m_MacroPracticeLocalId)
 			continue;
 
@@ -455,6 +458,7 @@ void CControls::PopulateMacroPracticeWorld()
 		}
 
 		const int GameTeam = GameClient()->IsTeamPlay() ? GameClient()->m_aClients[ClientId].m_Team : ClientId;
+		// CCharacter::Team()/SameTeam() read CTeamsCore, not m_GameTeam.
 		m_MacroPracticeWorld.Teams()->Team(ClientId, GameTeam);
 
 		CNetObj_Character Character = Info.m_Cur;
@@ -471,12 +475,9 @@ void CControls::PopulateMacroPracticeWorld()
 			pPracticeCharacter->m_IsLocal = false;
 			m_MacroPracticeWorld.InsertEntity(pPracticeCharacter);
 		}
-
-		// Team membership is read by CCharacter::Team()/SameTeam(), hook
-		// collision and player collision. m_GameTeam alone is not sufficient.
-		m_MacroPracticeWorld.Teams()->Team(ClientId, GameTeam);
 	}
 
+	m_MacroPracticeWorld.m_GameTick = PracticeTick;
 	UpdateMacroPracticeGhost(m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId));
 }
 
