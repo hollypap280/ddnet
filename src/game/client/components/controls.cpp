@@ -1075,6 +1075,23 @@ void CControls::OnRender()
 				Center.y + std::sin(Angle) * Radius - 1.5f, 3.0f, 3.0f);
 			Graphics()->QuadsDrawTL(&Dot, 1);
 		}
+
+		// Draw the two edges of the circular aiming sector, making the
+		// independent radius and angle limits visible at the same time.
+		if(ConeAngle < 359.9f)
+		{
+			for(int Edge = 0; Edge < 2; ++Edge)
+			{
+				const float Angle = AimAngle + (Edge == 0 ? -HalfAngle : HalfAngle);
+				for(int Step = 1; Step < 12; ++Step)
+				{
+					const float Distance = Radius * Step / 12.0f;
+					IGraphics::CQuadItem Dot(Center.x + std::cos(Angle) * Distance - 1.0f,
+						Center.y + std::sin(Angle) * Distance - 1.0f, 2.0f, 2.0f);
+					Graphics()->QuadsDrawTL(&Dot, 1);
+				}
+			}
+		}
 		Graphics()->QuadsEnd();
 		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 	}
