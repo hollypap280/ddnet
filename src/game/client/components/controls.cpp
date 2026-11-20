@@ -414,19 +414,8 @@ void CControls::StopMacroPractice()
 
 void CControls::UpdateMacroPracticeGhost(CCharacter *pCharacter)
 {
-	if(!pCharacter)
-		return;
-
-	CNetObj_Character Current{};
-	pCharacter->Core()->Write(&Current);
-	Current.m_Weapon = pCharacter->GetActiveWeapon();
-	Current.m_AttackTick = pCharacter->GetAttackTick();
-	Current.m_Tick = m_MacroPracticeWorld.GameTick();
-
-	CNetObj_Character Prev = m_MacroPracticeHasRenderChar ? m_MacroPracticeRenderChar : Current;
-	GameClient()->m_Ghost.SetMacroPracticeCharacter(Prev, Current);
-	m_MacroPracticeRenderChar = Current;
-	m_MacroPracticeHasRenderChar = true;
+	(void)pCharacter;
+	GameClient()->m_Ghost.SetMacroPracticeWorld(&m_MacroPracticeWorld);
 }
 
 bool CControls::RestoreMacroPracticeFrame(int Index)
