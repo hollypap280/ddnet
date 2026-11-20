@@ -367,6 +367,7 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 		CCharacterCore Core = pCharacter->GetCore();
 		Core.Read(&Frame.m_Core);
 		pCharacter->SetCore(Core);
+		pCharacter->m_Pos = Core.m_Pos;
 		pCharacter->SetActiveWeapon(Frame.m_Weapon);
 		m_MacroPracticeWorld.m_GameTick = Frame.m_Tick;
 		m_MacroPracticeTick = Frame.m_Tick;
@@ -398,6 +399,7 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput)
 
 	CNetObj_PlayerInput TickInput = LiveInput;
 	TickInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+	bool ReplayRecordedFrame = false;
 
 	if(m_MacroPlaying)
 	{
@@ -418,13 +420,25 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput)
 			// the world coordinate where that action was originally performed.
 			if(distance(CurrentPos, RequiredPos) > 24.0f)
 			{
+				// Let the player manually guide the local practice tee back to
+				// the recorded coordinate. Do not advance or skip this macro tick.
 				m_MacroPracticeWaiting = true;
-				return;
+			}
+			else
+			{
+				m_MacroPracticeWaiting = false;
+				TickInput = Frame.m_Input;
+				TickInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+				ReplayRecordedFrame = true;
 			}
 		}
-		m_MacroPracticeWaiting = false;
-		TickInput = Frame.m_Input;
-		TickInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+		else
+		{
+			m_MacroPracticeWaiting = false;
+			TickInput = Frame.m_Input;
+			TickInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+			ReplayRecordedFrame = true;
+		}
 	}
 
 	SMacroFrame NewFrame;
@@ -452,7 +466,6 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput)
 	if(m_MacroRecording)
 	{
 		pCharacter->Core()->Write(&NewFrame.m_Core);
-		NewFrame.m_PreCore.m_Tick = m_MacroPracticeTick;
 		NewFrame.m_Weapon = pCharacter->GetActiveWeapon();
 		NewFrame.m_AttackTick = pCharacter->GetAttackTick();
 		NewFrame.m_Tick = m_MacroPracticeTick;
@@ -467,7 +480,7 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput)
 			GameClient()->Echo("Запись достигла ограничения в 18000 тиков");
 		}
 	}
-	else if(m_MacroPlaying)
+	else if(m_MacroPlaying && ReplayRecordedFrame)
 	{
 		++m_MacroPlaybackIndex;
 	}
@@ -499,7 +512,7 @@ void CControls::StopMacroRecording()
 	{
 		m_MacroRecording = false;
 		char aBuf[112];
-		str_format(aBuf, sizeof(aBuf), "Macro recording stopped (%d practice ticks)", (int)m_vMacroFrames.size());
+		str_format(aBuf, sizeof(aBuf), "Запись макроса остановлена (%d тренировочных тиков)", (int)m_vMacroFrames.size());
 		GameClient()->Echo(aBuf);
 	}
 	if(m_MacroPlaying)
@@ -593,6 +606,7 @@ bool CControls::PlayMacro(const char *pName)
 		CCharacterCore Core = pCharacter->GetCore();
 		Core.Read(&Frames[0].m_PreCore);
 		pCharacter->SetCore(Core);
+		pCharacter->m_Pos = Core.m_Pos;
 		pCharacter->SetActiveWeapon(Frames[0].m_PreWeapon);
 		m_MacroPracticeWorld.m_GameTick = Frames[0].m_Tick - 1;
 		m_MacroPracticeTick = Frames[0].m_Tick - 1;
@@ -746,7 +760,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 
 	// Manual hook always has priority. Automatic targeting never changes the
 	// visible cursor and sends only a replacement input direction to the server.
-	if((g_Config.m_ClAutoHook && !ManualHook) || g_Config.m_ClAutoTriplefly)
+	if((g_Config.m_ClAutoHook || g_Config.m_ClAutoTriplefly) && !ManualHook)
 	{
 		const float Range = std::clamp((float)g_Config.m_ClAutoHookRange, 32.0f, 360.0f);
 		const float RangeSquared = Range * Range;
@@ -917,6 +931,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 	{
 		if(m_aInputData[Dummy].m_Fire & 1)
 			m_aInputData[Dummy].m_Fire++;
+		m_aInputData[Dummy].m_WantedWeapon = 0;
 		m_aAutoHookFireActive[Dummy] = false;
 	}
 
