@@ -434,7 +434,7 @@ void CMenus::RenderSettingsGame(CUIRect MainView)
 
 	static CButtonContainer s_AutoHook, s_Angle, s_Radius, s_Avoid, s_Edge;
 	static CButtonContainer s_Gun, s_Shotgun, s_Grenade, s_Laser;
-	static CButtonContainer s_AutoTriplefly, s_AutoUnfreeze, s_AimAtTee, s_Backhook, s_EdgeHook, s_DummyFlight;
+	static CButtonContainer s_AutoTriplefly, s_AutoUnfreeze, s_EdgeHook, s_DummyFlight;
 	MainView.HSplitTop(24.0f, &Row, &MainView);
 	if(DoButton_CheckBox(&g_Config.m_ClAutoHook, Localize("Автохук"), g_Config.m_ClAutoHook, &Row))
 		g_Config.m_ClAutoHook ^= 1;
@@ -494,24 +494,6 @@ void CMenus::RenderSettingsGame(CUIRect MainView)
 	if(DoButton_CheckBox(&g_Config.m_ClAutoTriplefly, Localize("Автотрёххук (цепляться за третьего тии)"), g_Config.m_ClAutoTriplefly, &Row))
 		g_Config.m_ClAutoTriplefly ^= 1;
 	Ui()->DoToolTip(&s_AutoTriplefly, &Row, Localize("Выбирает третьего ближайшего подходящего тии в зоне крюка"));
-
-	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoHookAimAtTee, Localize("Наводиться на тии (двигает курсор)"), g_Config.m_ClAutoHookAimAtTee, &Row))
-	{
-		g_Config.m_ClAutoHookAimAtTee ^= 1;
-		if(g_Config.m_ClAutoHookAimAtTee)
-			g_Config.m_ClAutoHookBackhook = 0;
-	}
-	Ui()->DoToolTip(&s_AimAtTee, &Row, Localize("Передвигает курсор к выбранному тии во время работы автохука"));
-
-	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoHookBackhook, Localize("Бэкхук (не двигает курсор)"), g_Config.m_ClAutoHookBackhook, &Row))
-	{
-		g_Config.m_ClAutoHookBackhook ^= 1;
-		if(g_Config.m_ClAutoHookBackhook)
-			g_Config.m_ClAutoHookAimAtTee = 0;
-	}
-	Ui()->DoToolTip(&s_Backhook, &Row, Localize("Не двигает курсор и разрешает автонаведение за направлением курсора"));
 
 	MainView.HSplitTop(24.0f, &Row, &MainView);
 	if(DoButton_CheckBox(&g_Config.m_ClAutoEdgeHook, Localize("Подхват крюком у края (без прыжка)"), g_Config.m_ClAutoEdgeHook, &Row))
@@ -732,8 +714,6 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 		{ "Авторазморозка лазером", "toggle cl_auto_unfreeze_laser 0 1" },
 		{ "Автохук", "toggle cl_auto_hook 0 1" },
 		{ "Защита от фриза", "toggle cl_auto_avoid 0 1" },
-		{ "Наведение на тии (курсор двигается)", "toggle cl_auto_hook_aim_at_tee 0 1" },
-		{ "Бэкхук (курсор неподвижен)", "toggle cl_auto_hook_backhook 0 1" },
 		{ "Точная наводка на край", "toggle cl_auto_edge 0 1" },
 		{ "Подхват крюком у края", "toggle cl_auto_edge_hook 0 1" },
 		{ "Полёт дамми (хаммерфлай)", "toggle cl_dummy_hammer 0 1" },
