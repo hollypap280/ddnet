@@ -340,6 +340,8 @@ void CCamera::OnRender()
 
 		if(GameClient()->m_Snap.m_SpecInfo.m_Active)
 			m_Center = GameClient()->m_Snap.m_SpecInfo.m_Position + m_aDyncamCurrentCameraOffset[g_Config.m_ClDummy];
+		else if(GameClient()->m_Controls.MacroPracticeActive())
+			m_Center = GameClient()->m_Controls.MacroPracticePosition() + m_aDyncamCurrentCameraOffset[g_Config.m_ClDummy];
 		else
 			m_Center = GameClient()->m_LocalCharacterPos + m_aDyncamCurrentCameraOffset[g_Config.m_ClDummy];
 	}
