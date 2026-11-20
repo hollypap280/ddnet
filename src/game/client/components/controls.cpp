@@ -435,18 +435,46 @@ void CControls::UpdateMacroPracticeGhost(CCharacter *pCharacter)
 void CControls::PopulateMacroPracticeWorld()
 {
 	m_MacroPracticeWorld.m_LocalClientId = m_MacroPracticeLocalId;
+
 	for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
 	{
+		CCharacter *pPracticeCharacter = m_MacroPracticeWorld.GetCharacterById(ClientId);
 		const auto &Info = GameClient()->m_Snap.m_aCharacters[ClientId];
-		if(!Info.m_Active || m_MacroPracticeWorld.GetCharacterById(ClientId))
+
+		// Keep the recording tee private. Every other character is refreshed
+		// from the current main-world snapshot so teammates and dummies remain
+		// present and hookable while the private tee runs at a slower rate.
+		if(ClientId == m_MacroPracticeLocalId)
 			continue;
+
+		if(!Info.m_Active)
+		{
+			if(pPracticeCharacter)
+				pPracticeCharacter->Destroy();
+			continue;
+		}
+
+		const int GameTeam = GameClient()->IsTeamPlay() ? GameClient()->m_aClients[ClientId].m_Team : ClientId;
+		m_MacroPracticeWorld.Teams()->Team(ClientId, GameTeam);
 
 		CNetObj_Character Character = Info.m_Cur;
 		CNetObj_DDNetCharacter *pExtended = Info.m_HasExtendedData ? &GameClient()->m_Snap.m_aCharacters[ClientId].m_ExtendedData : nullptr;
-		auto *pPracticeCharacter = new CCharacter(&m_MacroPracticeWorld, ClientId, &Character, pExtended);
-		pPracticeCharacter->m_GameTeam = GameClient()->IsTeamPlay() ? GameClient()->m_aClients[ClientId].m_Team : ClientId;
-		pPracticeCharacter->m_IsLocal = ClientId == m_MacroPracticeLocalId;
-		m_MacroPracticeWorld.InsertEntity(pPracticeCharacter);
+		if(pPracticeCharacter)
+		{
+			pPracticeCharacter->Read(&Character, pExtended, false);
+			pPracticeCharacter->m_GameTeam = GameTeam;
+		}
+		else
+		{
+			pPracticeCharacter = new CCharacter(&m_MacroPracticeWorld, ClientId, &Character, pExtended);
+			pPracticeCharacter->m_GameTeam = GameTeam;
+			pPracticeCharacter->m_IsLocal = false;
+			m_MacroPracticeWorld.InsertEntity(pPracticeCharacter);
+		}
+
+		// Team membership is read by CCharacter::Team()/SameTeam(), hook
+		// collision and player collision. m_GameTeam alone is not sufficient.
+		m_MacroPracticeWorld.Teams()->Team(ClientId, GameTeam);
 	}
 
 	UpdateMacroPracticeGhost(m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId));
@@ -915,7 +943,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 			if(DistanceSquared < 1.0f || DistanceSquared > RangeSquared)
 				continue;
 
-			if(!g_Config.m_ClAutoHookBackhook && AimLength > 1.0f && AimAngle < 359.9f)
+			if(AimLength > 1.0f && AimAngle < 359.9f)
 			{
 				const float AimDot = dot(ManualAim, Delta) / (AimLength * std::sqrt(DistanceSquared));
 				const float MinimumAimDot = std::cos(AimAngle * 0.5f * pi / 180.0f);
@@ -944,7 +972,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 			}
 		}
 
-		const int TargetRank = g_Config.m_ClAutoTriplefly ? 1 : 0;
+		const int TargetRank = g_Config.m_ClAutoTriplefly ? 2 : 0;
 		if(aBestDistances[TargetRank] <= RangeSquared)
 		{
 			BestTarget = aBestTargets[TargetRank];
@@ -953,8 +981,6 @@ void CControls::ApplyHookAutomation(int Dummy)
 			m_aInputData[Dummy].m_TargetY = round_to_int(BestTarget.y);
 			m_aInputData[Dummy].m_Hook = 1;
 			m_aAutoHookActive[Dummy] = true;
-			if(g_Config.m_ClAutoHookAimAtTee && !g_Config.m_ClAutoHookBackhook)
-				m_aMousePos[Dummy] = BestTarget;
 		}
 		else
 		{
@@ -972,7 +998,10 @@ void CControls::ApplyHookAutomation(int Dummy)
 	int AutoWeapon = -1;
 	if(g_Config.m_ClAutoUnfreezeLaser)
 	{
-		const CCharacterCore &Predicted = GameClient()->m_PredictedChar;
+		const int LocalId = GameClient()->m_Snap.m_LocalClientId;
+		if(LocalId < 0 || LocalId >= MAX_CLIENTS)
+			return;
+		const CCharacterCore &Predicted = GameClient()->m_aClients[LocalId].m_Predicted;
 		if(Predicted.m_aWeapons[WEAPON_LASER].m_Got &&
 			(GameClient()->m_GameInfo.m_UnlimitedAmmo || Predicted.m_aWeapons[WEAPON_LASER].m_Ammo != 0))
 		{
@@ -980,7 +1009,6 @@ void CControls::ApplyHookAutomation(int Dummy)
 			const float LaserRange = std::max(32.0f, static_cast<float>(GameClient()->GetTuning(TuneZone)->m_LaserReach));
 			const float Range = std::clamp(LaserRange, 32.0f, 1200.0f);
 			float BestFrozenDistance = Range * Range;
-			const int LocalId = GameClient()->m_Snap.m_LocalClientId;
 			for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
 			{
 				if(ClientId == LocalId || !GameClient()->m_Snap.m_aCharacters[ClientId].m_Active || GameClient()->IsOtherTeam(ClientId) || GameClient()->m_aClients[ClientId].m_LaserHitDisabled)
@@ -1018,8 +1046,6 @@ void CControls::ApplyHookAutomation(int Dummy)
 				m_aAutoHookActive[Dummy] = false;
 				m_aInputData[Dummy].m_TargetX = round_to_int(BestTarget.x);
 				m_aInputData[Dummy].m_TargetY = round_to_int(BestTarget.y);
-				if(g_Config.m_ClAutoHookAimAtTee && !g_Config.m_ClAutoHookBackhook)
-					m_aMousePos[Dummy] = BestTarget;
 			}
 		}
 	}
@@ -1268,6 +1294,10 @@ int CControls::SnapInput(int *pData)
 	// Only neutral input is ever sent to the real server character.
 	if(m_MacroPracticeActive)
 	{
+		// Remote tees, their freeze/team state and server-side entities follow
+		// the main world. The local practice tee remains independently driven.
+		PopulateMacroPracticeWorld();
+
 		const int Dummy = g_Config.m_ClDummy;
 		CNetObj_PlayerInput PracticeInput = m_aInputData[Dummy];
 		PracticeInput.m_Direction = 0;
