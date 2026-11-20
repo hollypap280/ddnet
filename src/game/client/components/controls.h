@@ -52,6 +52,7 @@ public:
 	void OnMessage(int MsgType, void *pRawMsg) override;
 	bool OnCursorMove(float x, float y, IInput::ECursorType CursorType) override;
 	void OnConsoleInit() override;
+	bool OnInput(const IInput::CEvent &Event) override;
 	virtual void OnPlayerDeath();
 
 	int SnapInput(int *pData);
@@ -60,6 +61,12 @@ public:
 
 	bool MacroRecording() const { return m_MacroRecording; }
 	bool MacroPlaying() const { return m_MacroPlaying; }
+	float MacroPlaybackSpeed() const { return m_MacroPlaybackSpeed; }
+	int MacroPosition() const { return (int)m_MacroPlaybackIndex; }
+	int MacroFrameCount() const { return (int)m_vMacroFrames.size(); }
+	int MacroSeekStep() const { return m_MacroSeekStep; }
+	void SetMacroPlaybackSpeed(float Speed);
+	void SetMacroSeekStep(int Step);
 	void StartMacroRecording();
 	void StopMacroRecording();
 	bool SaveMacro(const char *pName);
@@ -88,6 +95,11 @@ private:
 	};
 	std::vector<SMacroFrame> m_vMacroFrames;
 	std::size_t m_MacroPlaybackIndex = 0;
+	SMacroFrame m_MacroCurrentFrame{};
+	float m_MacroPlaybackSpeed = 1.0f;
+	float m_MacroPlaybackAccumulator = 0.0f;
+	int m_MacroSeekStep = 25;
+	bool m_MacroHasCurrentFrame = false;
 	bool m_MacroRecording = false;
 	bool m_MacroPlaying = false;
 	bool m_aManualHook[NUM_DUMMIES]{};
@@ -97,6 +109,7 @@ private:
 	void ApplyHookAutomation(int Dummy);
 	void ApplyEdgeAssist(int Dummy);
 	bool MacroFilePath(const char *pName, char *pBuffer, unsigned BufferSize) const;
+	bool SeekMacro(int Offset);
 	static void ConMacroRecord(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroStop(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroSave(IConsole::IResult *pResult, void *pUserData);
