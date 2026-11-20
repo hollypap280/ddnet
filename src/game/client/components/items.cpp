@@ -645,7 +645,7 @@ void CItems::OnRender()
 	}
 
 	// Draw shots and lasers created by the isolated, slowed macro world.
-	if(const CGameWorld *pPracticeWorld = GameClient()->m_Controls.MacroPracticeWorld())
+	if(CGameWorld *pPracticeWorld = GameClient()->m_Controls.MacroPracticeWorld())
 	{
 		const float PracticeTick = pPracticeWorld->GameTick() + GameClient()->m_Controls.MacroPracticeTickFraction();
 		for(CEntity *pEnt = pPracticeWorld->FindFirst(CGameWorld::ENTTYPE_PROJECTILE); pEnt; pEnt = pEnt->TypeNext())
