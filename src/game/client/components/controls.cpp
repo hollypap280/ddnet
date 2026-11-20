@@ -287,7 +287,6 @@ void CControls::StartMacroRecording()
 	m_MacroPlaying = false;
 	m_MacroPlaybackIndex = 0;
 	m_MacroCurrentFrame = {};
-	m_MacroPlaybackAccumulator = 0.0f;
 	m_MacroHasCurrentFrame = false;
 	m_MacroHoldCurrentFrame = false;
 	m_vMacroFrames.clear();
@@ -307,7 +306,6 @@ void CControls::StopMacroRecording()
 	m_MacroPlaying = false;
 	m_MacroPlaybackIndex = 0;
 	m_MacroCurrentFrame = {};
-	m_MacroPlaybackAccumulator = 0.0f;
 	m_MacroHasCurrentFrame = false;
 	m_MacroHoldCurrentFrame = false;
 }
@@ -361,7 +359,6 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroRecording = false;
 	m_MacroPlaybackIndex = 0;
 	m_MacroCurrentFrame = {};
-	m_MacroPlaybackAccumulator = 0.0f;
 	m_MacroHasCurrentFrame = false;
 	m_MacroHoldCurrentFrame = false;
 	m_MacroPlaying = true;
@@ -429,7 +426,6 @@ bool CControls::SeekMacro(int Offset)
 	const int Target = std::clamp(Current + Offset, 0, (int)m_vMacroFrames.size() - 1);
 	m_MacroCurrentFrame = m_vMacroFrames[Target];
 	m_MacroPlaybackIndex = (std::size_t)Target + 1;
-	m_MacroPlaybackAccumulator = 0.0f;
 	m_MacroHoldCurrentFrame = true;
 
 	char aMessage[128];
