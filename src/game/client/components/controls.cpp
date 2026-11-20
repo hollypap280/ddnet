@@ -260,7 +260,7 @@ void CControls::SendPracticeTeleportToCursor(int Conn)
 namespace
 {
 	constexpr uint32_t MACRO_FILE_MAGIC = 0x444D4143;
-	constexpr uint32_t MACRO_FILE_VERSION = 2;
+	constexpr uint32_t MACRO_FILE_VERSION = 3;
 	constexpr uint32_t MACRO_MAX_FRAMES = 18000;
 }
 
@@ -283,6 +283,69 @@ bool CControls::MacroFilePath(const char *pName, char *pBuffer, unsigned BufferS
 		return false;
 	str_format(pBuffer, BufferSize, "macros/%s.dmacro", aSafeName);
 	return true;
+}
+
+int CControls::MacroListCallback(const char *pName, int IsDir, int DirType, void *pUser)
+{
+	if(IsDir || !pName || !pUser)
+		return 0;
+
+	const size_t NameLength = str_length(pName);
+	constexpr const char *pExtension = ".dmacro";
+	constexpr size_t ExtensionLength = 7;
+	if(NameLength <= ExtensionLength || str_comp(pName + NameLength - ExtensionLength, pExtension) != 0)
+		return 0;
+
+	auto *pvMacros = static_cast<std::vector<SMacroInfo> *>(pUser);
+	SMacroInfo Info;
+	const size_t BaseNameLength = std::min(NameLength - ExtensionLength, sizeof(Info.m_aName) - 1);
+	str_copy(Info.m_aName, pName, BaseNameLength + 1);
+	Info.m_aMapName[0] = '\0';
+
+	char aPath[128];
+	if(!MacroFilePath(Info.m_aName, aPath, sizeof(aPath)))
+		return 0;
+
+	IOHANDLE File = Storage()->OpenFile(aPath, IOFLAG_READ, IStorage::TYPE_SAVE);
+	if(!File)
+		return 0;
+
+	uint32_t Magic = 0;
+	uint32_t Version = 0;
+	uint32_t Count = 0;
+	const bool HeaderValid = io_read(File, &Magic, sizeof(Magic)) == sizeof(Magic) &&
+		io_read(File, &Version, sizeof(Version)) == sizeof(Version) &&
+		io_read(File, &Count, sizeof(Count)) == sizeof(Count) &&
+		Magic == MACRO_FILE_MAGIC && Version >= 1 && Version <= MACRO_FILE_VERSION &&
+		Count <= MACRO_MAX_FRAMES;
+	if(HeaderValid)
+	{
+		Info.m_TickCount = (int)Count;
+		if(Version >= 3)
+		{
+			char aMapName[64]{};
+			if(io_read(File, aMapName, sizeof(aMapName)) == sizeof(aMapName))
+				str_copy(Info.m_aMapName, aMapName);
+		}
+	}
+	io_close(File);
+
+	if(HeaderValid)
+	{
+		if(!Info.m_aMapName[0])
+			str_copy(Info.m_aMapName, "Карта не записана");
+		pvMacros->push_back(Info);
+	}
+	return 0;
+}
+
+void CControls::GetMacroList(std::vector<SMacroInfo> &vMacros)
+{
+	vMacros.clear();
+	Storage()->ListDirectory(IStorage::TYPE_SAVE, "macros", MacroListCallback, &vMacros);
+	std::sort(vMacros.begin(), vMacros.end(), [](const SMacroInfo &Left, const SMacroInfo &Right) {
+		return str_comp_nocase(Left.m_aName, Right.m_aName) < 0;
+	});
 }
 
 bool CControls::StartMacroPractice()
@@ -308,6 +371,18 @@ bool CControls::StartMacroPractice()
 	}
 
 	m_MacroPracticeLocalId = LocalId;
+	str_copy(m_aMacroMapName, "Неизвестная карта");
+	const char *pMapName = Client()->MapDownloadName();
+	if(pMapName && pMapName[0])
+	{
+		const char *pBaseName = pMapName;
+		for(const char *p = pMapName; *p; ++p)
+			if(*p == '/' || *p == '\\')
+				pBaseName = p + 1;
+		str_copy(m_aMacroMapName, pBaseName);
+		for(char *p = m_aMacroMapName; *p; ++p)
+			if(*p == '.') { *p = '\0'; break; }
+	}
 	m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
 	m_MacroPracticeAccumulator = 0.0f;
 	m_MacroPracticeLastTime = time_get();
@@ -452,7 +527,7 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput)
 		NewFrame.m_HasCoordinates = 1;
 	}
 
-	pCharacter->OnPredictedInput(&TickInput);
+	pCharacter->OnDirectInput(&TickInput);
 	++m_MacroPracticeWorld.m_GameTick;
 	m_MacroPracticeWorld.Tick();
 	++m_MacroPracticeTick;
@@ -494,6 +569,25 @@ void CControls::StartMacroRecording()
 {
 	if(!StartMacroPractice())
 		return;
+
+	str_copy(m_aMacroMapName, "Неизвестная карта");
+	const char *pMapName = Client()->MapDownloadName();
+	if(pMapName && pMapName[0])
+	{
+		const char *pBaseName = pMapName;
+		for(const char *p = pMapName; *p; ++p)
+			if(*p == '/' || *p == '\\')
+				pBaseName = p + 1;
+		str_copy(m_aMacroMapName, pBaseName);
+		for(char *p = m_aMacroMapName; *p; ++p)
+		{
+			if(*p == '.')
+			{
+				*p = '\0';
+				break;
+			}
+		}
+	}
 
 	m_MacroPlaying = false;
 	m_MacroPlaybackIndex = 0;
@@ -543,6 +637,7 @@ bool CControls::SaveMacro(const char *pName)
 	const bool Written = io_write(File, &Magic, sizeof(Magic)) == sizeof(Magic) &&
 		io_write(File, &Version, sizeof(Version)) == sizeof(Version) &&
 		io_write(File, &Count, sizeof(Count)) == sizeof(Count) &&
+		io_write(File, m_aMacroMapName, sizeof(m_aMacroMapName)) == sizeof(m_aMacroMapName) &&
 		io_write(File, m_vMacroFrames.data(), Count * sizeof(SMacroFrame)) == Count * sizeof(SMacroFrame);
 	io_close(File);
 	return Written;
@@ -566,8 +661,12 @@ bool CControls::PlayMacro(const char *pName)
 		Magic == MACRO_FILE_MAGIC && (Version == 1 || Version == MACRO_FILE_VERSION) &&
 		Count > 0 && Count <= MACRO_MAX_FRAMES;
 
+	char aRecordedMapName[64]{};
+	if(Valid && Version >= 3)
+		Valid = io_read(File, aRecordedMapName, sizeof(aRecordedMapName)) == sizeof(aRecordedMapName);
+
 	std::vector<SMacroFrame> Frames;
-	if(Valid && Version == MACRO_FILE_VERSION)
+	if(Valid && Version >= 2)
 	{
 		Frames.resize(Count);
 		Valid = io_read(File, Frames.data(), Count * sizeof(SMacroFrame)) == Count * sizeof(SMacroFrame);
@@ -626,7 +725,13 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroPracticeLastTime = time_get();
 	m_MacroPlaying = true;
 	UpdateMacroPracticeGhost(pCharacter);
-	GameClient()->Echo("Макрос запущен в отдельном тренировочном мире");
+	if(aRecordedMapName[0] && str_comp_nocase(aRecordedMapName, m_aMacroMapName) != 0)
+	{
+		char aMessage[160];
+		str_format(aMessage, sizeof(aMessage), "Внимание: макрос записан на карте «%s», текущая карта — «%s».", aRecordedMapName, m_aMacroMapName);
+		GameClient()->Echo(aMessage);
+	}
+	GameClient()->Echo("Макрос запущен в тренировочном мире");
 	return true;
 }
 bool CControls::DeleteMacro(const char *pName)
@@ -703,7 +808,7 @@ void CControls::SetMacroPracticeRate(int Rate)
 
 bool CControls::SeekMacro(int Offset)
 {
-	if(!m_MacroPlaying || m_vMacroFrames.empty())
+	if(!m_MacroPracticeActive || m_MacroRecording || m_vMacroFrames.empty())
 		return false;
 
 	const int Current = std::clamp((int)m_MacroPlaybackIndex - 1, 0, (int)m_vMacroFrames.size() - 1);
@@ -720,28 +825,16 @@ bool CControls::SeekMacro(int Offset)
 
 bool CControls::OnInput(const IInput::CEvent &Event)
 {
-	if(!m_MacroPlaying || !m_MacroPracticeActive || GameClient()->m_Chat.IsActive() || GameClient()->m_Menus.IsActive() ||
+	if(!m_MacroPracticeActive || m_MacroRecording || m_vMacroFrames.empty() ||
+		GameClient()->m_Chat.IsActive() || GameClient()->m_Menus.IsActive() ||
 		!(Event.m_Flags & IInput::FLAG_PRESS))
 		return false;
 
-	// Shift+Comma types '<' and Shift+Period types '>'. They seek by ticks only.
-	if(Input()->ShiftIsPressed() && Event.m_Key == KEY_COMMA)
+	if(Event.m_Key == KEY_LEFT)
 		return SeekMacro(-MacroSeekStep());
-	if(Input()->ShiftIsPressed() && Event.m_Key == KEY_PERIOD)
+	if(Event.m_Key == KEY_RIGHT)
 		return SeekMacro(MacroSeekStep());
-
-	if(Event.m_Key == KEY_UP)
-		SetMacroSeekStep(std::min(MacroSeekStep() * 2, 18000));
-	else if(Event.m_Key == KEY_DOWN)
-		SetMacroSeekStep(std::max(MacroSeekStep() / 2, 1));
-	else
-		return false;
-
-	char aMessage[96];
-	str_format(aMessage, sizeof(aMessage), "Шаг перемотки: %d тиков (%.2f с)",
-		MacroSeekStep(), MacroSeekStep() / 50.0f);
-	GameClient()->Echo(aMessage);
-	return true;
+	return false;
 }
 
 void CControls::OnMessage(int Msg, void *pRawMsg)
