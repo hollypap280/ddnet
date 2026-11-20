@@ -71,7 +71,7 @@ public:
 	int MacroPracticeRate() const;
 	void SetMacroPracticeRate(int Rate);
 	bool MacroPracticeActive() const { return m_MacroPracticeActive; }
-	vec2 MacroPracticePosition() const;
+	vec2 MacroPracticePosition();
 	bool MacroPracticeWaiting() const { return m_MacroPracticeWaiting; }
 	bool StartMacroPractice();
 	void StopMacroPractice();
