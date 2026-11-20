@@ -14,6 +14,9 @@
 #include <vector>
 
 #include <game/client/component.h>
+#include <game/client/prediction/gameworld.h>
+
+class CCharacter;
 
 class CControls : public CComponent
 {
@@ -65,6 +68,12 @@ public:
 	int MacroFrameCount() const { return (int)m_vMacroFrames.size(); }
 	int MacroSeekStep() const;
 	void SetMacroSeekStep(int Step);
+	int MacroPracticeRate() const;
+	void SetMacroPracticeRate(int Rate);
+	bool MacroPracticeActive() const { return m_MacroPracticeActive; }
+	bool MacroPracticeWaiting() const { return m_MacroPracticeWaiting; }
+	bool StartMacroPractice();
+	void StopMacroPractice();
 	void StartMacroRecording();
 	void StopMacroRecording();
 	bool SaveMacro(const char *pName);
@@ -80,6 +89,16 @@ private:
 	static void ConTpDummyToCursor(IConsole::IResult *pResult, void *pUserData);
 	vec2 CursorWorldPos() const;
 	struct SMacroFrame
+	{
+		CNetObj_PlayerInput m_Input{};
+		CNetObj_CharacterCore m_PreCore{};
+		CNetObj_CharacterCore m_Core{};
+		CNetObj_Character m_Character{};
+		int m_Weapon = WEAPON_HAMMER;
+		int m_AttackTick = 0;
+		int m_Tick = 0;
+	};
+	struct SMacroFrameV1
 	{
 		int m_Direction;
 		int m_Jump;
@@ -98,6 +117,15 @@ private:
 	bool m_MacroHoldCurrentFrame = false;
 	bool m_MacroRecording = false;
 	bool m_MacroPlaying = false;
+	bool m_MacroPracticeActive = false;
+	bool m_MacroPracticeWaiting = false;
+	float m_MacroPracticeAccumulator = 0.0f;
+	int m_MacroPracticeTick = 0;
+	int m_MacroPracticeLocalId = -1;
+	CNetObj_PlayerInput m_MacroPracticeInput{};
+	CGameWorld m_MacroPracticeWorld;
+	CNetObj_Character m_MacroPracticeRenderChar{};
+	bool m_MacroPracticeHasRenderChar = false;
 	bool m_aManualHook[NUM_DUMMIES]{};
 	bool m_aAutoHookActive[NUM_DUMMIES]{};
 	bool m_aAutoHookFireActive[NUM_DUMMIES]{};
@@ -108,6 +136,9 @@ private:
 	void ApplyEdgeJump(int Dummy);
 	bool MacroFilePath(const char *pName, char *pBuffer, unsigned BufferSize) const;
 	bool SeekMacro(int Offset);
+	void SimulateMacroPracticeTick(const CNetObj_PlayerInput &Input);
+	bool RestoreMacroPracticeFrame(int Index);
+	void UpdateMacroPracticeGhost(CCharacter *pCharacter);
 	static void ConMacroRecord(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroStop(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroSave(IConsole::IResult *pResult, void *pUserData);
