@@ -676,6 +676,17 @@ void CControls::SetMacroSeekStep(int Step)
 	g_Config.m_ClMacroRewindStep = std::clamp(Step, 1, 18000);
 }
 
+vec2 CControls::MacroPracticePosition() const
+{
+	if(m_MacroPracticeActive)
+	{
+		const CCharacter *pCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId);
+		if(pCharacter)
+			return pCharacter->Core()->m_Pos;
+	}
+	return GameClient()->m_LocalCharacterPos;
+}
+
 int CControls::MacroPracticeRate() const
 {
 	return g_Config.m_ClMacroPracticeRate;
