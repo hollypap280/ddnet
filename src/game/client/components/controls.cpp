@@ -429,8 +429,8 @@ bool CControls::SeekMacro(int Offset)
 	m_MacroHoldCurrentFrame = true;
 
 	char aMessage[128];
-	str_format(aMessage, sizeof(aMessage), "Macro position: %d / %d (step %d frames)",
-		Target + 1, (int)m_vMacroFrames.size(), m_MacroSeekStep);
+	str_format(aMessage, sizeof(aMessage), "Macro position: tick %d / %d (step %d ticks)",
+		Target + 1, (int)m_vMacroFrames.size(), MacroSeekStep());
 	GameClient()->Echo(aMessage);
 	return true;
 }
