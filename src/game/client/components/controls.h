@@ -79,7 +79,7 @@ public:
 	void SetMacroPracticeRate(int Rate);
 	bool MacroPracticeActive() const { return m_MacroPracticeActive; }
 	vec2 MacroPracticePosition();
-	const CGameWorld *MacroPracticeWorld() const { return m_MacroPracticeActive ? &m_MacroPracticeWorld : nullptr; }
+	CGameWorld *MacroPracticeWorld() { return m_MacroPracticeActive ? &m_MacroPracticeWorld : nullptr; }
 	float MacroPracticeTickFraction() const { return m_MacroPracticeAccumulator; }
 	bool MacroPracticeWaiting() const { return m_MacroPracticeWaiting; }
 	bool StartMacroPractice();
