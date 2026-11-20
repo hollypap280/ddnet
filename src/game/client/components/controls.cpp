@@ -668,7 +668,7 @@ bool CControls::PlayMacro(const char *pName)
 	bool Valid = io_read(File, &Magic, sizeof(Magic)) == sizeof(Magic) &&
 		io_read(File, &Version, sizeof(Version)) == sizeof(Version) &&
 		io_read(File, &Count, sizeof(Count)) == sizeof(Count) &&
-		Magic == MACRO_FILE_MAGIC && (Version == 1 || Version == MACRO_FILE_VERSION) &&
+		Magic == MACRO_FILE_MAGIC && Version >= 1 && Version <= MACRO_FILE_VERSION &&
 		Count > 0 && Count <= MACRO_MAX_FRAMES;
 
 	char aRecordedMapName[64]{};
