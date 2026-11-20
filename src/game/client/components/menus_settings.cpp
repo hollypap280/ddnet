@@ -612,7 +612,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		Localize("Шаг перемотки (тики)"), 1, 18000);
 
 	char aStatus[192];
-	str_format(aStatus, sizeof(aStatus), "%s | %s | %s | tick %d / %d | seek %d | speed %d tick/s",
+	str_format(aStatus, sizeof(aStatus), "%s | %s | %s | тик %d / %d | шаг %d | скорость %d тик/с",
 		GameClient()->m_Controls.MacroPracticeActive() ? Localize("Тренировка включена") : Localize("Тренировка выключена"),
 		GameClient()->m_Controls.MacroRecording() ? Localize("Запись") : Localize("Нет записи"),
 		GameClient()->m_Controls.MacroPlaying() ? (GameClient()->m_Controls.MacroPracticeWaiting() ? Localize("Ожидание координаты") : Localize("Воспроизведение")) : Localize("Не воспроизводится"),
