@@ -905,8 +905,9 @@ void CControls::OnMessage(int Msg, void *pRawMsg)
 void CControls::ApplyHookAutomation(int Dummy)
 {
 	const CNetObj_Character *pLocal = GameClient()->m_Snap.m_pLocalCharacter;
+	const CCharacter *pPracticeLocal = m_MacroPracticeActive ? m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId) : nullptr;
 	const bool ManualHook = m_aManualHook[Dummy];
-	if(!pLocal)
+	if(!pLocal && !pPracticeLocal)
 	{
 		m_aInputData[Dummy].m_Hook = ManualHook ? 1 : 0;
 		m_aAutoHookActive[Dummy] = false;
@@ -915,12 +916,18 @@ void CControls::ApplyHookAutomation(int Dummy)
 		return;
 	}
 
-	const vec2 LocalPos((float)pLocal->m_X, (float)pLocal->m_Y);
+	const CCharacterCore &LocalCore = pPracticeLocal ? *pPracticeLocal->Core() : GameClient()->m_PredictedChar;
+	const vec2 LocalPos = pPracticeLocal ? LocalCore.m_Pos : vec2((float)pLocal->m_X, (float)pLocal->m_Y);
+	const vec2 LocalVel = pPracticeLocal ? LocalCore.m_Vel : vec2(pLocal->m_VelX / 256.0f, pLocal->m_VelY / 256.0f);
+	const int LocalId = GameClient()->m_Snap.m_LocalClientId;
+	const int DummyId = GameClient()->m_aLocalIds[!g_Config.m_ClDummy];
+	const bool PracticeActive = pPracticeLocal != nullptr;
+
 	bool FoundTarget = false;
 	vec2 BestTarget(0.0f, 0.0f);
 
-	// Manual hook always has priority. Automatic targeting never changes the
-	// visible cursor and sends only a replacement input direction to the server.
+	// Manual hook always has priority. During macro practice the same
+	// automation works from the private tee's position and mirrored teammates.
 	if((g_Config.m_ClAutoHook || g_Config.m_ClAutoTriplefly) && !ManualHook)
 	{
 		const float Range = std::clamp((float)g_Config.m_ClAutoHookRange, 32.0f, 360.0f);
@@ -930,13 +937,11 @@ void CControls::ApplyHookAutomation(int Dummy)
 		const vec2 ManualAim = m_aMousePos[Dummy];
 		const float AimLength = length(ManualAim);
 		const float AimAngle = std::clamp((float)g_Config.m_ClAutoHookAngle, 10.0f, 360.0f);
-		const int LocalId = GameClient()->m_Snap.m_LocalClientId;
-		const int DummyId = GameClient()->m_aLocalIds[!g_Config.m_ClDummy];
 
 		for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
 		{
-			// Triplefly is a three-tee setup: the controlled tee is first,
-			// the local dummy is second, and the selected partner is the third.
+			// Triplefly is a three-tee setup: controlled tee, local dummy,
+			// then the third tee. Do not accidentally hook the dummy instead.
 			if(ClientId == LocalId || (g_Config.m_ClAutoTriplefly && ClientId == DummyId) ||
 				!GameClient()->m_Snap.m_aCharacters[ClientId].m_Active)
 				continue;
@@ -944,8 +949,12 @@ void CControls::ApplyHookAutomation(int Dummy)
 				GameClient()->m_aClients[ClientId].m_HookHitDisabled)
 				continue;
 
-			const CNetObj_Character &Character = GameClient()->m_Snap.m_aCharacters[ClientId].m_Cur;
-			const vec2 TargetPos((float)Character.m_X, (float)Character.m_Y);
+			const CCharacter *pPracticeTarget = PracticeActive ? m_MacroPracticeWorld.GetCharacterById(ClientId) : nullptr;
+			if(PracticeActive && !pPracticeTarget)
+				continue;
+
+			const vec2 TargetPos = pPracticeTarget ? pPracticeTarget->Core()->m_Pos :
+				vec2((float)GameClient()->m_Snap.m_aCharacters[ClientId].m_Cur.m_X, (float)GameClient()->m_Snap.m_aCharacters[ClientId].m_Cur.m_Y);
 			const vec2 Delta = TargetPos - LocalPos;
 			const float DistanceSquared = dot(Delta, Delta);
 			if(DistanceSquared < 1.0f || DistanceSquared > RangeSquared)
@@ -980,10 +989,9 @@ void CControls::ApplyHookAutomation(int Dummy)
 			}
 		}
 
-		const int TargetRank = 0;
-		if(aBestDistances[TargetRank] <= RangeSquared)
+		if(aBestDistances[0] <= RangeSquared)
 		{
-			BestTarget = aBestTargets[TargetRank];
+			BestTarget = aBestTargets[0];
 			FoundTarget = true;
 			m_aInputData[Dummy].m_TargetX = round_to_int(BestTarget.x);
 			m_aInputData[Dummy].m_TargetY = round_to_int(BestTarget.y);
@@ -1002,42 +1010,46 @@ void CControls::ApplyHookAutomation(int Dummy)
 		m_aAutoHookActive[Dummy] = false;
 	}
 
-	// Auto unfreeze targets the nearest visible frozen teammate with the laser.
+	// Auto unfreeze uses the active tee's actual laser inventory and the
+	// mirrored frozen teammate positions when running in macro practice.
 	int AutoWeapon = -1;
 	if(g_Config.m_ClAutoUnfreezeLaser)
 	{
-		const int LocalId = GameClient()->m_Snap.m_LocalClientId;
-		if(LocalId < 0 || LocalId >= MAX_CLIENTS)
-			return;
-		const CCharacterCore &Predicted = GameClient()->m_PredictedChar;
-		if(Predicted.m_aWeapons[WEAPON_LASER].m_Got &&
-			(GameClient()->m_GameInfo.m_UnlimitedAmmo || Predicted.m_aWeapons[WEAPON_LASER].m_Ammo != 0))
+		if(LocalCore.m_aWeapons[WEAPON_LASER].m_Got &&
+			(GameClient()->m_GameInfo.m_UnlimitedAmmo || LocalCore.m_aWeapons[WEAPON_LASER].m_Ammo != 0))
 		{
 			const int TuneZone = Collision()->IsTune(Collision()->GetMapIndex(LocalPos));
 			const float LaserRange = std::max(32.0f, static_cast<float>(GameClient()->GetTuning(TuneZone)->m_LaserReach));
 			const float Range = std::clamp(LaserRange, 32.0f, 1200.0f);
 			float BestFrozenDistance = Range * Range;
+			const int GameTick = Client()->GameTick(g_Config.m_ClDummy);
 			for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
 			{
-				if(ClientId == LocalId || !GameClient()->m_Snap.m_aCharacters[ClientId].m_Active || GameClient()->IsOtherTeam(ClientId) || GameClient()->m_aClients[ClientId].m_LaserHitDisabled)
+				if(ClientId == LocalId || !GameClient()->m_Snap.m_aCharacters[ClientId].m_Active ||
+					GameClient()->IsOtherTeam(ClientId) || GameClient()->m_aClients[ClientId].m_LaserHitDisabled)
 					continue;
-				const int GameTick = Client()->GameTick(g_Config.m_ClDummy);
+
+				const CCharacter *pPracticeTarget = PracticeActive ? m_MacroPracticeWorld.GetCharacterById(ClientId) : nullptr;
+				if(PracticeActive && !pPracticeTarget)
+					continue;
+
 				const auto &TargetInfo = GameClient()->m_Snap.m_aCharacters[ClientId];
 				const int FreezeEnd = GameClient()->m_aClients[ClientId].m_FreezeEnd;
 				const int ExtendedFreezeEnd = TargetInfo.m_HasExtendedData ? TargetInfo.m_ExtendedData.m_FreezeEnd : 0;
-				const bool Frozen = GameClient()->m_aClients[ClientId].m_DeepFrozen ||
-					GameClient()->m_aClients[ClientId].m_LiveFrozen ||
-					FreezeEnd == -1 || FreezeEnd > GameTick ||
-					ExtendedFreezeEnd == -1 || ExtendedFreezeEnd > GameTick;
+				const bool Frozen = pPracticeTarget ?
+					(pPracticeTarget->m_FreezeTime > 0 || pPracticeTarget->Core()->m_DeepFrozen || pPracticeTarget->Core()->m_LiveFrozen) :
+					(GameClient()->m_aClients[ClientId].m_DeepFrozen || GameClient()->m_aClients[ClientId].m_LiveFrozen ||
+						FreezeEnd == -1 || FreezeEnd > GameTick || ExtendedFreezeEnd == -1 || ExtendedFreezeEnd > GameTick);
 				if(!Frozen)
 					continue;
 
-				const CNetObj_Character &Character = GameClient()->m_Snap.m_aCharacters[ClientId].m_Cur;
-				const vec2 TargetPos((float)Character.m_X, (float)Character.m_Y);
+				const vec2 TargetPos = pPracticeTarget ? pPracticeTarget->Core()->m_Pos :
+					vec2((float)TargetInfo.m_Cur.m_X, (float)TargetInfo.m_Cur.m_Y);
 				const vec2 Delta = TargetPos - LocalPos;
 				const float DistanceSquared = dot(Delta, Delta);
 				if(DistanceSquared < 1.0f || DistanceSquared > BestFrozenDistance)
 					continue;
+
 				vec2 CollisionPos;
 				vec2 BeforeCollision;
 				if(Collision()->IntersectLine(LocalPos, TargetPos, &CollisionPos, &BeforeCollision) != 0)
@@ -1058,11 +1070,10 @@ void CControls::ApplyHookAutomation(int Dummy)
 		}
 	}
 
-	// Optional weapon fire is aimed at the same selected tee.
+	// Optional weapon fire is aimed at the same selected tee. Use the private
+	// tee's weapon state while practicing, never the stationary server tee.
 	if(AutoWeapon < 0 && FoundTarget && !ManualHook)
 	{
-		const CCharacterCore &Predicted = GameClient()->m_PredictedChar;
-		const bool UnlimitedAmmo = GameClient()->m_GameInfo.m_UnlimitedAmmo;
 		const int aWeapons[] = {WEAPON_LASER, WEAPON_SHOTGUN, WEAPON_GRENADE, WEAPON_GUN};
 		const bool aEnabled[] = {
 			g_Config.m_ClAutoHookWeaponLaser != 0,
@@ -1072,8 +1083,8 @@ void CControls::ApplyHookAutomation(int Dummy)
 		for(int i = 0; i < 4; ++i)
 		{
 			const int Weapon = aWeapons[i];
-			if(aEnabled[i] && Predicted.m_aWeapons[Weapon].m_Got &&
-				(UnlimitedAmmo || Predicted.m_aWeapons[Weapon].m_Ammo != 0))
+			if(aEnabled[i] && LocalCore.m_aWeapons[Weapon].m_Got &&
+				(GameClient()->m_GameInfo.m_UnlimitedAmmo || LocalCore.m_aWeapons[Weapon].m_Ammo != 0))
 			{
 				AutoWeapon = Weapon;
 				break;
@@ -1095,9 +1106,6 @@ void CControls::ApplyHookAutomation(int Dummy)
 		m_aAutoHookFireActive[Dummy] = false;
 	}
 
-	// Avoid assist: when rising, hook a surface below; when falling, hook a
-	// side surface slightly above the tee to reduce downward momentum.
-	// Recompute the assist every tick so a previous automatic hook cannot stick.
 	if(m_aAutoAvoidActive[Dummy])
 	{
 		m_aInputData[Dummy].m_Hook = ManualHook ? 1 : 0;
@@ -1105,14 +1113,12 @@ void CControls::ApplyHookAutomation(int Dummy)
 	}
 	if(!FoundTarget && !ManualHook && g_Config.m_ClAutoAvoid)
 	{
-		const float VelX = pLocal->m_VelX / 256.0f;
-		const float VelY = pLocal->m_VelY / 256.0f;
+		const float VelX = LocalVel.x;
+		const float VelY = LocalVel.y;
 		vec2 Candidates[2];
 		int NumCandidates = 0;
 		if(VelY < -2.0f)
-		{
 			Candidates[NumCandidates++] = vec2(0.0f, 1.0f);
-		}
 		else if(VelY > 2.0f)
 		{
 			const float Side = VelX >= 0.0f ? -1.0f : 1.0f;
@@ -1146,6 +1152,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 		}
 	}
 }
+
 
 void CControls::ApplyEdgeAssist(int Dummy)
 {
