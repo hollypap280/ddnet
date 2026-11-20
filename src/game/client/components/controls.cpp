@@ -49,6 +49,9 @@ void CControls::OnReset()
 	m_MacroRecording = false;
 	m_MacroPlaying = false;
 	m_MacroPlaybackIndex = 0;
+	m_MacroCurrentFrame = {};
+	m_MacroPlaybackAccumulator = 0.0f;
+	m_MacroHasCurrentFrame = false;
 	m_vMacroFrames.clear();
 	std::fill(std::begin(m_aManualHook), std::end(m_aManualHook), false);
 	std::fill(std::begin(m_aAutoHookActive), std::end(m_aAutoHookActive), false);
@@ -282,6 +285,9 @@ void CControls::StartMacroRecording()
 {
 	m_MacroPlaying = false;
 	m_MacroPlaybackIndex = 0;
+	m_MacroCurrentFrame = {};
+	m_MacroPlaybackAccumulator = 0.0f;
+	m_MacroHasCurrentFrame = false;
 	m_vMacroFrames.clear();
 	m_MacroRecording = true;
 	GameClient()->Echo("Macro recording started");
@@ -298,6 +304,9 @@ void CControls::StopMacroRecording()
 	}
 	m_MacroPlaying = false;
 	m_MacroPlaybackIndex = 0;
+	m_MacroCurrentFrame = {};
+	m_MacroPlaybackAccumulator = 0.0f;
+	m_MacroHasCurrentFrame = false;
 }
 
 bool CControls::SaveMacro(const char *pName)
@@ -348,6 +357,9 @@ bool CControls::PlayMacro(const char *pName)
 	m_vMacroFrames = std::move(Frames);
 	m_MacroRecording = false;
 	m_MacroPlaybackIndex = 0;
+	m_MacroCurrentFrame = {};
+	m_MacroPlaybackAccumulator = 0.0f;
+	m_MacroHasCurrentFrame = false;
 	m_MacroPlaying = true;
 	GameClient()->Echo("Macro playback started");
 	return true;
@@ -392,6 +404,63 @@ void CControls::ConMacroDelete(IConsole::IResult *pResult, void *pUserData)
 		pSelf->GameClient()->Echo("Could not delete macro. Check its name.");
 	else
 		pSelf->GameClient()->Echo("Macro deleted");
+}
+
+void CControls::SetMacroPlaybackSpeed(float Speed)
+{
+	if(Speed >= 0.1f && Speed <= 4.0f)
+		m_MacroPlaybackSpeed = Speed;
+}
+
+void CControls::SetMacroSeekStep(int Step)
+{
+	m_MacroSeekStep = std::clamp(Step, 1, 18000);
+}
+
+bool CControls::SeekMacro(int Offset)
+{
+	if(!m_MacroPlaying || m_vMacroFrames.empty() || !m_MacroHasCurrentFrame)
+		return false;
+
+	const int Current = std::clamp((int)m_MacroPlaybackIndex - 1, 0, (int)m_vMacroFrames.size() - 1);
+	const int Target = std::clamp(Current + Offset, 0, (int)m_vMacroFrames.size() - 1);
+	m_MacroCurrentFrame = m_vMacroFrames[Target];
+	m_MacroPlaybackIndex = (std::size_t)Target + 1;
+	m_MacroPlaybackAccumulator = 0.0f;
+
+	char aMessage[128];
+	str_format(aMessage, sizeof(aMessage), "Macro position: %d / %d (step %d frames)",
+		Target + 1, (int)m_vMacroFrames.size(), m_MacroSeekStep);
+	GameClient()->Echo(aMessage);
+	return true;
+}
+
+bool CControls::OnInput(const IInput::CEvent &Event)
+{
+	if(!m_MacroPlaying || GameClient()->m_Chat.IsActive() || GameClient()->m_Menus.IsActive() ||
+		!(Event.m_Flags & IInput::FLAG_PRESS))
+		return false;
+
+	switch(Event.m_Key)
+	{
+	case KEY_LEFT:
+		return SeekMacro(-m_MacroSeekStep);
+	case KEY_RIGHT:
+		return SeekMacro(m_MacroSeekStep);
+	case KEY_UP:
+		SetMacroSeekStep(std::min(m_MacroSeekStep * 2, 18000));
+		break;
+	case KEY_DOWN:
+		SetMacroSeekStep(std::max(m_MacroSeekStep / 2, 1));
+		break;
+	default:
+		return false;
+	}
+
+	char aMessage[96];
+	str_format(aMessage, sizeof(aMessage), "Macro seek step: %d frames", m_MacroSeekStep);
+	GameClient()->Echo(aMessage);
+	return true;
 }
 
 void CControls::OnMessage(int Msg, void *pRawMsg)
@@ -447,10 +516,12 @@ void CControls::ApplyHookAutomation(int Dummy)
 			if(DistanceSquared < 1.0f || DistanceSquared > BestDistanceSquared)
 				continue;
 
-			if(!g_Config.m_ClAutoHook360 && AimLength > 1.0f)
+			const float AimAngle = std::clamp((float)g_Config.m_ClAutoHookAngle, 10.0f, 360.0f);
+			if(AimLength > 1.0f && AimAngle < 359.9f)
 			{
 				const float AimDot = dot(ManualAim, Delta) / (AimLength * std::sqrt(DistanceSquared));
-				if(AimDot < 0.35f)
+				const float MinimumAimDot = std::cos(AimAngle * 0.5f * pi / 180.0f);
+				if(AimDot < MinimumAimDot)
 					continue;
 			}
 
@@ -761,22 +832,39 @@ int CControls::SnapInput(int *pData)
 			m_aInputData[g_Config.m_ClDummy].m_TargetY = (int)(std::cos(t * 3) * 100.0f);
 		}
 
-		// Macro playback has priority over live input.
+		// Macro playback has priority over live input. Speeds below 1.0
+		// hold each recorded frame for multiple ticks; higher speeds skip frames.
 		if(m_MacroPlaying)
 		{
-			if(m_MacroPlaybackIndex >= m_vMacroFrames.size())
+			if(!m_MacroHasCurrentFrame)
 			{
-				m_MacroPlaying = false;
-				m_aInputData[g_Config.m_ClDummy].m_Direction = 0;
-				m_aInputData[g_Config.m_ClDummy].m_Jump = 0;
-				m_aInputData[g_Config.m_ClDummy].m_Hook = 0;
-				if(m_aInputData[g_Config.m_ClDummy].m_Fire & 1)
-					m_aInputData[g_Config.m_ClDummy].m_Fire++;
-				Send = true;
+				if(m_MacroPlaybackIndex < m_vMacroFrames.size())
+				{
+					m_MacroCurrentFrame = m_vMacroFrames[m_MacroPlaybackIndex++];
+					m_MacroHasCurrentFrame = true;
+				}
+				else
+				{
+					m_MacroPlaying = false;
+				}
 			}
 			else
 			{
-				const SMacroFrame &Frame = m_vMacroFrames[m_MacroPlaybackIndex++];
+				m_MacroPlaybackAccumulator += m_MacroPlaybackSpeed;
+				const int FramesToAdvance = (int)m_MacroPlaybackAccumulator;
+				if(FramesToAdvance > 0)
+				{
+					m_MacroPlaybackAccumulator -= FramesToAdvance;
+					for(int i = 0; i < FramesToAdvance && m_MacroPlaybackIndex < m_vMacroFrames.size(); ++i)
+						m_MacroCurrentFrame = m_vMacroFrames[m_MacroPlaybackIndex++];
+				}
+				if(m_MacroPlaybackIndex >= m_vMacroFrames.size() && FramesToAdvance > 0)
+					m_MacroPlaybackAccumulator = 0.0f;
+			}
+
+			if(m_MacroPlaying && m_MacroHasCurrentFrame)
+			{
+				const SMacroFrame &Frame = m_MacroCurrentFrame;
 				CNetObj_PlayerInput &Input = m_aInputData[g_Config.m_ClDummy];
 				Input.m_Direction = Frame.m_Direction;
 				Input.m_Jump = Frame.m_Jump;
@@ -787,6 +875,17 @@ int CControls::SnapInput(int *pData)
 				Input.m_PrevWeapon = Frame.m_PrevWeapon;
 				Input.m_TargetX = Frame.m_TargetX;
 				Input.m_TargetY = Frame.m_TargetY;
+				Send = true;
+			}
+			else
+			{
+				m_aInputData[g_Config.m_ClDummy].m_Direction = 0;
+				m_aInputData[g_Config.m_ClDummy].m_Jump = 0;
+				m_aInputData[g_Config.m_ClDummy].m_Hook = 0;
+				if(m_aInputData[g_Config.m_ClDummy].m_Fire & 1)
+					m_aInputData[g_Config.m_ClDummy].m_Fire++;
+				m_MacroHasCurrentFrame = false;
+				m_MacroPlaying = false;
 				Send = true;
 			}
 		}
@@ -873,13 +972,17 @@ void CControls::OnRender()
 	if(g_Config.m_ClAutoHook && g_Config.m_ClAutoHookShowRadius && GameClient()->m_Snap.m_pLocalCharacter)
 	{
 		const float Radius = std::clamp((float)g_Config.m_ClAutoHookRange, 32.0f, 360.0f);
+		const float ConeAngle = std::clamp((float)g_Config.m_ClAutoHookAngle, 10.0f, 360.0f);
+		const float AimAngle = std::atan2(m_aMousePos[g_Config.m_ClDummy].y, m_aMousePos[g_Config.m_ClDummy].x);
+		const float HalfAngle = ConeAngle * 0.5f * pi / 180.0f;
+		const int DotCount = std::max(2, round_to_int(72.0f * ConeAngle / 360.0f));
 		const vec2 Center((float)GameClient()->m_Snap.m_pLocalCharacter->m_X, (float)GameClient()->m_Snap.m_pLocalCharacter->m_Y);
 		Graphics()->TextureClear();
 		Graphics()->QuadsBegin();
 		Graphics()->SetColor(0.25f, 0.80f, 1.0f, 0.65f);
-		for(int i = 0; i < 72; ++i)
+		for(int i = 0; i < DotCount; ++i)
 		{
-			const float Angle = (2.0f * pi * i) / 72.0f;
+			const float Angle = AimAngle - HalfAngle + (2.0f * HalfAngle * i) / (DotCount - 1);
 			IGraphics::CQuadItem Dot(Center.x + std::cos(Angle) * Radius - 1.5f,
 				Center.y + std::sin(Angle) * Radius - 1.5f, 3.0f, 3.0f);
 			Graphics()->QuadsDrawTL(&Dot, 1);
