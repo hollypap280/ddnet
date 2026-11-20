@@ -363,6 +363,7 @@ bool CControls::StartMacroPractice()
 	}
 
 	m_MacroPracticeWorld.CopyWorld(&GameClient()->m_PredictedWorld);
+	PopulateMacroPracticeWorld();
 	if(!m_MacroPracticeWorld.GetCharacterById(LocalId))
 	{
 		m_MacroPracticeWorld.Clear();
@@ -416,6 +417,26 @@ void CControls::UpdateMacroPracticeGhost(CCharacter *pCharacter)
 {
 	(void)pCharacter;
 	GameClient()->m_Ghost.SetMacroPracticeWorld(&m_MacroPracticeWorld);
+}
+
+void CControls::PopulateMacroPracticeWorld()
+{
+	m_MacroPracticeWorld.m_LocalClientId = m_MacroPracticeLocalId;
+	for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
+	{
+		const auto &Info = GameClient()->m_Snap.m_aCharacters[ClientId];
+		if(!Info.m_Active || m_MacroPracticeWorld.GetCharacterById(ClientId))
+			continue;
+
+		CNetObj_Character Character = Info.m_Cur;
+		CNetObj_DDNetCharacter *pExtended = Info.m_HasExtendedData ? &GameClient()->m_Snap.m_aCharacters[ClientId].m_ExtendedData : nullptr;
+		auto *pPracticeCharacter = new CCharacter(&m_MacroPracticeWorld, ClientId, &Character, pExtended);
+		pPracticeCharacter->m_GameTeam = GameClient()->IsTeamPlay() ? GameClient()->m_aClients[ClientId].m_Team : ClientId;
+		pPracticeCharacter->m_IsLocal = ClientId == m_MacroPracticeLocalId;
+		m_MacroPracticeWorld.InsertEntity(pPracticeCharacter);
+	}
+
+	UpdateMacroPracticeGhost(m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId));
 }
 
 bool CControls::RestoreMacroPracticeFrame(int Index)
@@ -689,6 +710,7 @@ bool CControls::PlayMacro(const char *pName)
 
 	// Reset only the local practice tee. The server tee remains idle.
 	m_MacroPracticeWorld.CopyWorld(&GameClient()->m_PredictedWorld);
+	PopulateMacroPracticeWorld();
 	CCharacter *pCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId);
 	if(!pCharacter)
 		return false;
@@ -912,7 +934,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 			}
 		}
 
-		const int TargetRank = g_Config.m_ClAutoTriplefly ? 2 : 0;
+		const int TargetRank = g_Config.m_ClAutoTriplefly ? 1 : 0;
 		if(aBestDistances[TargetRank] <= RangeSquared)
 		{
 			BestTarget = aBestTargets[TargetRank];
@@ -944,7 +966,9 @@ void CControls::ApplyHookAutomation(int Dummy)
 		if(Predicted.m_aWeapons[WEAPON_LASER].m_Got &&
 			(GameClient()->m_GameInfo.m_UnlimitedAmmo || Predicted.m_aWeapons[WEAPON_LASER].m_Ammo != 0))
 		{
-			const float Range = std::clamp((float)g_Config.m_ClAutoHookRange, 32.0f, 360.0f);
+			const int TuneZone = Collision()->IsTune(Collision()->GetMapIndex(LocalPos));
+			const float LaserRange = std::max(32.0f, GameClient()->GetTuning(TuneZone)->m_LaserReach);
+			const float Range = std::clamp(LaserRange, 32.0f, 1200.0f);
 			float BestFrozenDistance = Range * Range;
 			const vec2 ManualAim = m_aMousePos[Dummy];
 			const float AimLength = length(ManualAim);
@@ -954,10 +978,14 @@ void CControls::ApplyHookAutomation(int Dummy)
 			{
 				if(ClientId == LocalId || !GameClient()->m_Snap.m_aCharacters[ClientId].m_Active || GameClient()->IsOtherTeam(ClientId) || GameClient()->m_aClients[ClientId].m_LaserHitDisabled)
 					continue;
-				const bool Frozen = GameClient()->m_aClients[ClientId].m_FreezeEnd != 0 ||
+				const int GameTick = Client()->GameTick(g_Config.m_ClDummy);
+				const auto &TargetInfo = GameClient()->m_Snap.m_aCharacters[ClientId];
+				const int FreezeEnd = GameClient()->m_aClients[ClientId].m_FreezeEnd;
+				const int ExtendedFreezeEnd = TargetInfo.m_HasExtendedData ? TargetInfo.m_ExtendedData.m_FreezeEnd : 0;
+				const bool Frozen = GameClient()->m_aClients[ClientId].m_DeepFrozen ||
 					GameClient()->m_aClients[ClientId].m_LiveFrozen ||
-					(GameClient()->m_Snap.m_aCharacters[ClientId].m_HasExtendedData &&
-						GameClient()->m_Snap.m_aCharacters[ClientId].m_ExtendedData.m_FreezeEnd != 0);
+					FreezeEnd == -1 || FreezeEnd > GameTick ||
+					ExtendedFreezeEnd == -1 || ExtendedFreezeEnd > GameTick;
 				if(!Frozen)
 					continue;
 
@@ -1468,7 +1496,7 @@ void CControls::OnRender()
 		m_aTargetPos[g_Config.m_ClDummy] = m_aMousePos[g_Config.m_ClDummy];
 	}
 
-	if((g_Config.m_ClAutoHook || g_Config.m_ClAutoTriplefly || g_Config.m_ClAutoUnfreezeLaser) && g_Config.m_ClAutoHookShowRadius && GameClient()->m_Snap.m_pLocalCharacter)
+	if(g_Config.m_ClAutoHookShowRadius && GameClient()->m_Snap.m_pLocalCharacter)
 	{
 		const float Radius = std::clamp((float)g_Config.m_ClAutoHookRange, 32.0f, 360.0f);
 		const float ConeAngle = std::clamp((float)g_Config.m_ClAutoHookAngle, 10.0f, 360.0f);
@@ -1479,12 +1507,23 @@ void CControls::OnRender()
 		Graphics()->TextureClear();
 		Graphics()->QuadsBegin();
 		Graphics()->SetColor(0.25f, 0.80f, 1.0f, 0.65f);
-		for(int i = 0; i < DotCount; ++i)
+		for(int i = 0; i < 72; ++i)
 		{
-			const float Angle = AimAngle - HalfAngle + (2.0f * HalfAngle * i) / (DotCount - 1);
+			const float Angle = (2.0f * pi * i) / 72.0f;
 			IGraphics::CQuadItem Dot(Center.x + std::cos(Angle) * Radius - 1.5f,
 				Center.y + std::sin(Angle) * Radius - 1.5f, 3.0f, 3.0f);
 			Graphics()->QuadsDrawTL(&Dot, 1);
+		}
+		// Draw a second, thinner arc for the current search cone.
+		if(ConeAngle < 359.9f)
+		{
+			for(int i = 0; i < DotCount; ++i)
+			{
+				const float Angle = AimAngle - HalfAngle + (2.0f * HalfAngle * i) / (DotCount - 1);
+				IGraphics::CQuadItem Dot(Center.x + std::cos(Angle) * Radius - 0.8f,
+					Center.y + std::sin(Angle) * Radius - 0.8f, 1.6f, 1.6f);
+				Graphics()->QuadsDrawTL(&Dot, 1);
+			}
 		}
 
 		// Draw the two edges of the circular aiming sector, making the
