@@ -264,6 +264,12 @@ namespace
 	constexpr uint32_t MACRO_MAX_FRAMES = 18000;
 }
 
+struct SMacroListContext
+{
+	CControls *m_pControls;
+	std::vector<CControls::SMacroInfo> *m_pMacros;
+};
+
 bool CControls::MacroFilePath(const char *pName, char *pBuffer, unsigned BufferSize) const
 {
 	if(!pName || !pName[0])
@@ -291,23 +297,28 @@ int CControls::MacroListCallback(const char *pName, int IsDir, int DirType, void
 	if(IsDir || !pName || !pUser)
 		return 0;
 
+	auto *pContext = static_cast<SMacroListContext *>(pUser);
+	CControls *pControls = pContext->m_pControls;
+	std::vector<SMacroInfo> *pvMacros = pContext->m_pMacros;
+	if(!pControls || !pvMacros)
+		return 0;
+
 	const size_t NameLength = str_length(pName);
 	constexpr const char *pExtension = ".dmacro";
 	constexpr size_t ExtensionLength = 7;
 	if(NameLength <= ExtensionLength || str_comp(pName + NameLength - ExtensionLength, pExtension) != 0)
 		return 0;
 
-	auto *pvMacros = static_cast<std::vector<SMacroInfo> *>(pUser);
 	SMacroInfo Info;
 	const size_t BaseNameLength = std::min(NameLength - ExtensionLength, sizeof(Info.m_aName) - 1);
 	str_copy(Info.m_aName, pName, BaseNameLength + 1);
 	Info.m_aMapName[0] = '\0';
 
 	char aPath[128];
-	if(!MacroFilePath(Info.m_aName, aPath, sizeof(aPath)))
+	if(!pControls->MacroFilePath(Info.m_aName, aPath, sizeof(aPath)))
 		return 0;
 
-	IOHANDLE File = Storage()->OpenFile(aPath, IOFLAG_READ, IStorage::TYPE_SAVE);
+	IOHANDLE File = pControls->Storage()->OpenFile(aPath, IOFLAG_READ, IStorage::TYPE_SAVE);
 	if(!File)
 		return 0;
 
@@ -343,7 +354,8 @@ int CControls::MacroListCallback(const char *pName, int IsDir, int DirType, void
 void CControls::GetMacroList(std::vector<SMacroInfo> &vMacros)
 {
 	vMacros.clear();
-	Storage()->ListDirectory(IStorage::TYPE_SAVE, "macros", MacroListCallback, &vMacros);
+	SMacroListContext Context{this, &vMacros};
+	Storage()->ListDirectory(IStorage::TYPE_SAVE, "macros", MacroListCallback, &Context);
 	std::sort(vMacros.begin(), vMacros.end(), [](const SMacroInfo &Left, const SMacroInfo &Right) {
 		return str_comp_nocase(Left.m_aName, Right.m_aName) < 0;
 	});
@@ -965,7 +977,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 			(GameClient()->m_GameInfo.m_UnlimitedAmmo || Predicted.m_aWeapons[WEAPON_LASER].m_Ammo != 0))
 		{
 			const int TuneZone = Collision()->IsTune(Collision()->GetMapIndex(LocalPos));
-			const float LaserRange = std::max(32.0f, GameClient()->GetTuning(TuneZone)->m_LaserReach);
+			const float LaserRange = std::max(32.0f, static_cast<float>(GameClient()->GetTuning(TuneZone)->m_LaserReach));
 			const float Range = std::clamp(LaserRange, 32.0f, 1200.0f);
 			float BestFrozenDistance = Range * Range;
 			const int LocalId = GameClient()->m_Snap.m_LocalClientId;
