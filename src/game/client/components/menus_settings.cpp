@@ -593,8 +593,8 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	for(int i = 0; i < (int)s_vMacros.size(); ++i)
 	{
 		if(s_MacroSearch.IsEmpty() ||
-			str_find_nocase(s_vMacros[i].m_aName, s_MacroSearch.GetString()) ||
-			str_find_nocase(s_vMacros[i].m_aMapName, s_MacroSearch.GetString()))
+			str_utf8_find_nocase(s_vMacros[i].m_aName, s_MacroSearch.GetString()) ||
+			str_utf8_find_nocase(s_vMacros[i].m_aMapName, s_MacroSearch.GetString()))
 			vVisibleMacros.push_back(i);
 	}
 
