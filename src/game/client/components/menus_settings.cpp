@@ -57,8 +57,8 @@ void CMenus::RenderSettings(CUIRect MainView)
 		Localize("Assets"),
 		Localize("Credits"),
 		Localize("Game"),
-		Localize("Macros"),
-		Localize("Buttons")};
+		Localize("Макросы"),
+		Localize("Клавиши")};
 	static CButtonContainer s_aTabButtons[SETTINGS_LENGTH];
 
 	for(int i = 0; i < SETTINGS_LENGTH; i++)
@@ -429,127 +429,127 @@ void CMenus::RenderSettingsGame(CUIRect MainView)
 {
 	CUIRect Row, Label;
 	MainView.HSplitTop(28.0f, &Label, &MainView);
-	Ui()->DoLabel(&Label, Localize("Game automation"), 20.0f, TEXTALIGN_ML);
+	Ui()->DoLabel(&Label, Localize("Игровые функции"), 20.0f, TEXTALIGN_ML);
 	MainView.HSplitTop(5.0f, nullptr, &MainView);
 
 	static CButtonContainer s_AutoHook, s_Angle, s_Radius, s_Avoid, s_Edge;
 	static CButtonContainer s_Gun, s_Shotgun, s_Grenade, s_Laser;
-	static CButtonContainer s_AutoTriplefly, s_AutoUnfreeze, s_AimAtTee, s_Backhook, s_EdgeJump, s_DummyFlight;
+	static CButtonContainer s_AutoTriplefly, s_AutoUnfreeze, s_AimAtTee, s_Backhook, s_EdgeHook, s_DummyFlight;
 	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoHook, Localize("Auto Hook mode"), g_Config.m_ClAutoHook, &Row))
+	if(DoButton_CheckBox(&g_Config.m_ClAutoHook, Localize("Автохук"), g_Config.m_ClAutoHook, &Row))
 		g_Config.m_ClAutoHook ^= 1;
-	Ui()->DoToolTip(&s_AutoHook, &Row, Localize("Automatically hooks the nearest visible tee inside the configured range"));
+	Ui()->DoToolTip(&s_AutoHook, &Row, Localize("Автоматически цепляется за ближайшего видимого тии в заданном радиусе"));
 
 	MainView.HSplitTop(28.0f, &Row, &MainView);
-	Ui()->DoScrollbarOption(&g_Config.m_ClAutoHookAngle, &g_Config.m_ClAutoHookAngle, &Row, Localize("Auto Hook angle (degrees)"), 10, 360);
-	Ui()->DoToolTip(&s_Angle, &Row, Localize("Controls the aiming cone independently of distance. 250 degrees excludes the exact direction behind you; 360 degrees allows the full circle."));
+	Ui()->DoScrollbarOption(&g_Config.m_ClAutoHookAngle, &g_Config.m_ClAutoHookAngle, &Row, Localize("Угол автохука (градусы)"), 10, 360);
+	Ui()->DoToolTip(&s_Angle, &Row, Localize("Меняет угол поиска независимо от дальности. 250° исключает направление строго за спиной, 360° разрешает полный круг."));
 
 	MainView.HSplitTop(28.0f, &Row, &MainView);
-	Ui()->DoScrollbarOption(&g_Config.m_ClAutoHookRange, &g_Config.m_ClAutoHookRange, &Row, Localize("Auto Hook range"), 32, 360);
+	Ui()->DoScrollbarOption(&g_Config.m_ClAutoHookRange, &g_Config.m_ClAutoHookRange, &Row, Localize("Дальность автохука"), 32, 360);
 
 	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoHookShowRadius, Localize("Show hook zone circle"), g_Config.m_ClAutoHookShowRadius, &Row))
+	if(DoButton_CheckBox(&g_Config.m_ClAutoHookShowRadius, Localize("Показывать круг зоны крюка"), g_Config.m_ClAutoHookShowRadius, &Row))
 		g_Config.m_ClAutoHookShowRadius ^= 1;
-	Ui()->DoToolTip(&s_Radius, &Row, Localize("Draws a dotted range circle around your tee"));
+	Ui()->DoToolTip(&s_Radius, &Row, Localize("Показывает вокруг тии круг максимальной дальности крюка"));
 
 	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoAvoid, Localize("Avoid freeze"), g_Config.m_ClAutoAvoid, &Row))
+	if(DoButton_CheckBox(&g_Config.m_ClAutoAvoid, Localize("Защита от фриза"), g_Config.m_ClAutoAvoid, &Row))
 		g_Config.m_ClAutoAvoid ^= 1;
-	Ui()->DoToolTip(&s_Avoid, &Row, Localize("Wall-hook assist: catches a nearby wall while rising or falling to help avoid a bad drop"));
+	Ui()->DoToolTip(&s_Avoid, &Row, Localize("При подъёме или падении автоматически ищет стену для крюка, чтобы не сорваться во фриз"));
 
 	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoEdge, Localize("Edge pixel assist"), g_Config.m_ClAutoEdge, &Row))
+	if(DoButton_CheckBox(&g_Config.m_ClAutoEdge, Localize("Точная наводка на край"), g_Config.m_ClAutoEdge, &Row))
 		g_Config.m_ClAutoEdge ^= 1;
-	Ui()->DoToolTip(&s_Edge, &Row, Localize("When you hold hook, scans a narrow angle around your aim to select an exact hookable point near corners"));
+	Ui()->DoToolTip(&s_Edge, &Row, Localize("Пока зажат крюк, ищет точку зацепа рядом с прицелом, чтобы точнее цепляться за углы"));
 
 	MainView.HSplitTop(22.0f, &Row, &MainView);
-	Ui()->DoLabel(&Row, Localize("Aim weapons inside the same zone"), 14.0f, TEXTALIGN_ML);
+	Ui()->DoLabel(&Row, Localize("Прицеливание оружием в той же зоне"), 14.0f, TEXTALIGN_ML);
 
 	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoHookWeaponGun, Localize("Auto Hook fire: Gun"), g_Config.m_ClAutoHookWeaponGun, &Row))
+	if(DoButton_CheckBox(&g_Config.m_ClAutoHookWeaponGun, Localize("Автовыстрел: пистолет"), g_Config.m_ClAutoHookWeaponGun, &Row))
 		g_Config.m_ClAutoHookWeaponGun ^= 1;
-	Ui()->DoToolTip(&s_Gun, &Row, Localize("Fire the selected weapon at the tee currently targeted by Auto Hook"));
+	Ui()->DoToolTip(&s_Gun, &Row, Localize("Стреляет выбранным оружием по тии, на которого навёлся автохук"));
 
 	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoHookWeaponShotgun, Localize("Auto Hook fire: Shotgun"), g_Config.m_ClAutoHookWeaponShotgun, &Row))
+	if(DoButton_CheckBox(&g_Config.m_ClAutoHookWeaponShotgun, Localize("Автовыстрел: дробовик"), g_Config.m_ClAutoHookWeaponShotgun, &Row))
 		g_Config.m_ClAutoHookWeaponShotgun ^= 1;
-	Ui()->DoToolTip(&s_Shotgun, &Row, Localize("Fire the selected weapon at the tee currently targeted by Auto Hook"));
+	Ui()->DoToolTip(&s_Shotgun, &Row, Localize("Стреляет выбранным оружием по тии, на которого навёлся автохук"));
 
 	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoHookWeaponGrenade, Localize("Auto Hook fire: Grenade"), g_Config.m_ClAutoHookWeaponGrenade, &Row))
+	if(DoButton_CheckBox(&g_Config.m_ClAutoHookWeaponGrenade, Localize("Автовыстрел: гранатомёт"), g_Config.m_ClAutoHookWeaponGrenade, &Row))
 		g_Config.m_ClAutoHookWeaponGrenade ^= 1;
-	Ui()->DoToolTip(&s_Grenade, &Row, Localize("Fire the selected weapon at the tee currently targeted by Auto Hook"));
+	Ui()->DoToolTip(&s_Grenade, &Row, Localize("Стреляет выбранным оружием по тии, на которого навёлся автохук"));
 
 	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoHookWeaponLaser, Localize("Auto Hook fire: Laser"), g_Config.m_ClAutoHookWeaponLaser, &Row))
+	if(DoButton_CheckBox(&g_Config.m_ClAutoHookWeaponLaser, Localize("Автовыстрел: лазер"), g_Config.m_ClAutoHookWeaponLaser, &Row))
 		g_Config.m_ClAutoHookWeaponLaser ^= 1;
-	Ui()->DoToolTip(&s_Laser, &Row, Localize("Fire the selected weapon at the tee currently targeted by Auto Hook"));
+	Ui()->DoToolTip(&s_Laser, &Row, Localize("Стреляет выбранным оружием по тии, на которого навёлся автохук"));
 
 	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoUnfreezeLaser, Localize("Auto unfreeze with laser"), g_Config.m_ClAutoUnfreezeLaser, &Row))
+	if(DoButton_CheckBox(&g_Config.m_ClAutoUnfreezeLaser, Localize("Авторазморозка лазером"), g_Config.m_ClAutoUnfreezeLaser, &Row))
 		g_Config.m_ClAutoUnfreezeLaser ^= 1;
-	Ui()->DoToolTip(&s_AutoUnfreeze, &Row, Localize("Aim at the nearest visible frozen teammate and fire laser when available"));
+	Ui()->DoToolTip(&s_AutoUnfreeze, &Row, Localize("Находит ближайшего видимого замороженного тиммейта и стреляет по нему лазером"));
 
 	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoTriplefly, Localize("Auto Triplefly (hook third tee)"), g_Config.m_ClAutoTriplefly, &Row))
+	if(DoButton_CheckBox(&g_Config.m_ClAutoTriplefly, Localize("Автотрёххук (цепляться за третьего тии)"), g_Config.m_ClAutoTriplefly, &Row))
 		g_Config.m_ClAutoTriplefly ^= 1;
-	Ui()->DoToolTip(&s_AutoTriplefly, &Row, Localize("Selects the third nearest visible eligible tee inside the hook zone"));
+	Ui()->DoToolTip(&s_AutoTriplefly, &Row, Localize("Выбирает третьего ближайшего подходящего тии в зоне крюка"));
 
 	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoHookAimAtTee, Localize("Aim at tees (moves cursor)"), g_Config.m_ClAutoHookAimAtTee, &Row))
+	if(DoButton_CheckBox(&g_Config.m_ClAutoHookAimAtTee, Localize("Наводиться на тии (двигает курсор)"), g_Config.m_ClAutoHookAimAtTee, &Row))
 	{
 		g_Config.m_ClAutoHookAimAtTee ^= 1;
 		if(g_Config.m_ClAutoHookAimAtTee)
 			g_Config.m_ClAutoHookBackhook = 0;
 	}
-	Ui()->DoToolTip(&s_AimAtTee, &Row, Localize("Move the client cursor to the selected tee while auto hook is working"));
+	Ui()->DoToolTip(&s_AimAtTee, &Row, Localize("Передвигает курсор к выбранному тии во время работы автохука"));
 
 	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoHookBackhook, Localize("Backhook (keeps cursor still)"), g_Config.m_ClAutoHookBackhook, &Row))
+	if(DoButton_CheckBox(&g_Config.m_ClAutoHookBackhook, Localize("Бэкхук (не двигает курсор)"), g_Config.m_ClAutoHookBackhook, &Row))
 	{
 		g_Config.m_ClAutoHookBackhook ^= 1;
 		if(g_Config.m_ClAutoHookBackhook)
 			g_Config.m_ClAutoHookAimAtTee = 0;
 	}
-	Ui()->DoToolTip(&s_Backhook, &Row, Localize("Keep the cursor still and allow automatic hook targeting behind the cursor direction"));
+	Ui()->DoToolTip(&s_Backhook, &Row, Localize("Не двигает курсор и разрешает автонаведение за направлением курсора"));
 
 	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoEdgeJump, Localize("Edge jump"), g_Config.m_ClAutoEdgeJump, &Row))
-		g_Config.m_ClAutoEdgeJump ^= 1;
-	Ui()->DoToolTip(&s_EdgeJump, &Row, Localize("Automatically press jump when moving off a ledge"));
+	if(DoButton_CheckBox(&g_Config.m_ClAutoEdgeHook, Localize("Подхват крюком у края (без прыжка)"), g_Config.m_ClAutoEdgeHook, &Row))
+		g_Config.m_ClAutoEdgeHook ^= 1;
+	Ui()->DoToolTip(&s_EdgeHook, &Row, Localize("Автоматически цепляется крюком за поверхность у края платформы. Прыжок не нажимается."));
 
 	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClDummyHammer, Localize("Dummy flight (classic hammerfly)"), g_Config.m_ClDummyHammer, &Row))
+	if(DoButton_CheckBox(&g_Config.m_ClDummyHammer, Localize("Полёт дамми (обычный хаммерфлай)"), g_Config.m_ClDummyHammer, &Row))
 		g_Config.m_ClDummyHammer ^= 1;
-	Ui()->DoToolTip(&s_DummyFlight, &Row, Localize("Use the classic dummy hammerfly input"));
+	Ui()->DoToolTip(&s_DummyFlight, &Row, Localize("Использует обычный ввод хаммерфлая для дамми"));
 }
 
 void CMenus::RenderSettingsMacros(CUIRect MainView)
 {
 	CUIRect Row, Label, NameRect, Button;
 	MainView.HSplitTop(28.0f, &Label, &MainView);
-	Ui()->DoLabel(&Label, Localize("TAS macro practice"), 20.0f, TEXTALIGN_ML);
+	Ui()->DoLabel(&Label, Localize("Тренировочный макрос (TAS)"), 20.0f, TEXTALIGN_ML);
 	MainView.HSplitTop(5.0f, nullptr, &MainView);
 
 	static CButtonContainer s_PracticeStart, s_PracticeStop;
 	MainView.HSplitTop(26.0f, &Row, &MainView);
 	Row.VSplitLeft(145.0f, &Button, &Row);
-	if(DoButton_Menu(&s_PracticeStart, Localize("Start practice"), 0, &Button))
+	if(DoButton_Menu(&s_PracticeStart, Localize("Начать тренировку"), 0, &Button))
 		GameClient()->m_Controls.StartMacroPractice();
 	Row.VSplitLeft(8.0f, nullptr, &Row);
 	Row.VSplitLeft(145.0f, &Button, &Row);
-	if(DoButton_Menu(&s_PracticeStop, Localize("Stop practice"), 0, &Button))
+	if(DoButton_Menu(&s_PracticeStop, Localize("Остановить тренировку"), 0, &Button))
 		GameClient()->m_Controls.StopMacroPractice();
 
 	MainView.HSplitTop(4.0f, nullptr, &MainView);
 	MainView.HSplitTop(24.0f, &Row, &MainView);
 	Ui()->DoScrollbarOption(&g_Config.m_ClMacroPracticeRate, &g_Config.m_ClMacroPracticeRate, &Row,
-		Localize("Practice speed (ticks per second)"), 1, 50);
+		Localize("Скорость тренировки (тиков в секунду)"), 1, 50);
 
 	static CLineInputBuffered<64> s_MacroName;
 	MainView.HSplitTop(24.0f, &Row, &MainView);
 	Row.VSplitLeft(120.0f, &Label, &NameRect);
-	Ui()->DoLabel(&Label, Localize("Macro name"), 14.0f, TEXTALIGN_ML);
+	Ui()->DoLabel(&Label, Localize("Название макроса"), 14.0f, TEXTALIGN_ML);
 	Ui()->DoEditBox(&s_MacroName, &NameRect, 14.0f);
 
 	static CButtonContainer s_Record, s_Stop, s_Save, s_Play, s_Delete, s_Confirm, s_Cancel;
@@ -557,65 +557,65 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	MainView.HSplitTop(8.0f, nullptr, &MainView);
 	MainView.HSplitTop(26.0f, &Row, &MainView);
 	Row.VSplitLeft(145.0f, &Button, &Row);
-	if(DoButton_Menu(&s_Record, Localize("Start recording"), 0, &Button))
+	if(DoButton_Menu(&s_Record, Localize("Начать запись"), 0, &Button))
 		GameClient()->m_Controls.StartMacroRecording();
 	Row.VSplitLeft(8.0f, nullptr, &Row);
 	Row.VSplitLeft(110.0f, &Button, &Row);
-	if(DoButton_Menu(&s_Stop, Localize("Stop"), 0, &Button))
+	if(DoButton_Menu(&s_Stop, Localize("Остановить"), 0, &Button))
 		GameClient()->m_Controls.StopMacroRecording();
 
 	MainView.HSplitTop(6.0f, nullptr, &MainView);
 	MainView.HSplitTop(26.0f, &Row, &MainView);
 	Row.VSplitLeft(110.0f, &Button, &Row);
-	if(DoButton_Menu(&s_Save, Localize("Save"), 0, &Button))
+	if(DoButton_Menu(&s_Save, Localize("Сохранить"), 0, &Button))
 	{
 		if(!s_MacroName.IsEmpty() && !GameClient()->m_Controls.SaveMacro(s_MacroName.GetString()))
-			GameClient()->Echo(Localize("Could not save macro. Stop recording first."));
+			GameClient()->Echo(Localize("Не удалось сохранить макрос. Сначала остановите запись."));
 		else if(!s_MacroName.IsEmpty())
-			GameClient()->Echo(Localize("Macro saved in the macros folder"));
+			GameClient()->Echo(Localize("Макрос сохранён в папке macros"));
 	}
 	Row.VSplitLeft(8.0f, nullptr, &Row);
 	Row.VSplitLeft(110.0f, &Button, &Row);
-	if(DoButton_Menu(&s_Play, Localize("Play"), 0, &Button))
+	if(DoButton_Menu(&s_Play, Localize("Воспроизвести"), 0, &Button))
 	{
 		if(s_MacroName.IsEmpty() || !GameClient()->m_Controls.PlayMacro(s_MacroName.GetString()))
-			GameClient()->Echo(Localize("Could not play macro. Check the name or saved file."));
+			GameClient()->Echo(Localize("Не удалось запустить макрос. Проверьте название или файл."));
 	}
 	Row.VSplitLeft(8.0f, nullptr, &Row);
 	Row.VSplitLeft(110.0f, &Button, &Row);
-	if(DoButton_Menu(&s_Delete, Localize("Delete"), 0, &Button) && !s_MacroName.IsEmpty())
+	if(DoButton_Menu(&s_Delete, Localize("Удалить"), 0, &Button) && !s_MacroName.IsEmpty())
 		s_ConfirmDelete = true;
 
 	if(s_ConfirmDelete)
 	{
 		MainView.HSplitTop(8.0f, nullptr, &MainView);
 		MainView.HSplitTop(24.0f, &Row, &MainView);
-		Ui()->DoLabel(&Row, Localize("Delete this saved macro? This cannot be undone."), 14.0f, TEXTALIGN_ML);
+		Ui()->DoLabel(&Row, Localize("Удалить сохранённый макрос? Это действие нельзя отменить."), 14.0f, TEXTALIGN_ML);
 		MainView.HSplitTop(26.0f, &Row, &MainView);
 		Row.VSplitLeft(110.0f, &Button, &Row);
-		if(DoButton_Menu(&s_Confirm, Localize("Confirm delete"), 0, &Button))
+		if(DoButton_Menu(&s_Confirm, Localize("Да, удалить"), 0, &Button))
 		{
 			if(!s_MacroName.IsEmpty() && !GameClient()->m_Controls.DeleteMacro(s_MacroName.GetString()))
-				GameClient()->Echo(Localize("Could not delete macro. Check its name."));
+				GameClient()->Echo(Localize("Не удалось удалить макрос. Проверьте его название."));
 			else
-				GameClient()->Echo(Localize("Macro deleted"));
+				GameClient()->Echo(Localize("Макрос удалён"));
 			s_ConfirmDelete = false;
 		}
 		Row.VSplitLeft(8.0f, nullptr, &Row);
 		Row.VSplitLeft(110.0f, &Button, &Row);
-		if(DoButton_Menu(&s_Cancel, Localize("Cancel"), 0, &Button))
+		if(DoButton_Menu(&s_Cancel, Localize("Отмена"), 0, &Button))
 			s_ConfirmDelete = false;
 	}
 	MainView.HSplitTop(8.0f, nullptr, &MainView);
 	MainView.HSplitTop(28.0f, &Row, &MainView);
 	Ui()->DoScrollbarOption(&g_Config.m_ClMacroRewindStep, &g_Config.m_ClMacroRewindStep, &Row,
-		Localize("Rewind step (ticks)"), 1, 18000);
+		Localize("Шаг перемотки (тики)"), 1, 18000);
 
 	char aStatus[192];
 	str_format(aStatus, sizeof(aStatus), "%s | %s | %s | tick %d / %d | seek %d | speed %d tick/s",
-		GameClient()->m_Controls.MacroPracticeActive() ? Localize("Practice active") : Localize("Practice off"),
-		GameClient()->m_Controls.MacroRecording() ? Localize("Recording") : Localize("Not recording"),
-		GameClient()->m_Controls.MacroPlaying() ? (GameClient()->m_Controls.MacroPracticeWaiting() ? Localize("Waiting for position") : Localize("Playing")) : Localize("Not playing"),
+		GameClient()->m_Controls.MacroPracticeActive() ? Localize("Тренировка включена") : Localize("Тренировка выключена"),
+		GameClient()->m_Controls.MacroRecording() ? Localize("Запись") : Localize("Нет записи"),
+		GameClient()->m_Controls.MacroPlaying() ? (GameClient()->m_Controls.MacroPracticeWaiting() ? Localize("Ожидание координаты") : Localize("Воспроизведение")) : Localize("Не воспроизводится"),
 		GameClient()->m_Controls.MacroPosition(),
 		GameClient()->m_Controls.MacroFrameCount(),
 		g_Config.m_ClMacroRewindStep,
@@ -624,12 +624,12 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	Ui()->DoLabel(&MainView, aStatus, 14.0f, TEXTALIGN_ML);
 	MainView.HSplitTop(20.0f, nullptr, &MainView);
 	Ui()->DoLabel(&MainView, GameClient()->m_Controls.MacroPracticeWaiting() ?
-		Localize("Playback is waiting for the practice tee to reach the next recorded coordinate.") :
-		Localize("Playback uses the recorded world coordinates for each input tick. It does not blindly fire actions on a wall-clock timer."), 12.0f, TEXTALIGN_ML);
+		Localize("Воспроизведение ждёт, пока тренировочный тии дойдёт до следующих записанных координат.") :
+		Localize("Макрос сверяет координаты мира для каждого тика и не выполняет действия просто по таймеру."), 12.0f, TEXTALIGN_ML);
 	MainView.HSplitTop(18.0f, nullptr, &MainView);
-	Ui()->DoLabel(&MainView, Localize("'<': rewind, '>': forward. Up doubles the seek step; Down halves it. Practice speed is independent: 1 = one simulated tick per second; 50 = normal speed. Your server tee stays idle while the local practice tee moves."), 12.0f, TEXTALIGN_ML);
+	Ui()->DoLabel(&MainView, Localize("Клавиша «<» — назад, «>» — вперёд. Стрелка вверх удваивает шаг, вниз уменьшает его вдвое. Скорость тренировки задаётся отдельно: 1 — один тик в секунду, 50 — обычная скорость. Серверный тии стоит на месте, двигается только тренировочный."), 12.0f, TEXTALIGN_ML);
 	MainView.HSplitTop(18.0f, nullptr, &MainView);
-	Ui()->DoLabel(&MainView, Localize("Macros are stored under the client's save folder in macros/*.dmacro"), 12.0f, TEXTALIGN_ML);
+	Ui()->DoLabel(&MainView, Localize("Макросы хранятся в папке macros внутри папки сохранений клиента (*.dmacro)."), 12.0f, TEXTALIGN_ML);
 }
 
 
@@ -638,7 +638,7 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 {
 	CUIRect Row, Label, KeyRect;
 	MainView.HSplitTop(28.0f, &Label, &MainView);
-	Ui()->DoLabel(&Label, Localize("Game buttons / hotkeys"), 20.0f, TEXTALIGN_ML);
+	Ui()->DoLabel(&Label, Localize("Назначение клавиш для функций"), 20.0f, TEXTALIGN_ML);
 	MainView.HSplitTop(5.0f, nullptr, &MainView);
 
 	struct SHotkey
@@ -647,15 +647,15 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 		const char *m_pCommand;
 	};
 	static const SHotkey s_aHotkeys[] = {
-		{ "Auto Triplefly", "toggle cl_auto_triplefly 0 1" },
-		{ "Auto unfreeze with laser", "toggle cl_auto_unfreeze_laser 0 1" },
-		{ "Auto Hook", "toggle cl_auto_hook 0 1" },
-		{ "Avoid freeze assist", "toggle cl_auto_avoid 0 1" },
-		{ "Aim at tees (moves cursor)", "toggle cl_auto_hook_aim_at_tee 0 1" },
-		{ "Backhook (keeps cursor still)", "toggle cl_auto_hook_backhook 0 1" },
-		{ "Edge pixel assist", "toggle cl_auto_edge 0 1" },
-		{ "Edge jump", "toggle cl_auto_edge_jump 0 1" },
-		{ "Dummy flight (classic hammerfly)", "toggle cl_dummy_hammer 0 1" },
+		{ "Автотрёххук", "toggle cl_auto_triplefly 0 1" },
+		{ "Авторазморозка лазером", "toggle cl_auto_unfreeze_laser 0 1" },
+		{ "Автохук", "toggle cl_auto_hook 0 1" },
+		{ "Защита от фриза", "toggle cl_auto_avoid 0 1" },
+		{ "Наведение на тии (курсор двигается)", "toggle cl_auto_hook_aim_at_tee 0 1" },
+		{ "Бэкхук (курсор неподвижен)", "toggle cl_auto_hook_backhook 0 1" },
+		{ "Точная наводка на край", "toggle cl_auto_edge 0 1" },
+		{ "Подхват крюком у края", "toggle cl_auto_edge_hook 0 1" },
+		{ "Полёт дамми (хаммерфлай)", "toggle cl_dummy_hammer 0 1" },
 	};
 	static CButtonContainer s_aKeyReaders[std::size(s_aHotkeys)];
 	static CButtonContainer s_aKeyClearButtons[std::size(s_aHotkeys)];
@@ -694,5 +694,5 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 	}
 
 	MainView.HSplitTop(12.0f, nullptr, &MainView);
-	Ui()->DoLabel(&MainView, Localize("Click a key field, press the key you want, or use the trash icon to clear it. The selected key toggles that feature on and off."), 12.0f, TEXTALIGN_ML);
+	Ui()->DoLabel(&MainView, Localize("Нажмите на поле клавиши и выберите кнопку. Значок корзины очищает назначение. Нажатая клавиша включает или выключает соответствующую функцию."), 12.0f, TEXTALIGN_ML);
 }
