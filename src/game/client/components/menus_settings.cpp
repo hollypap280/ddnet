@@ -422,17 +422,16 @@ void CMenus::RenderSettingsGame(CUIRect MainView)
 	Ui()->DoLabel(&Label, Localize("Game automation"), 20.0f, TEXTALIGN_ML);
 	MainView.HSplitTop(5.0f, nullptr, &MainView);
 
-	static CButtonContainer s_AutoHook, s_Hook360, s_Radius, s_Avoid, s_Edge;
+	static CButtonContainer s_AutoHook, s_Angle, s_Radius, s_Avoid, s_Edge;
 	static CButtonContainer s_Gun, s_Shotgun, s_Grenade, s_Laser;
 	MainView.HSplitTop(24.0f, &Row, &MainView);
 	if(DoButton_CheckBox(&g_Config.m_ClAutoHook, Localize("Auto Hook"), g_Config.m_ClAutoHook, &Row))
 		g_Config.m_ClAutoHook ^= 1;
 	Ui()->DoToolTip(&s_AutoHook, &Row, Localize("Automatically hooks the nearest visible tee inside the configured range"));
 
-	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoHook360, Localize("360° Hook"), g_Config.m_ClAutoHook360, &Row))
-		g_Config.m_ClAutoHook360 ^= 1;
-	Ui()->DoToolTip(&s_Hook360, &Row, Localize("Searches the full circle, including targets behind your tee. The visible cursor is not moved."));
+	MainView.HSplitTop(28.0f, &Row, &MainView);
+	Ui()->DoScrollbarOption(&g_Config.m_ClAutoHookAngle, &g_Config.m_ClAutoHookAngle, &Row, Localize("Auto Hook angle (degrees)"), 10, 360);
+	Ui()->DoToolTip(&s_Angle, &Row, Localize("Controls the aiming cone independently of distance. 250 degrees excludes the exact direction behind you; 360 degrees allows the full circle."));
 
 	MainView.HSplitTop(28.0f, &Row, &MainView);
 	Ui()->DoScrollbarOption(&g_Config.m_ClAutoHookRange, &g_Config.m_ClAutoHookRange, &Row, Localize("Auto Hook range"), 32, 360);
@@ -540,11 +539,44 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		if(DoButton_Menu(&s_Cancel, Localize("Cancel"), 0, &Button))
 			s_ConfirmDelete = false;
 	}
-	MainView.HSplitTop(10.0f, nullptr, &MainView);
-	char aStatus[128];
-	str_format(aStatus, sizeof(aStatus), "%s | %s",
+	static CLineInputBuffered<16> s_PlaybackSpeed;
+	static CLineInputBuffered<16> s_SeekStep;
+	MainView.HSplitTop(8.0f, nullptr, &MainView);
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	Row.VSplitLeft(180.0f, &Label, &NameRect);
+	Ui()->DoLabel(&Label, Localize("Playback speed (0.5 = half)"), 14.0f, TEXTALIGN_ML);
+	Ui()->DoEditBox(&s_PlaybackSpeed, &NameRect, 14.0f);
+	if(!s_PlaybackSpeed.IsEmpty())
+	{
+		const float Speed = str_tofloat(s_PlaybackSpeed.GetString());
+		if(Speed >= 0.1f && Speed <= 4.0f)
+			GameClient()->m_Controls.SetMacroPlaybackSpeed(Speed);
+	}
+
+	MainView.HSplitTop(4.0f, nullptr, &MainView);
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	Row.VSplitLeft(180.0f, &Label, &NameRect);
+	Ui()->DoLabel(&Label, Localize("Seek step (frames)"), 14.0f, TEXTALIGN_ML);
+	Ui()->DoEditBox(&s_SeekStep, &NameRect, 14.0f);
+	if(!s_SeekStep.IsEmpty())
+	{
+		const int Step = str_toint(s_SeekStep.GetString());
+		if(Step > 0 && Step <= 18000)
+			GameClient()->m_Controls.SetMacroSeekStep(Step);
+	}
+
+	MainView.HSplitTop(8.0f, nullptr, &MainView);
+	char aStatus[192];
+	str_format(aStatus, sizeof(aStatus), "%s | %s | %.2fx | frame %d / %d | step %d",
 		GameClient()->m_Controls.MacroRecording() ? Localize("Recording") : Localize("Not recording"),
-		GameClient()->m_Controls.MacroPlaying() ? Localize("Playing") : Localize("Not playing"));
+		GameClient()->m_Controls.MacroPlaying() ? Localize("Playing") : Localize("Not playing"),
+		GameClient()->m_Controls.MacroPlaybackSpeed(),
+		GameClient()->m_Controls.MacroPosition(),
+		GameClient()->m_Controls.MacroFrameCount(),
+		GameClient()->m_Controls.MacroSeekStep());
 	Ui()->DoLabel(&MainView, aStatus, 14.0f, TEXTALIGN_ML);
+	MainView.HSplitTop(20.0f, nullptr, &MainView);
+	Ui()->DoLabel(&MainView, Localize("During playback: Left/Right seek, Up/Down change the seek step. The selected step stays active until changed."), 12.0f, TEXTALIGN_ML);
+	MainView.HSplitTop(18.0f, nullptr, &MainView);
 	Ui()->DoLabel(&MainView, Localize("Macros are stored under the client's save folder in macros/*.dmacro"), 12.0f, TEXTALIGN_ML);
 }
