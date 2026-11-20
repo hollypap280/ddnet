@@ -928,10 +928,14 @@ void CControls::ApplyHookAutomation(int Dummy)
 		const float AimLength = length(ManualAim);
 		const float AimAngle = std::clamp((float)g_Config.m_ClAutoHookAngle, 10.0f, 360.0f);
 		const int LocalId = GameClient()->m_Snap.m_LocalClientId;
+		const int DummyId = GameClient()->m_aLocalIds[!g_Config.m_ClDummy];
 
 		for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
 		{
-			if(ClientId == LocalId || !GameClient()->m_Snap.m_aCharacters[ClientId].m_Active)
+			// Triplefly is a three-tee setup: the controlled tee is first,
+			// the local dummy is second, and the selected partner is the third.
+			if(ClientId == LocalId || (g_Config.m_ClAutoTriplefly && ClientId == DummyId) ||
+				!GameClient()->m_Snap.m_aCharacters[ClientId].m_Active)
 				continue;
 			if(GameClient()->IsOtherTeam(ClientId) || GameClient()->m_aClients[ClientId].m_Solo ||
 				GameClient()->m_aClients[ClientId].m_HookHitDisabled)
@@ -973,7 +977,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 			}
 		}
 
-		const int TargetRank = g_Config.m_ClAutoTriplefly ? 2 : 0;
+		const int TargetRank = 0;
 		if(aBestDistances[TargetRank] <= RangeSquared)
 		{
 			BestTarget = aBestTargets[TargetRank];
@@ -1002,7 +1006,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 		const int LocalId = GameClient()->m_Snap.m_LocalClientId;
 		if(LocalId < 0 || LocalId >= MAX_CLIENTS)
 			return;
-		const CCharacterCore &Predicted = GameClient()->m_aClients[LocalId].m_Predicted;
+		const CCharacterCore &Predicted = GameClient()->m_PredictedChar;
 		if(Predicted.m_aWeapons[WEAPON_LASER].m_Got &&
 			(GameClient()->m_GameInfo.m_UnlimitedAmmo || Predicted.m_aWeapons[WEAPON_LASER].m_Ammo != 0))
 		{
