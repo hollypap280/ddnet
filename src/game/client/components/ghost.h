@@ -117,6 +117,10 @@ private:
 	bool m_Recording = false;
 	bool m_Rendering = false;
 	bool m_RenderingStartedByServer = false;
+	bool m_MacroPracticeVisible = false;
+	CNetObj_Character m_MacroPracticePrev{};
+	CNetObj_Character m_MacroPracticeCurrent{};
+	std::shared_ptr<CManagedTeeRenderInfo> m_pMacroPracticeRenderInfo;
 
 	static void SetGhostSkinData(CGhostSkin *pSkin, const char *pSkinName, int UseCustomColor, int ColorBody, int ColorFeet);
 	static void GetGhostCharacter(CGhostCharacter *pGhostChar, const CNetObj_Character *pChar, const CNetObj_DDNetCharacter *pDDnetChar);
@@ -154,6 +158,8 @@ public:
 	void OnNewSnapshot() override;
 
 	void OnNewPredictedSnapshot();
+	void SetMacroPracticeCharacter(const CNetObj_Character &Prev, const CNetObj_Character &Current);
+	void ClearMacroPracticeCharacter();
 
 	int FreeSlots() const;
 	int Load(const char *pFilename);
