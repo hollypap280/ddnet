@@ -676,7 +676,7 @@ void CControls::SetMacroSeekStep(int Step)
 	g_Config.m_ClMacroRewindStep = std::clamp(Step, 1, 18000);
 }
 
-vec2 CControls::MacroPracticePosition() const
+vec2 CControls::MacroPracticePosition()
 {
 	if(m_MacroPracticeActive)
 	{
