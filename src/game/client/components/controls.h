@@ -63,7 +63,7 @@ public:
 	bool MacroPlaying() const { return m_MacroPlaying; }
 	int MacroPosition() const { return (int)m_MacroPlaybackIndex; }
 	int MacroFrameCount() const { return (int)m_vMacroFrames.size(); }
-	int MacroSeekStep() const { return g_Config.m_ClMacroRewindStep; }
+	int MacroSeekStep() const;
 	void SetMacroSeekStep(int Step);
 	void StartMacroRecording();
 	void StopMacroRecording();
