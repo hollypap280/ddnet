@@ -459,12 +459,7 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 		m_MacroPracticeWorld.m_GameTick = Frame.m_Tick;
 		m_MacroPracticeTick = Frame.m_Tick;
 
-		CNetObj_Character Current = Frame.m_Character;
-		Current.m_AttackTick = Frame.m_AttackTick;
-		CNetObj_Character Prev = Index > 0 ? m_vMacroFrames[Index - 1].m_Character : Current;
-		GameClient()->m_Ghost.SetMacroPracticeCharacter(Prev, Current);
-		m_MacroPracticeRenderChar = Current;
-		m_MacroPracticeHasRenderChar = true;
+		UpdateMacroPracticeGhost(pCharacter);
 	}
 	m_MacroPlaybackIndex = (std::size_t)Index + 1;
 	m_MacroPracticeWaiting = false;
