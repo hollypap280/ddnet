@@ -580,14 +580,6 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		s_RewindStep.SetInteger(g_Config.m_ClMacroRewindStep);
 		s_RewindStepInitialized = true;
 	}
-	if(s_RewindStep.WasChanged())
-	{
-		const int Step = s_RewindStep.GetInteger();
-		if(Step >= 1 && Step <= 18000)
-			g_Config.m_ClMacroRewindStep = Step;
-		else
-			s_RewindStep.SetInteger(g_Config.m_ClMacroRewindStep);
-	}
 
 	static std::vector<CControls::SMacroInfo> s_vMacros;
 	static bool s_MacroListLoaded = false;
@@ -689,6 +681,14 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	Row.VSplitLeft(155.0f, &Label, &NameRect);
 	Ui()->DoLabel(&Label, Localize("Шаг перемотки (тики)"), 14.0f, TEXTALIGN_ML);
 	Ui()->DoEditBox(&s_RewindStep, &NameRect, 14.0f);
+	if(s_RewindStep.WasChanged())
+	{
+		const int Step = s_RewindStep.GetInteger();
+		if(Step >= 1 && Step <= 18000)
+			g_Config.m_ClMacroRewindStep = Step;
+		else
+			s_RewindStep.SetInteger(g_Config.m_ClMacroRewindStep);
+	}
 
 	char aStatus[224];
 	str_format(aStatus, sizeof(aStatus), "%s | %s | %s | тик %d / %d | шаг %d | скорость %d тик/с",
