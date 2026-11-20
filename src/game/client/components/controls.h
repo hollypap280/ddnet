@@ -154,6 +154,7 @@ private:
 	void SimulateMacroPracticeTick(const CNetObj_PlayerInput &Input);
 	bool RestoreMacroPracticeFrame(int Index);
 	void UpdateMacroPracticeGhost(CCharacter *pCharacter);
+	void PopulateMacroPracticeWorld();
 	static void ConMacroRecord(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroStop(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroSave(IConsole::IResult *pResult, void *pUserData);
