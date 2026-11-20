@@ -94,9 +94,11 @@ private:
 		CNetObj_CharacterCore m_PreCore{};
 		CNetObj_CharacterCore m_Core{};
 		CNetObj_Character m_Character{};
+		int m_PreWeapon = WEAPON_HAMMER;
 		int m_Weapon = WEAPON_HAMMER;
 		int m_AttackTick = 0;
 		int m_Tick = 0;
+		int m_HasCoordinates = 1;
 	};
 	struct SMacroFrameV1
 	{
