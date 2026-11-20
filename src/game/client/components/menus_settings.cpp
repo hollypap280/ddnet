@@ -10,6 +10,8 @@
 #include <engine/shared/config.h>
 
 #include <game/client/components/menu_background.h>
+#include <game/client/components/binds.h>
+#include <game/client/components/key_binder.h>
 #include <game/client/gameclient.h>
 #include <game/client/ui.h>
 #include <game/localization.h>
@@ -53,7 +55,8 @@ void CMenus::RenderSettings(CUIRect MainView)
 		Localize("Assets"),
 		Localize("Credits"),
 		Localize("Game"),
-		Localize("Macros")};
+		Localize("Macros"),
+		Localize("Buttons")};
 	static CButtonContainer s_aTabButtons[SETTINGS_LENGTH];
 
 	for(int i = 0; i < SETTINGS_LENGTH; i++)
@@ -131,6 +134,11 @@ void CMenus::RenderSettings(CUIRect MainView)
 	{
 		GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_DDNET);
 		RenderSettingsMacros(MainView);
+	}
+	else if(g_Config.m_UiSettingsPage == SETTINGS_BUTTONS)
+	{
+		GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_DDNET);
+		RenderSettingsButtons(MainView);
 	}
 	else
 	{
@@ -424,6 +432,7 @@ void CMenus::RenderSettingsGame(CUIRect MainView)
 
 	static CButtonContainer s_AutoHook, s_Angle, s_Radius, s_Avoid, s_Edge;
 	static CButtonContainer s_Gun, s_Shotgun, s_Grenade, s_Laser;
+	static CButtonContainer s_AutoTriplefly, s_AutoUnfreeze, s_AimAtTee, s_Backhook, s_EdgeJump, s_DummyFlight;
 	MainView.HSplitTop(24.0f, &Row, &MainView);
 	if(DoButton_CheckBox(&g_Config.m_ClAutoHook, Localize("Auto Hook"), g_Config.m_ClAutoHook, &Row))
 		g_Config.m_ClAutoHook ^= 1;
@@ -470,6 +479,44 @@ void CMenus::RenderSettingsGame(CUIRect MainView)
 	if(DoButton_CheckBox(&g_Config.m_ClAutoHookWeaponLaser, Localize("Auto Hook fire: Laser"), g_Config.m_ClAutoHookWeaponLaser, &Row))
 		g_Config.m_ClAutoHookWeaponLaser ^= 1;
 	Ui()->DoToolTip(&s_Laser, &Row, Localize("Fire the selected weapon at the tee currently targeted by Auto Hook"));
+
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	if(DoButton_CheckBox(&g_Config.m_ClAutoUnfreezeLaser, Localize("Auto unfreeze with laser"), g_Config.m_ClAutoUnfreezeLaser, &Row))
+		g_Config.m_ClAutoUnfreezeLaser ^= 1;
+	Ui()->DoToolTip(&s_AutoUnfreeze, &Row, Localize("Aim at the nearest visible frozen teammate and fire laser when available"));
+
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	if(DoButton_CheckBox(&g_Config.m_ClAutoTriplefly, Localize("Auto Triplefly (hook third tee)"), g_Config.m_ClAutoTriplefly, &Row))
+		g_Config.m_ClAutoTriplefly ^= 1;
+	Ui()->DoToolTip(&s_AutoTriplefly, &Row, Localize("Selects the third nearest visible eligible tee inside the hook zone"));
+
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	if(DoButton_CheckBox(&g_Config.m_ClAutoHookAimAtTee, Localize("Aim at tees (moves cursor)"), g_Config.m_ClAutoHookAimAtTee, &Row))
+	{
+		g_Config.m_ClAutoHookAimAtTee ^= 1;
+		if(g_Config.m_ClAutoHookAimAtTee)
+			g_Config.m_ClAutoHookBackhook = 0;
+	}
+	Ui()->DoToolTip(&s_AimAtTee, &Row, Localize("Move the client cursor to the selected tee while auto hook is working"));
+
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	if(DoButton_CheckBox(&g_Config.m_ClAutoHookBackhook, Localize("Backhook (keeps cursor still)"), g_Config.m_ClAutoHookBackhook, &Row))
+	{
+		g_Config.m_ClAutoHookBackhook ^= 1;
+		if(g_Config.m_ClAutoHookBackhook)
+			g_Config.m_ClAutoHookAimAtTee = 0;
+	}
+	Ui()->DoToolTip(&s_Backhook, &Row, Localize("Keep the cursor still and allow automatic hook targeting behind the cursor direction"));
+
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	if(DoButton_CheckBox(&g_Config.m_ClAutoEdgeJump, Localize("Edge jump"), g_Config.m_ClAutoEdgeJump, &Row))
+		g_Config.m_ClAutoEdgeJump ^= 1;
+	Ui()->DoToolTip(&s_EdgeJump, &Row, Localize("Automatically press jump when moving off a ledge"));
+
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	if(DoButton_CheckBox(&g_Config.m_ClDummyHammer, Localize("Dummy flight (classic hammerfly)"), g_Config.m_ClDummyHammer, &Row))
+		g_Config.m_ClDummyHammer ^= 1;
+	Ui()->DoToolTip(&s_DummyFlight, &Row, Localize("Use the classic dummy hammerfly input"));
 }
 
 void CMenus::RenderSettingsMacros(CUIRect MainView)
@@ -539,44 +586,85 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		if(DoButton_Menu(&s_Cancel, Localize("Cancel"), 0, &Button))
 			s_ConfirmDelete = false;
 	}
-	static CLineInputBuffered<16> s_PlaybackSpeed;
-	static CLineInputBuffered<16> s_SeekStep;
 	MainView.HSplitTop(8.0f, nullptr, &MainView);
-	MainView.HSplitTop(24.0f, &Row, &MainView);
-	Row.VSplitLeft(180.0f, &Label, &NameRect);
-	Ui()->DoLabel(&Label, Localize("Playback speed (0.5 = half)"), 14.0f, TEXTALIGN_ML);
-	Ui()->DoEditBox(&s_PlaybackSpeed, &NameRect, 14.0f);
-	if(!s_PlaybackSpeed.IsEmpty())
-	{
-		const float Speed = str_tofloat(s_PlaybackSpeed.GetString());
-		if(Speed >= 0.1f && Speed <= 4.0f)
-			GameClient()->m_Controls.SetMacroPlaybackSpeed(Speed);
-	}
+	MainView.HSplitTop(28.0f, &Row, &MainView);
+	Ui()->DoScrollbarOption(&g_Config.m_ClMacroRewindStep, &g_Config.m_ClMacroRewindStep, &Row,
+		Localize("Rewind step (ticks)"), 1, 18000);
 
-	MainView.HSplitTop(4.0f, nullptr, &MainView);
-	MainView.HSplitTop(24.0f, &Row, &MainView);
-	Row.VSplitLeft(180.0f, &Label, &NameRect);
-	Ui()->DoLabel(&Label, Localize("Seek step (frames)"), 14.0f, TEXTALIGN_ML);
-	Ui()->DoEditBox(&s_SeekStep, &NameRect, 14.0f);
-	if(!s_SeekStep.IsEmpty())
-	{
-		const int Step = str_toint(s_SeekStep.GetString());
-		if(Step > 0 && Step <= 18000)
-			GameClient()->m_Controls.SetMacroSeekStep(Step);
-	}
-
-	MainView.HSplitTop(8.0f, nullptr, &MainView);
 	char aStatus[192];
-	str_format(aStatus, sizeof(aStatus), "%s | %s | %.2fx | frame %d / %d | step %d",
+	str_format(aStatus, sizeof(aStatus), "%s | %s | tick %d / %d | step %d ticks (%.2f s)",
 		GameClient()->m_Controls.MacroRecording() ? Localize("Recording") : Localize("Not recording"),
 		GameClient()->m_Controls.MacroPlaying() ? Localize("Playing") : Localize("Not playing"),
-		GameClient()->m_Controls.MacroPlaybackSpeed(),
 		GameClient()->m_Controls.MacroPosition(),
 		GameClient()->m_Controls.MacroFrameCount(),
-		GameClient()->m_Controls.MacroSeekStep());
+		g_Config.m_ClMacroRewindStep,
+		g_Config.m_ClMacroRewindStep / 50.0f);
+	MainView.HSplitTop(8.0f, nullptr, &MainView);
 	Ui()->DoLabel(&MainView, aStatus, 14.0f, TEXTALIGN_ML);
 	MainView.HSplitTop(20.0f, nullptr, &MainView);
-	Ui()->DoLabel(&MainView, Localize("During playback: Left/Right seek, Up/Down change the seek step. The selected step stays active until changed."), 12.0f, TEXTALIGN_ML);
+	Ui()->DoLabel(&MainView, Localize("Press '<' to rewind and '>' to move forward by the selected number of ticks. Up doubles the step, Down halves it. 50 ticks = 1 second. Playback always stays at the original recording speed."), 12.0f, TEXTALIGN_ML);
 	MainView.HSplitTop(18.0f, nullptr, &MainView);
 	Ui()->DoLabel(&MainView, Localize("Macros are stored under the client's save folder in macros/*.dmacro"), 12.0f, TEXTALIGN_ML);
+}
+
+
+
+void CMenus::RenderSettingsButtons(CUIRect MainView)
+{
+	CUIRect Row, Label, KeyRect;
+	MainView.HSplitTop(28.0f, &Label, &MainView);
+	Ui()->DoLabel(&Label, Localize("Game buttons / hotkeys"), 20.0f, TEXTALIGN_ML);
+	MainView.HSplitTop(5.0f, nullptr, &MainView);
+
+	struct SHotkey
+	{
+		const char *m_pLabel;
+		const char *m_pCommand;
+	};
+	static const SHotkey s_aHotkeys[] = {
+		{ "Auto Triplefly", "toggle cl_auto_triplefly 0 1" },
+		{ "Auto unfreeze with laser", "toggle cl_auto_unfreeze_laser 0 1" },
+		{ "Auto Hook", "toggle cl_auto_hook 0 1" },
+		{ "Avoid freeze assist", "toggle cl_auto_avoid 0 1" },
+		{ "Edge jump", "toggle cl_auto_edge_jump 0 1" },
+		{ "Dummy flight (classic hammerfly)", "toggle cl_dummy_hammer 0 1" },
+	};
+	static CButtonContainer s_aKeyReaders[std::size(s_aHotkeys)];
+	static CButtonContainer s_aKeyClearButtons[std::size(s_aHotkeys)];
+
+	for(std::size_t i = 0; i < std::size(s_aHotkeys); ++i)
+	{
+		MainView.HSplitTop(26.0f, &Row, &MainView);
+		Row.VSplitLeft(250.0f, &Label, &KeyRect);
+		Ui()->DoLabel(&Label, Localize(s_aHotkeys[i].m_pLabel), 14.0f, TEXTALIGN_ML);
+
+		CBindSlot CurrentBind = EMPTY_BIND_SLOT;
+		bool Found = false;
+		for(int ModifierMask = 0; ModifierMask < KeyModifier::COMBINATION_COUNT && !Found; ++ModifierMask)
+		{
+			for(int Key = KEY_FIRST; Key < KEY_LAST; ++Key)
+			{
+				const CBindSlot Candidate(Key, ModifierMask);
+				if(str_comp(GameClient()->m_Binds.Get(Candidate), s_aHotkeys[i].m_pCommand) == 0)
+				{
+					CurrentBind = Candidate;
+					Found = true;
+					break;
+				}
+			}
+		}
+
+		const CKeyBinder::CKeyReaderResult Result = GameClient()->m_KeyBinder.DoKeyReader(
+			&s_aKeyReaders[i], &s_aKeyClearButtons[i], &KeyRect, CurrentBind, false);
+		if(Result.m_Aborted || Result.m_Bind == CurrentBind)
+			continue;
+
+		if(CurrentBind.m_Key != KEY_UNKNOWN || Result.m_Bind.m_Key == KEY_UNKNOWN)
+			GameClient()->m_Binds.Bind(CurrentBind.m_Key, "", false, CurrentBind.m_ModifierMask);
+		if(Result.m_Bind.m_Key != KEY_UNKNOWN)
+			GameClient()->m_Binds.Bind(Result.m_Bind.m_Key, s_aHotkeys[i].m_pCommand, false, Result.m_Bind.m_ModifierMask);
+	}
+
+	MainView.HSplitTop(12.0f, nullptr, &MainView);
+	Ui()->DoLabel(&MainView, Localize("Click a key field, press the key you want, or use the trash icon to clear it. The selected key toggles that feature on and off."), 12.0f, TEXTALIGN_ML);
 }
