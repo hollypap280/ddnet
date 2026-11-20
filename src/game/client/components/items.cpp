@@ -19,7 +19,7 @@
 #include <game/client/projectile_data.h>
 #include <game/mapitems.h>
 
-void CItems::RenderProjectile(const CProjectileData *pCurrent, int ItemId, const CScreenRect &ScreenRect)
+void CItems::RenderProjectile(const CProjectileData *pCurrent, int ItemId, const CScreenRect &ScreenRect, float TickTime)
 {
 	int CurWeapon = std::clamp(pCurrent->m_Type, 0, NUM_WEAPONS - 1);
 
@@ -57,7 +57,9 @@ void CItems::RenderProjectile(const CProjectileData *pCurrent, int ItemId, const
 	int PredictionTick = Client()->GetPredictionTick();
 
 	float Ct;
-	if(GameClient()->Predict() && GameClient()->AntiPingGrenade() && LocalPlayerInGame && !IsOtherTeam)
+	if(TickTime >= 0.0f)
+		Ct = (TickTime - pCurrent->m_StartTick) / (float)Client()->GameTickSpeed();
+	else if(GameClient()->Predict() && GameClient()->AntiPingGrenade() && LocalPlayerInGame && !IsOtherTeam)
 		Ct = ((float)(PredictionTick - 1 - pCurrent->m_StartTick) + Client()->PredIntraGameTick(g_Config.m_ClDummy)) / (float)Client()->GameTickSpeed();
 	else
 		Ct = (Client()->PrevGameTick(g_Config.m_ClDummy) - pCurrent->m_StartTick) / (float)Client()->GameTickSpeed() + s_LastGameTickTime;
@@ -259,7 +261,7 @@ void CItems::RenderFlag(const CNetObj_Flag *pPrev, const CNetObj_Flag *pCurrent,
 	Graphics()->RenderQuadContainerAsSprite(m_ItemsQuadContainerIndex, QuadOffset, Pos.x, Pos.y - Size * 0.75f);
 }
 
-void CItems::RenderLaser(const CLaserData *pCurrent, bool IsPredicted)
+void CItems::RenderLaser(const CLaserData *pCurrent, bool IsPredicted, float TickTime)
 {
 	int Type = std::clamp(pCurrent->m_Type, -1, NUM_LASERTYPES - 1);
 	int ColorIn, ColorOut;
@@ -315,6 +317,11 @@ void CItems::RenderLaser(const CLaserData *pCurrent, bool IsPredicted)
 	if(Type == LASERTYPE_DOOR)
 	{
 		Ticks = 1.0f;
+	}
+	else if(TickTime >= 0.0f)
+	{
+		Ticks = TickTime - pCurrent->m_StartTick;
+		TicksHead = TickTime;
 	}
 	else if(IsPredicted)
 	{
@@ -634,6 +641,25 @@ void CItems::OnRender()
 			}
 
 			RenderLaser(&Data);
+		}
+	}
+
+	// Draw shots and lasers created by the isolated, slowed macro world.
+	if(const CGameWorld *pPracticeWorld = GameClient()->m_Controls.MacroPracticeWorld())
+	{
+		const float PracticeTick = pPracticeWorld->GameTick() + GameClient()->m_Controls.MacroPracticeTickFraction();
+		for(CEntity *pEnt = pPracticeWorld->FindFirst(CGameWorld::ENTTYPE_PROJECTILE); pEnt; pEnt = pEnt->TypeNext())
+		{
+			auto *pProjectile = static_cast<CProjectile *>(pEnt);
+			CProjectileData Data = pProjectile->GetData();
+			RenderProjectile(&Data, pProjectile->GetId(), ScreenRectProjectile, PracticeTick);
+		}
+		for(CEntity *pEnt = pPracticeWorld->FindFirst(CGameWorld::ENTTYPE_LASER); pEnt; pEnt = pEnt->TypeNext())
+		{
+			auto *pLaser = static_cast<CLaser *>(pEnt);
+			CLaserData Data = pLaser->GetData();
+			if(IsLaserInside(Data))
+				RenderLaser(&Data, true, PracticeTick);
 		}
 	}
 
