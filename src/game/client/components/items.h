@@ -15,11 +15,11 @@ class CScreenRect;
 
 class CItems : public CComponent
 {
-	void RenderProjectile(const CProjectileData *pCurrent, int ItemId, const CScreenRect &ScreenRect);
+	void RenderProjectile(const CProjectileData *pCurrent, int ItemId, const CScreenRect &ScreenRect, float TickTime = -1.0f);
 	void RenderPickup(const CNetObj_Pickup *pPrev, const CNetObj_Pickup *pCurrent, bool IsPredicted, int Flags);
 	void RenderFlags();
 	void RenderFlag(const CNetObj_Flag *pPrev, const CNetObj_Flag *pCurrent, const CNetObj_GameData *pPrevGameData, const CNetObj_GameData *pCurGameData);
-	void RenderLaser(const CLaserData *pCurrent, bool IsPredicted = false);
+	void RenderLaser(const CLaserData *pCurrent, bool IsPredicted = false, float TickTime = -1.0f);
 
 	int m_ItemsQuadContainerIndex;
 
