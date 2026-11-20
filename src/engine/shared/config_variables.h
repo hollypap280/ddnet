@@ -224,8 +224,6 @@ MACRO_CONFIG_STR(ClDummy7SkinEyes, dummy7_skin_eyes, protocol7::MAX_SKIN_ARRAY_S
 
 // Client automation
 MACRO_CONFIG_INT(ClAutoHook, cl_auto_hook, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Автоматически цепляться за ближайшего видимого тии в радиусе")
-MACRO_CONFIG_INT(ClAutoHookAimAtTee, cl_auto_hook_aim_at_tee, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Перемещать курсор к выбранному тии при работе автохука")
-MACRO_CONFIG_INT(ClAutoHookBackhook, cl_auto_hook_backhook, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Разрешить автохуку выбирать цели за спиной, не двигая курсор")
 MACRO_CONFIG_INT(ClAutoTriplefly, cl_auto_triplefly, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Автоматически цепляться за третьего ближайшего подходящего тии")
 MACRO_CONFIG_INT(ClAutoUnfreezeLaser, cl_auto_unfreeze_laser, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Автоматически наводить лазер на ближайшего замороженного тии и стрелять")
 MACRO_CONFIG_INT(ClAutoEdgeHook, cl_auto_edge_hook, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Автоматически цепляться крюком у края платформы без прыжка")
