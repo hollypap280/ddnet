@@ -420,13 +420,14 @@ void CControls::SetMacroSeekStep(int Step)
 
 bool CControls::SeekMacro(int Offset)
 {
-	if(!m_MacroPlaying || m_vMacroFrames.empty() || !m_MacroHasCurrentFrame)
+	if(!m_MacroPlaying || m_vMacroFrames.empty())
 		return false;
 
 	const int Current = std::clamp((int)m_MacroPlaybackIndex - 1, 0, (int)m_vMacroFrames.size() - 1);
 	const int Target = std::clamp(Current + Offset, 0, (int)m_vMacroFrames.size() - 1);
 	m_MacroCurrentFrame = m_vMacroFrames[Target];
 	m_MacroPlaybackIndex = (std::size_t)Target + 1;
+	m_MacroHasCurrentFrame = true;
 	m_MacroHoldCurrentFrame = true;
 
 	char aMessage[128];
