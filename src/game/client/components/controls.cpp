@@ -1108,7 +1108,8 @@ void CControls::ApplyHookAutomation(int Dummy)
 
 	if(m_aAutoAvoidActive[Dummy])
 	{
-		m_aInputData[Dummy].m_Hook = ManualHook ? 1 : 0;
+		if(!m_aAutoHookActive[Dummy])
+			m_aInputData[Dummy].m_Hook = ManualHook ? 1 : 0;
 		m_aAutoAvoidActive[Dummy] = false;
 	}
 	if(!FoundTarget && !ManualHook && g_Config.m_ClAutoAvoid)
@@ -1213,7 +1214,8 @@ void CControls::ApplyEdgeHook(int Dummy)
 	// current movement still needs it. This prevents a stale hook from sticking.
 	if(m_aAutoEdgeHookActive[Dummy])
 	{
-		m_aInputData[Dummy].m_Hook = m_aManualHook[Dummy] ? 1 : 0;
+		if(!m_aManualHook[Dummy] && !m_aAutoHookActive[Dummy] && !m_aAutoAvoidActive[Dummy])
+			m_aInputData[Dummy].m_Hook = 0;
 		m_aAutoEdgeHookActive[Dummy] = false;
 	}
 
@@ -1323,14 +1325,25 @@ int CControls::SnapInput(int *pData)
 		PopulateMacroPracticeWorld();
 
 		const int Dummy = g_Config.m_ClDummy;
-		CNetObj_PlayerInput PracticeInput = m_aInputData[Dummy];
-		PracticeInput.m_Direction = 0;
+
+		// Build the same live input that the normal client path would use.
+		// Run automatic assistance before copying it into the private world,
+		// so Auto Hook / Unfreeze / Edge Hook targets are not overwritten by
+		// the raw mouse position afterwards.
+		m_aInputData[Dummy].m_PlayerFlags = PLAYERFLAG_PLAYING;
+		m_aInputData[Dummy].m_TargetX = (int)m_aMousePos[Dummy].x;
+		m_aInputData[Dummy].m_TargetY = (int)m_aMousePos[Dummy].y;
+		m_aInputData[Dummy].m_Direction = 0;
 		if(m_aInputDirectionLeft[Dummy] && !m_aInputDirectionRight[Dummy])
-			PracticeInput.m_Direction = -1;
+			m_aInputData[Dummy].m_Direction = -1;
 		if(!m_aInputDirectionLeft[Dummy] && m_aInputDirectionRight[Dummy])
-			PracticeInput.m_Direction = 1;
-		PracticeInput.m_TargetX = (int)m_aMousePos[Dummy].x;
-		PracticeInput.m_TargetY = (int)m_aMousePos[Dummy].y;
+			m_aInputData[Dummy].m_Direction = 1;
+
+		ApplyHookAutomation(Dummy);
+		ApplyEdgeAssist(Dummy);
+		ApplyEdgeHook(Dummy);
+
+		CNetObj_PlayerInput PracticeInput = m_aInputData[Dummy];
 		PracticeInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
 
 		if(m_aInputData[Dummy].m_PlayerFlags & PLAYERFLAG_PLAYING)
