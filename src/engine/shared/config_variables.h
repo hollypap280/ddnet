@@ -224,6 +224,12 @@ MACRO_CONFIG_STR(ClDummy7SkinEyes, dummy7_skin_eyes, protocol7::MAX_SKIN_ARRAY_S
 
 // Client automation
 MACRO_CONFIG_INT(ClAutoHook, cl_auto_hook, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Automatically hook the closest visible tee in range")
+MACRO_CONFIG_INT(ClAutoHookAimAtTee, cl_auto_hook_aim_at_tee, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Move the client aim cursor to the selected tee while auto hook is active")
+MACRO_CONFIG_INT(ClAutoHookBackhook, cl_auto_hook_backhook, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Allow auto hook targets behind the current cursor direction without moving the cursor")
+MACRO_CONFIG_INT(ClAutoTriplefly, cl_auto_triplefly, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Automatically hook the third nearest visible eligible tee")
+MACRO_CONFIG_INT(ClAutoUnfreezeLaser, cl_auto_unfreeze_laser, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Automatically aim and fire laser at a nearby frozen tee")
+MACRO_CONFIG_INT(ClAutoEdgeJump, cl_auto_edge_jump, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Automatically jump when moving off a ledge")
+MACRO_CONFIG_INT(ClMacroRewindStep, cl_macro_rewind_step, 50, 1, 18000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Number of recorded input ticks to seek when using the macro rewind key")
 MACRO_CONFIG_INT(ClAutoHookAngle, cl_auto_hook_angle, 250, 10, 360, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Width of the automatic hook aiming cone in degrees")
 MACRO_CONFIG_INT(ClAutoHookRange, cl_auto_hook_range, 360, 32, 360, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Maximum auto hook target distance in world units")
 MACRO_CONFIG_INT(ClAutoHookShowRadius, cl_auto_hook_show_radius, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show the auto hook range around your tee")
@@ -239,7 +245,7 @@ MACRO_CONFIG_INT(ClAutoHookWeaponLaser, cl_auto_hook_weapon_laser, 0, 0, 1, CFGF
 // MACRO_CONFIG_STR(ClCensorUrl, cl_censor_url, 100, "https://info.ddnet.org/censor.json", CFGFLAG_CLIENT | CFGFLAG_SAVE, "URL used to download words to censor (must start with https://)")
 
 MACRO_CONFIG_INT(UiPage, ui_page, 6, 6, 13, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Interface page")
-MACRO_CONFIG_INT(UiSettingsPage, ui_settings_page, 0, 0, 12, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Interface settings page")
+MACRO_CONFIG_INT(UiSettingsPage, ui_settings_page, 0, 0, 13, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Interface settings page")
 MACRO_CONFIG_INT(UiToolboxPage, ui_toolbox_page, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Toolbox page")
 MACRO_CONFIG_STR(UiServerAddress, ui_server_address, 1024, "localhost:8303", CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Interface server address")
 MACRO_CONFIG_INT(UiMousesens, ui_mousesens, 200, 1, 100000, CFGFLAG_SAVE | CFGFLAG_CLIENT, "Mouse sensitivity for menus/editor")
