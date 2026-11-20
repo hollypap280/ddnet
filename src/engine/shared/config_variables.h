@@ -224,7 +224,7 @@ MACRO_CONFIG_STR(ClDummy7SkinEyes, dummy7_skin_eyes, protocol7::MAX_SKIN_ARRAY_S
 
 // Client automation
 MACRO_CONFIG_INT(ClAutoHook, cl_auto_hook, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Automatically hook the closest visible tee in range")
-MACRO_CONFIG_INT(ClAutoHook360, cl_auto_hook_360, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Allow automatic hook target selection in the full 360 degree circle")
+MACRO_CONFIG_INT(ClAutoHookAngle, cl_auto_hook_angle, 250, 10, 360, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Width of the automatic hook aiming cone in degrees")
 MACRO_CONFIG_INT(ClAutoHookRange, cl_auto_hook_range, 360, 32, 360, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Maximum auto hook target distance in world units")
 MACRO_CONFIG_INT(ClAutoHookShowRadius, cl_auto_hook_show_radius, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show the auto hook range around your tee")
 MACRO_CONFIG_INT(ClAutoAvoid, cl_auto_avoid, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "When moving vertically, automatically hook a nearby wall to reduce momentum")
