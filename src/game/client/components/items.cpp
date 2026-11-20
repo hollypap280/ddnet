@@ -661,6 +661,16 @@ void CItems::OnRender()
 			if(IsLaserInside(Data))
 				RenderLaser(&Data, true, PracticeTick);
 		}
+
+		// Show the same pickups/weapons inside the private practice world.
+		for(CEntity *pEnt = pPracticeWorld->FindFirst(CGameWorld::ENTTYPE_PICKUP); pEnt; pEnt = pEnt->TypeNext())
+		{
+			auto *pPickup = static_cast<CPickup *>(pEnt);
+			CNetObj_Pickup Data{};
+			pPickup->FillInfo(&Data);
+			if(ScreenRectPickup.Inside(vec2(Data.m_X, Data.m_Y)))
+				RenderPickup(&Data, &Data, true, pPickup->Flags());
+		}
 	}
 
 	RenderFlags();
