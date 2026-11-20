@@ -16,6 +16,8 @@
 #include <game/client/ui.h>
 #include <game/localization.h>
 
+#include <iterator>
+
 void CMenus::SetNeedSendInfo()
 {
 	if(m_Dummy)
@@ -434,7 +436,7 @@ void CMenus::RenderSettingsGame(CUIRect MainView)
 	static CButtonContainer s_Gun, s_Shotgun, s_Grenade, s_Laser;
 	static CButtonContainer s_AutoTriplefly, s_AutoUnfreeze, s_AimAtTee, s_Backhook, s_EdgeJump, s_DummyFlight;
 	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoHook, Localize("Auto Hook"), g_Config.m_ClAutoHook, &Row))
+	if(DoButton_CheckBox(&g_Config.m_ClAutoHook, Localize("Auto Hook mode"), g_Config.m_ClAutoHook, &Row))
 		g_Config.m_ClAutoHook ^= 1;
 	Ui()->DoToolTip(&s_AutoHook, &Row, Localize("Automatically hooks the nearest visible tee inside the configured range"));
 
@@ -446,19 +448,22 @@ void CMenus::RenderSettingsGame(CUIRect MainView)
 	Ui()->DoScrollbarOption(&g_Config.m_ClAutoHookRange, &g_Config.m_ClAutoHookRange, &Row, Localize("Auto Hook range"), 32, 360);
 
 	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoHookShowRadius, Localize("Show Auto Hook radius"), g_Config.m_ClAutoHookShowRadius, &Row))
+	if(DoButton_CheckBox(&g_Config.m_ClAutoHookShowRadius, Localize("Show hook zone circle"), g_Config.m_ClAutoHookShowRadius, &Row))
 		g_Config.m_ClAutoHookShowRadius ^= 1;
 	Ui()->DoToolTip(&s_Radius, &Row, Localize("Draws a dotted range circle around your tee"));
 
 	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoAvoid, Localize("Avoid assist"), g_Config.m_ClAutoAvoid, &Row))
+	if(DoButton_CheckBox(&g_Config.m_ClAutoAvoid, Localize("Avoid freeze"), g_Config.m_ClAutoAvoid, &Row))
 		g_Config.m_ClAutoAvoid ^= 1;
-	Ui()->DoToolTip(&s_Avoid, &Row, Localize("While rising, searches below for a wall; while falling, searches for side walls slightly above you"));
+	Ui()->DoToolTip(&s_Avoid, &Row, Localize("Wall-hook assist: catches a nearby wall while rising or falling to help avoid a bad drop"));
 
 	MainView.HSplitTop(24.0f, &Row, &MainView);
 	if(DoButton_CheckBox(&g_Config.m_ClAutoEdge, Localize("Edge pixel assist"), g_Config.m_ClAutoEdge, &Row))
 		g_Config.m_ClAutoEdge ^= 1;
 	Ui()->DoToolTip(&s_Edge, &Row, Localize("When you hold hook, scans a narrow angle around your aim to select an exact hookable point near corners"));
+
+	MainView.HSplitTop(22.0f, &Row, &MainView);
+	Ui()->DoLabel(&Row, Localize("Aim weapons inside the same zone"), 14.0f, TEXTALIGN_ML);
 
 	MainView.HSplitTop(24.0f, &Row, &MainView);
 	if(DoButton_CheckBox(&g_Config.m_ClAutoHookWeaponGun, Localize("Auto Hook fire: Gun"), g_Config.m_ClAutoHookWeaponGun, &Row))
@@ -626,6 +631,9 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 		{ "Auto unfreeze with laser", "toggle cl_auto_unfreeze_laser 0 1" },
 		{ "Auto Hook", "toggle cl_auto_hook 0 1" },
 		{ "Avoid freeze assist", "toggle cl_auto_avoid 0 1" },
+		{ "Aim at tees (moves cursor)", "toggle cl_auto_hook_aim_at_tee 0 1" },
+		{ "Backhook (keeps cursor still)", "toggle cl_auto_hook_backhook 0 1" },
+		{ "Edge pixel assist", "toggle cl_auto_edge 0 1" },
 		{ "Edge jump", "toggle cl_auto_edge_jump 0 1" },
 		{ "Dummy flight (classic hammerfly)", "toggle cl_dummy_hammer 0 1" },
 	};
