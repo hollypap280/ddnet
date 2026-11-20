@@ -273,7 +273,8 @@ bool CControls::MacroFilePath(const char *pName, char *pBuffer, unsigned BufferS
 	for(int i = 0; pName[i] && Out < (int)sizeof(aSafeName) - 1; ++i)
 	{
 		const unsigned char Ch = (unsigned char)pName[i];
-		if((Ch >= 'a' && Ch <= 'z') || (Ch >= 'A' && Ch <= 'Z') || (Ch >= '0' && Ch <= '9') || Ch == '_' || Ch == '-')
+		if((Ch >= 'a' && Ch <= 'z') || (Ch >= 'A' && Ch <= 'Z') || (Ch >= '0' && Ch <= '9') ||
+			Ch == '_' || Ch == '-' || Ch == ' ' || Ch >= 0x80)
 			aSafeName[Out++] = (char)Ch;
 		else
 			return false;
@@ -610,6 +611,7 @@ void CControls::StartMacroRecording()
 
 void CControls::StopMacroRecording()
 {
+	const bool WasRecording = m_MacroRecording;
 	if(m_MacroRecording)
 	{
 		m_MacroRecording = false;
@@ -620,7 +622,8 @@ void CControls::StopMacroRecording()
 	if(m_MacroPlaying)
 		GameClient()->Echo("Воспроизведение макроса остановлено");
 	m_MacroPlaying = false;
-	m_MacroPlaybackIndex = 0;
+	if(WasRecording)
+		m_MacroPlaybackIndex = m_vMacroFrames.size();
 	m_MacroCurrentFrame = {};
 	m_MacroHasCurrentFrame = false;
 	m_MacroHoldCurrentFrame = false;
@@ -890,7 +893,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 			if(ClientId == LocalId || !GameClient()->m_Snap.m_aCharacters[ClientId].m_Active)
 				continue;
 			if(GameClient()->IsOtherTeam(ClientId) || GameClient()->m_aClients[ClientId].m_Solo ||
-				GameClient()->m_aClients[ClientId].m_HookHitDisabled || GameClient()->m_aClients[ClientId].m_CollisionDisabled)
+				GameClient()->m_aClients[ClientId].m_HookHitDisabled)
 				continue;
 
 			const CNetObj_Character &Character = GameClient()->m_Snap.m_aCharacters[ClientId].m_Cur;
@@ -955,7 +958,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 
 	// Auto unfreeze targets the nearest visible frozen teammate with the laser.
 	int AutoWeapon = -1;
-	if(g_Config.m_ClAutoUnfreezeLaser && !ManualHook)
+	if(g_Config.m_ClAutoUnfreezeLaser)
 	{
 		const CCharacterCore &Predicted = GameClient()->m_PredictedChar;
 		if(Predicted.m_aWeapons[WEAPON_LASER].m_Got &&
@@ -965,9 +968,6 @@ void CControls::ApplyHookAutomation(int Dummy)
 			const float LaserRange = std::max(32.0f, GameClient()->GetTuning(TuneZone)->m_LaserReach);
 			const float Range = std::clamp(LaserRange, 32.0f, 1200.0f);
 			float BestFrozenDistance = Range * Range;
-			const vec2 ManualAim = m_aMousePos[Dummy];
-			const float AimLength = length(ManualAim);
-			const float AimAngle = std::clamp((float)g_Config.m_ClAutoHookAngle, 10.0f, 360.0f);
 			const int LocalId = GameClient()->m_Snap.m_LocalClientId;
 			for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
 			{
@@ -990,12 +990,6 @@ void CControls::ApplyHookAutomation(int Dummy)
 				const float DistanceSquared = dot(Delta, Delta);
 				if(DistanceSquared < 1.0f || DistanceSquared > BestFrozenDistance)
 					continue;
-				if(!g_Config.m_ClAutoHookBackhook && AimLength > 1.0f && AimAngle < 359.9f)
-				{
-					const float AimDot = dot(ManualAim, Delta) / (AimLength * std::sqrt(DistanceSquared));
-					if(AimDot < std::cos(AimAngle * 0.5f * pi / 180.0f))
-						continue;
-				}
 				vec2 CollisionPos;
 				vec2 BeforeCollision;
 				if(Collision()->IntersectLine(LocalPos, TargetPos, &CollisionPos, &BeforeCollision) != 0)
