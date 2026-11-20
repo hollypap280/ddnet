@@ -1209,14 +1209,19 @@ void CControls::ApplyEdgeAssist(int Dummy)
 
 void CControls::ApplyEdgeHook(int Dummy)
 {
+	// Release last tick's automatic edge hook before deciding whether the
+	// current movement still needs it. This prevents a stale hook from sticking.
+	if(m_aAutoEdgeHookActive[Dummy])
+	{
+		m_aInputData[Dummy].m_Hook = m_aManualHook[Dummy] ? 1 : 0;
+		m_aAutoEdgeHookActive[Dummy] = false;
+	}
+
 	const CNetObj_Character *pLocal = GameClient()->m_Snap.m_pLocalCharacter;
 	const CCharacter *pPracticeLocal = m_MacroPracticeActive ? m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId) : nullptr;
 	if(!g_Config.m_ClAutoEdgeHook || (!pLocal && !pPracticeLocal) ||
 		m_aManualHook[Dummy] || m_aAutoHookActive[Dummy] || m_aAutoAvoidActive[Dummy])
-	{
-		m_aAutoEdgeHookActive[Dummy] = false;
 		return;
-	}
 
 	const int Direction = m_aInputData[Dummy].m_Direction;
 	if(Direction == 0)
