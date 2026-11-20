@@ -745,7 +745,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 
 	// Manual hook always has priority. Automatic targeting never changes the
 	// visible cursor and sends only a replacement input direction to the server.
-	if((g_Config.m_ClAutoHook || g_Config.m_ClAutoTriplefly) && !ManualHook)
+	if((g_Config.m_ClAutoHook && !ManualHook) || g_Config.m_ClAutoTriplefly)
 	{
 		const float Range = std::clamp((float)g_Config.m_ClAutoHookRange, 32.0f, 360.0f);
 		const float RangeSquared = Range * Range;
@@ -760,7 +760,8 @@ void CControls::ApplyHookAutomation(int Dummy)
 		{
 			if(ClientId == LocalId || !GameClient()->m_Snap.m_aCharacters[ClientId].m_Active)
 				continue;
-			if(GameClient()->m_aClients[ClientId].m_Solo || GameClient()->m_aClients[ClientId].m_HookHitDisabled)
+			if(GameClient()->IsOtherTeam(ClientId) || GameClient()->m_aClients[ClientId].m_Solo ||
+				GameClient()->m_aClients[ClientId].m_HookHitDisabled || GameClient()->m_aClients[ClientId].m_CollisionDisabled)
 				continue;
 
 			const CNetObj_Character &Character = GameClient()->m_Snap.m_aCharacters[ClientId].m_Cur;
@@ -813,7 +814,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 		}
 		else
 		{
-			m_aInputData[Dummy].m_Hook = 0;
+			m_aInputData[Dummy].m_Hook = ManualHook ? 1 : 0;
 			m_aAutoHookActive[Dummy] = false;
 		}
 	}
@@ -839,7 +840,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 			const int LocalId = GameClient()->m_Snap.m_LocalClientId;
 			for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
 			{
-				if(ClientId == LocalId || !GameClient()->m_Snap.m_aCharacters[ClientId].m_Active || GameClient()->IsOtherTeam(ClientId))
+				if(ClientId == LocalId || !GameClient()->m_Snap.m_aCharacters[ClientId].m_Active || GameClient()->IsOtherTeam(ClientId) || GameClient()->m_aClients[ClientId].m_LaserHitDisabled)
 					continue;
 				const bool Frozen = GameClient()->m_aClients[ClientId].m_FreezeEnd != 0 ||
 					GameClient()->m_aClients[ClientId].m_LiveFrozen ||
@@ -1036,8 +1037,8 @@ void CControls::ApplyEdgeJump(int Dummy)
 	}
 	const CNetObj_Character *pLocal = GameClient()->m_Snap.m_pLocalCharacter;
 	const vec2 Pos((float)pLocal->m_X, (float)pLocal->m_Y);
-	const bool Grounded = Collision()->CheckPoint(Pos + vec2(0.0f, 20.0f));
-	const bool GroundAhead = Collision()->CheckPoint(Pos + vec2(Direction * 20.0f, 20.0f));
+	const bool Grounded = Collision()->IsOnGround(Pos, 14.0f);
+	const bool GroundAhead = Collision()->CheckPoint(Pos.x + Direction * 19.0f, Pos.y + 18.0f);
 	const bool AtEdge = Grounded && !GroundAhead;
 	if(AtEdge && !m_aAutoEdgeJumpActive[Dummy])
 	{
@@ -1307,7 +1308,7 @@ void CControls::OnRender()
 		m_aTargetPos[g_Config.m_ClDummy] = m_aMousePos[g_Config.m_ClDummy];
 	}
 
-	if(g_Config.m_ClAutoHook && g_Config.m_ClAutoHookShowRadius && GameClient()->m_Snap.m_pLocalCharacter)
+	if((g_Config.m_ClAutoHook || g_Config.m_ClAutoTriplefly || g_Config.m_ClAutoUnfreezeLaser) && g_Config.m_ClAutoHookShowRadius && GameClient()->m_Snap.m_pLocalCharacter)
 	{
 		const float Radius = std::clamp((float)g_Config.m_ClAutoHookRange, 32.0f, 360.0f);
 		const float ConeAngle = std::clamp((float)g_Config.m_ClAutoHookAngle, 10.0f, 360.0f);
