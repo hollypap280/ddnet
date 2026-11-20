@@ -16,6 +16,7 @@
 #include <game/client/components/players.h>
 #include <game/client/components/skins.h>
 #include <game/client/gameclient.h>
+#include <game/client/prediction/entities/character.h>
 #include <game/client/race.h>
 
 const char *CGhost::ms_pGhostDir = "ghosts";
@@ -312,7 +313,7 @@ void CGhost::OnRender()
 		return;
 
 	const bool RenderRaceGhosts = m_Rendering && g_Config.m_ClRaceShowGhost;
-	const bool RenderMacroPractice = m_MacroPracticeVisible && m_pMacroPracticeRenderInfo;
+	const bool RenderMacroPractice = std::any_of(std::begin(m_aMacroPracticeVisible), std::end(m_aMacroPracticeVisible), [](bool Visible) { return Visible; });
 	if(!RenderRaceGhosts && !RenderMacroPractice)
 		return;
 
@@ -377,32 +378,47 @@ void CGhost::OnRender()
 
 	if(RenderMacroPractice)
 	{
-		CNetObj_Character Prev = m_MacroPracticePrev;
-		CNetObj_Character Player = m_MacroPracticeCurrent;
-		const CTeeRenderInfo *pRenderInfo = &m_pMacroPracticeRenderInfo->TeeRenderInfo();
-		GameClient()->m_Players.RenderHook(ScreenRect, &Prev, &Player, pRenderInfo, -2, 1.0f);
-		GameClient()->m_Players.RenderPlayer(ScreenRect, &Prev, &Player, pRenderInfo, -2, 1.0f);
+		// ClientId -3 is reserved for entities from the private practice copy:
+		// their positions and hook targets come from the copied world, not the server.
+		for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
+		{
+			if(!m_aMacroPracticeVisible[ClientId])
+				continue;
+			CTeeRenderInfo RenderInfo = GameClient()->m_aClients[ClientId].m_RenderInfo;
+			GameClient()->m_Players.RenderHook(ScreenRect, &m_aMacroPracticePrev[ClientId], &m_aMacroPracticeCurrent[ClientId], &RenderInfo, -3, 1.0f);
+			GameClient()->m_Players.RenderPlayer(ScreenRect, &m_aMacroPracticePrev[ClientId], &m_aMacroPracticeCurrent[ClientId], &RenderInfo, -3, 1.0f);
+		}
 	}
 }
 
-void CGhost::SetMacroPracticeCharacter(const CNetObj_Character &Prev, const CNetObj_Character &Current)
+void CGhost::SetMacroPracticeWorld(CGameWorld *pWorld)
 {
-	if(!m_pMacroPracticeRenderInfo)
+	std::fill(std::begin(m_aMacroPracticeVisible), std::end(m_aMacroPracticeVisible), false);
+	if(!pWorld)
+		return;
+
+	for(CEntity *pEnt = pWorld->FindFirst(CGameWorld::ENTTYPE_CHARACTER); pEnt; pEnt = pEnt->TypeNext())
 	{
-		const int LocalId = GameClient()->m_aLocalIds[g_Config.m_ClDummy];
-		if(LocalId < 0 || LocalId >= MAX_CLIENTS)
-			return;
-		m_pMacroPracticeRenderInfo = GameClient()->CreateManagedTeeRenderInfo(GameClient()->m_aClients[LocalId]);
+		auto *pCharacter = static_cast<CCharacter *>(pEnt);
+		const int ClientId = pCharacter->GetCid();
+		if(ClientId < 0 || ClientId >= MAX_CLIENTS)
+			continue;
+
+		CNetObj_Character Current{};
+		pCharacter->Core()->Write(&Current);
+		Current.m_Weapon = pCharacter->GetActiveWeapon();
+		Current.m_AttackTick = pCharacter->GetAttackTick();
+		Current.m_Tick = pWorld->GameTick();
+
+		m_aMacroPracticePrev[ClientId] = m_aMacroPracticeVisible[ClientId] ? m_aMacroPracticeCurrent[ClientId] : Current;
+		m_aMacroPracticeCurrent[ClientId] = Current;
+		m_aMacroPracticeVisible[ClientId] = true;
 	}
-	m_MacroPracticePrev = Prev;
-	m_MacroPracticeCurrent = Current;
-	m_MacroPracticeVisible = true;
 }
 
 void CGhost::ClearMacroPracticeCharacter()
 {
-	m_MacroPracticeVisible = false;
-	m_pMacroPracticeRenderInfo.reset();
+	std::fill(std::begin(m_aMacroPracticeVisible), std::end(m_aMacroPracticeVisible), false);
 }
 
 void CGhost::UpdateTeeRenderInfo(CGhostItem &Ghost)
