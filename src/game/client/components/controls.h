@@ -100,6 +100,7 @@ private:
 	float m_MacroPlaybackAccumulator = 0.0f;
 	int m_MacroSeekStep = 25;
 	bool m_MacroHasCurrentFrame = false;
+	bool m_MacroHoldCurrentFrame = false;
 	bool m_MacroRecording = false;
 	bool m_MacroPlaying = false;
 	bool m_aManualHook[NUM_DUMMIES]{};
