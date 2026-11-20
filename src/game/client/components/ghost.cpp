@@ -311,69 +311,98 @@ void CGhost::OnRender()
 	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
 		return;
 
-	// Play the ghost
-	if(!m_Rendering || !g_Config.m_ClRaceShowGhost)
+	const bool RenderRaceGhosts = m_Rendering && g_Config.m_ClRaceShowGhost;
+	const bool RenderMacroPractice = m_MacroPracticeVisible && m_pMacroPracticeRenderInfo;
+	if(!RenderRaceGhosts && !RenderMacroPractice)
 		return;
 
-	int PlaybackTick = Client()->PredGameTick(g_Config.m_ClDummy) - m_StartRenderTick;
-
 	CScreenRect ScreenRect = Graphics()->GetScreen();
-
-	// 200x200 box around the player
 	ScreenRect.Expand(100.0f);
 
-	for(auto &Ghost : m_aActiveGhosts)
+	if(RenderRaceGhosts)
 	{
-		if(Ghost.Empty())
-			continue;
-
-		int GhostTick = Ghost.m_StartTick + PlaybackTick;
-		while(Ghost.m_PlaybackPos >= 0 && Ghost.m_Path.Get(Ghost.m_PlaybackPos)->m_Tick < GhostTick)
+		const int PlaybackTick = Client()->PredGameTick(g_Config.m_ClDummy) - m_StartRenderTick;
+		for(auto &Ghost : m_aActiveGhosts)
 		{
-			if(Ghost.m_PlaybackPos < Ghost.m_Path.Size() - 1)
-				Ghost.m_PlaybackPos++;
-			else
-				Ghost.m_PlaybackPos = -1;
-		}
+			if(Ghost.Empty())
+				continue;
 
-		if(Ghost.m_PlaybackPos < 0)
-			continue;
-
-		int CurPos = Ghost.m_PlaybackPos;
-		int PrevPos = std::max(0, CurPos - 1);
-		if(Ghost.m_Path.Get(PrevPos)->m_Tick > GhostTick)
-			continue;
-
-		CNetObj_Character Player, Prev;
-		GetNetObjCharacter(&Player, Ghost.m_Path.Get(CurPos));
-		GetNetObjCharacter(&Prev, Ghost.m_Path.Get(PrevPos));
-
-		int TickDiff = Player.m_Tick - Prev.m_Tick;
-		float IntraTick = 0.f;
-		if(TickDiff > 0)
-			IntraTick = (GhostTick - Prev.m_Tick - 1 + Client()->PredIntraGameTick(g_Config.m_ClDummy)) / TickDiff;
-
-		Player.m_AttackTick += Client()->GameTick(g_Config.m_ClDummy) - GhostTick;
-
-		const CTeeRenderInfo *pRenderInfo = &Ghost.m_pManagedTeeRenderInfo->TeeRenderInfo();
-		CTeeRenderInfo GhostNinjaRenderInfo;
-		if(Player.m_Weapon == WEAPON_NINJA && g_Config.m_ClShowNinja)
-		{
-			// change the skin for the ghost to the ninja
-			GhostNinjaRenderInfo = Ghost.m_pManagedTeeRenderInfo->TeeRenderInfo();
-			GhostNinjaRenderInfo.ApplySkin(GameClient()->m_Players.NinjaTeeRenderInfo()->TeeRenderInfo());
-			GhostNinjaRenderInfo.m_CustomColoredSkin = GameClient()->IsTeamPlay();
-			if(!GhostNinjaRenderInfo.m_CustomColoredSkin)
+			const int GhostTick = Ghost.m_StartTick + PlaybackTick;
+			while(Ghost.m_PlaybackPos >= 0 && Ghost.m_Path.Get(Ghost.m_PlaybackPos)->m_Tick < GhostTick)
 			{
-				GhostNinjaRenderInfo.m_ColorBody = ColorRGBA(1, 1, 1);
-				GhostNinjaRenderInfo.m_ColorFeet = ColorRGBA(1, 1, 1);
+				if(Ghost.m_PlaybackPos < Ghost.m_Path.Size() - 1)
+					Ghost.m_PlaybackPos++;
+				else
+					Ghost.m_PlaybackPos = -1;
 			}
-			pRenderInfo = &GhostNinjaRenderInfo;
-		}
 
-		GameClient()->m_Players.RenderHook(ScreenRect, &Prev, &Player, pRenderInfo, -2, IntraTick);
-		GameClient()->m_Players.RenderPlayer(ScreenRect, &Prev, &Player, pRenderInfo, -2, IntraTick);
+			if(Ghost.m_PlaybackPos < 0)
+				continue;
+
+			const int CurPos = Ghost.m_PlaybackPos;
+			const int PrevPos = std::max(0, CurPos - 1);
+			if(Ghost.m_Path.Get(PrevPos)->m_Tick > GhostTick)
+				continue;
+
+			CNetObj_Character Player, Prev;
+			GetNetObjCharacter(&Player, Ghost.m_Path.Get(CurPos));
+			GetNetObjCharacter(&Prev, Ghost.m_Path.Get(PrevPos));
+
+			const int TickDiff = Player.m_Tick - Prev.m_Tick;
+			float IntraTick = 0.f;
+			if(TickDiff > 0)
+				IntraTick = (GhostTick - Prev.m_Tick - 1 + Client()->PredIntraGameTick(g_Config.m_ClDummy)) / TickDiff;
+
+			Player.m_AttackTick += Client()->GameTick(g_Config.m_ClDummy) - GhostTick;
+
+			const CTeeRenderInfo *pRenderInfo = &Ghost.m_pManagedTeeRenderInfo->TeeRenderInfo();
+			CTeeRenderInfo GhostNinjaRenderInfo;
+			if(Player.m_Weapon == WEAPON_NINJA && g_Config.m_ClShowNinja)
+			{
+				GhostNinjaRenderInfo = Ghost.m_pManagedTeeRenderInfo->TeeRenderInfo();
+				GhostNinjaRenderInfo.ApplySkin(GameClient()->m_Players.NinjaTeeRenderInfo()->TeeRenderInfo());
+				GhostNinjaRenderInfo.m_CustomColoredSkin = GameClient()->IsTeamPlay();
+				if(!GhostNinjaRenderInfo.m_CustomColoredSkin)
+				{
+					GhostNinjaRenderInfo.m_ColorBody = ColorRGBA(1, 1, 1);
+					GhostNinjaRenderInfo.m_ColorFeet = ColorRGBA(1, 1, 1);
+				}
+				pRenderInfo = &GhostNinjaRenderInfo;
+			}
+
+			GameClient()->m_Players.RenderHook(ScreenRect, &Prev, &Player, pRenderInfo, -2, IntraTick);
+			GameClient()->m_Players.RenderPlayer(ScreenRect, &Prev, &Player, pRenderInfo, -2, IntraTick);
+		}
 	}
+
+	if(RenderMacroPractice)
+	{
+		CNetObj_Character Prev = m_MacroPracticePrev;
+		CNetObj_Character Player = m_MacroPracticeCurrent;
+		const CTeeRenderInfo *pRenderInfo = &m_pMacroPracticeRenderInfo->TeeRenderInfo();
+		GameClient()->m_Players.RenderHook(ScreenRect, &Prev, &Player, pRenderInfo, -2, 1.0f);
+		GameClient()->m_Players.RenderPlayer(ScreenRect, &Prev, &Player, pRenderInfo, -2, 1.0f);
+	}
+}
+
+void CGhost::SetMacroPracticeCharacter(const CNetObj_Character &Prev, const CNetObj_Character &Current)
+{
+	if(!m_pMacroPracticeRenderInfo)
+	{
+		const int LocalId = GameClient()->m_aLocalIds[g_Config.m_ClDummy];
+		if(LocalId < 0 || LocalId >= MAX_CLIENTS)
+			return;
+		m_pMacroPracticeRenderInfo = GameClient()->CreateManagedTeeRenderInfo(GameClient()->m_aClients[LocalId]);
+	}
+	m_MacroPracticePrev = Prev;
+	m_MacroPracticeCurrent = Current;
+	m_MacroPracticeVisible = true;
+}
+
+void CGhost::ClearMacroPracticeCharacter()
+{
+	m_MacroPracticeVisible = false;
+	m_pMacroPracticeRenderInfo.reset();
 }
 
 void CGhost::UpdateTeeRenderInfo(CGhostItem &Ghost)
@@ -687,6 +716,7 @@ void CGhost::OnReset()
 {
 	StopRecord();
 	StopRender();
+	ClearMacroPracticeCharacter();
 	m_LastDeathTick = -1;
 }
 
