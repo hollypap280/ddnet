@@ -531,7 +531,17 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	Ui()->DoLabel(&Label, Localize("Макросы с замедленной тренировкой"), 20.0f, TEXTALIGN_ML);
 	MainView.HSplitTop(5.0f, nullptr, &MainView);
 
-	static CButtonContainer s_PracticeStart, s_PracticeStop;
+	static CLineInputBuffered<64> s_MacroName;
+	static CLineInputBuffered<64> s_MacroSearch;
+	static CLineInputNumber s_RewindStep;
+	static bool s_RewindStepInitialized = false;
+	static std::vector<CControls::SMacroInfo> s_vMacros;
+	static bool s_MacroListLoaded = false;
+	static char s_aSelectedMacro[64]{};
+	static int s_MacroPage = 0;
+	static CButtonContainer s_Record, s_Stop, s_Save, s_Refresh, s_SearchClear, s_Play, s_Delete, s_Previous, s_Next, s_PracticeStart, s_PracticeStop;
+	static CButtonContainer s_aMacroButtons[6];
+
 	MainView.HSplitTop(26.0f, &Row, &MainView);
 	Row.VSplitLeft(145.0f, &Button, &Row);
 	if(DoButton_Menu(&s_PracticeStart, Localize("Начать тренировку"), 0, &Button))
@@ -546,13 +556,11 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	Ui()->DoScrollbarOption(&g_Config.m_ClMacroPracticeRate, &g_Config.m_ClMacroPracticeRate, &Row,
 		Localize("Скорость тренировки (тиков в секунду)"), 1, 50);
 
-	static CLineInputBuffered<64> s_MacroName;
 	MainView.HSplitTop(24.0f, &Row, &MainView);
 	Row.VSplitLeft(155.0f, &Label, &NameRect);
 	Ui()->DoLabel(&Label, Localize("Название новой записи"), 14.0f, TEXTALIGN_ML);
 	Ui()->DoEditBox(&s_MacroName, &NameRect, 14.0f);
 
-	static CButtonContainer s_Record, s_Stop, s_Save;
 	MainView.HSplitTop(6.0f, nullptr, &MainView);
 	MainView.HSplitTop(26.0f, &Row, &MainView);
 	Row.VSplitLeft(145.0f, &Button, &Row);
@@ -569,24 +577,18 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		if(s_MacroName.IsEmpty() || !GameClient()->m_Controls.SaveMacro(s_MacroName.GetString()))
 			GameClient()->Echo(Localize("Не удалось сохранить. Введите имя и остановите запись."));
 		else
+		{
 			GameClient()->Echo(Localize("Макрос сохранён"));
+			s_MacroListLoaded = false;
+		}
 	}
 
-	static CLineInputBuffered<64> s_MacroSearch;
-	static CLineInputNumber s_RewindStep;
-	static bool s_RewindStepInitialized = false;
 	if(!s_RewindStepInitialized)
 	{
 		s_RewindStep.SetInteger(g_Config.m_ClMacroRewindStep);
 		s_RewindStepInitialized = true;
 	}
 
-	static std::vector<CControls::SMacroInfo> s_vMacros;
-	static bool s_MacroListLoaded = false;
-	static char s_aSelectedMacro[64]{};
-	static int s_MacroPage = 0;
-	static CButtonContainer s_Refresh, s_SearchClear, s_Play, s_Delete, s_Previous, s_Next;
-	static CButtonContainer s_aMacroButtons[6];
 
 	auto RefreshMacroList = [&]() {
 		GameClient()->m_Controls.GetMacroList(s_vMacros);
