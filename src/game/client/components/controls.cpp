@@ -310,6 +310,7 @@ bool CControls::StartMacroPractice()
 	m_MacroPracticeLocalId = LocalId;
 	m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
 	m_MacroPracticeAccumulator = 0.0f;
+	m_MacroPracticeLastTime = time_get();
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeActive = true;
 	m_MacroPracticeHasRenderChar = false;
@@ -327,6 +328,7 @@ void CControls::StopMacroPractice()
 	m_MacroPracticeActive = false;
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeAccumulator = 0.0f;
+	m_MacroPracticeLastTime = 0;
 	m_MacroPracticeLocalId = -1;
 	m_MacroPracticeHasRenderChar = false;
 	m_MacroPlaybackIndex = 0;
@@ -500,6 +502,7 @@ void CControls::StartMacroRecording()
 	m_MacroHoldCurrentFrame = false;
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeAccumulator = 0.0f;
+	m_MacroPracticeLastTime = time_get();
 	m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
 	m_vMacroFrames.clear();
 	m_MacroRecording = true;
@@ -620,6 +623,7 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroHoldCurrentFrame = false;
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeAccumulator = 0.0f;
+	m_MacroPracticeLastTime = time_get();
 	m_MacroPlaying = true;
 	UpdateMacroPracticeGhost(pCharacter);
 	GameClient()->Echo("Макрос запущен в отдельном тренировочном мире");
@@ -1166,7 +1170,12 @@ int CControls::SnapInput(int *pData)
 
 		if(m_aInputData[Dummy].m_PlayerFlags & PLAYERFLAG_PLAYING)
 		{
-			m_MacroPracticeAccumulator += MacroPracticeRate() / (float)SERVER_TICK_SPEED;
+			const int64_t CurrentTime = time_get();
+			if(m_MacroPracticeLastTime == 0)
+				m_MacroPracticeLastTime = CurrentTime;
+			const int64_t ElapsedTime = std::max<int64_t>(0, CurrentTime - m_MacroPracticeLastTime);
+			m_MacroPracticeLastTime = CurrentTime;
+			m_MacroPracticeAccumulator += (float)ElapsedTime / (float)time_freq() * MacroPracticeRate();
 			int Steps = 0;
 			while(m_MacroPracticeAccumulator >= 1.0f && Steps < SERVER_TICK_SPEED)
 			{
