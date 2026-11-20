@@ -123,6 +123,7 @@ private:
 	bool m_MacroPracticeActive = false;
 	bool m_MacroPracticeWaiting = false;
 	float m_MacroPracticeAccumulator = 0.0f;
+	int64_t m_MacroPracticeLastTime = 0;
 	int m_MacroPracticeTick = 0;
 	int m_MacroPracticeLocalId = -1;
 	CNetObj_PlayerInput m_MacroPracticeInput{};
