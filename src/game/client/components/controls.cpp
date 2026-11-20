@@ -60,7 +60,7 @@ void CControls::OnReset()
 	std::fill(std::begin(m_aAutoHookActive), std::end(m_aAutoHookActive), false);
 	std::fill(std::begin(m_aAutoHookFireActive), std::end(m_aAutoHookFireActive), false);
 	std::fill(std::begin(m_aAutoAvoidActive), std::end(m_aAutoAvoidActive), false);
-	std::fill(std::begin(m_aAutoEdgeJumpActive), std::end(m_aAutoEdgeJumpActive), false);
+	std::fill(std::begin(m_aAutoEdgeHookActive), std::end(m_aAutoEdgeJumpActive), false);
 }
 
 void CControls::ResetInput(int Dummy)
@@ -1023,35 +1023,74 @@ void CControls::ApplyEdgeAssist(int Dummy)
 	}
 }
 
-void CControls::ApplyEdgeJump(int Dummy)
+void CControls::ApplyEdgeHook(int Dummy)
 {
-	if(!g_Config.m_ClAutoEdgeJump || !GameClient()->m_Snap.m_pLocalCharacter)
+	if(!g_Config.m_ClAutoEdgeHook || !GameClient()->m_Snap.m_pLocalCharacter ||
+		m_aManualHook[Dummy] || m_aAutoHookActive[Dummy] || m_aAutoAvoidActive[Dummy])
 	{
-		m_aAutoEdgeJumpActive[Dummy] = false;
+		m_aAutoEdgeHookActive[Dummy] = false;
 		return;
 	}
+
 	const int Direction = m_aInputData[Dummy].m_Direction;
 	if(Direction == 0)
 	{
-		m_aAutoEdgeJumpActive[Dummy] = false;
+		m_aAutoEdgeHookActive[Dummy] = false;
 		return;
 	}
+
 	const CNetObj_Character *pLocal = GameClient()->m_Snap.m_pLocalCharacter;
-	const vec2 Pos((float)pLocal->m_X, (float)pLocal->m_Y);
-	const bool Grounded = Collision()->IsOnGround(Pos, 14.0f);
-	const bool GroundAhead = Collision()->CheckPoint(Pos.x + Direction * 19.0f, Pos.y + 18.0f);
-	const bool AtEdge = Grounded && !GroundAhead;
-	if(AtEdge && !m_aAutoEdgeJumpActive[Dummy])
+	const vec2 LocalPos((float)pLocal->m_X, (float)pLocal->m_Y);
+	const bool Grounded = Collision()->IsOnGround(LocalPos, 14.0f);
+	const bool GroundAhead = Collision()->CheckPoint(LocalPos.x + Direction * 20.0f, LocalPos.y + 18.0f);
+	if(!Grounded || GroundAhead)
 	{
-		m_aInputData[Dummy].m_Jump = 1;
-		m_aAutoEdgeJumpActive[Dummy] = true;
+		m_aAutoEdgeHookActive[Dummy] = false;
+		return;
 	}
-	else if(!AtEdge)
+
+	// Search from straight ahead to the lower side of the ledge. This is a
+	// hook-only rescue: it never presses jump and never changes movement input.
+	float BestScore = 1000000.0f;
+	vec2 BestAim(0.0f, 0.0f);
+	bool Found = false;
+	for(int Degrees = -15; Degrees <= 85; Degrees += 5)
 	{
-		m_aAutoEdgeJumpActive[Dummy] = false;
+		const float Angle = Degrees * pi / 180.0f;
+		const vec2 DirectionVector(Direction * std::cos(Angle), std::sin(Angle));
+		vec2 CollisionPos;
+		vec2 BeforeCollision;
+		const int Hit = Collision()->IntersectLineTeleHook(
+			LocalPos, LocalPos + DirectionVector * 300.0f, &CollisionPos, &BeforeCollision);
+		if(Hit == 0 || Hit == TILE_NOHOOK)
+			continue;
+
+		const vec2 Candidate = BeforeCollision - LocalPos;
+		const float CandidateLength = length(Candidate);
+		if(CandidateLength < 20.0f || CandidateLength > 300.0f)
+			continue;
+
+		const float Score = CandidateLength + std::abs((float)Degrees - 35.0f) * 0.8f;
+		if(Score < BestScore)
+		{
+			BestScore = Score;
+			BestAim = Candidate;
+			Found = true;
+		}
+	}
+
+	if(Found)
+	{
+		m_aInputData[Dummy].m_TargetX = round_to_int(BestAim.x);
+		m_aInputData[Dummy].m_TargetY = round_to_int(BestAim.y);
+		m_aInputData[Dummy].m_Hook = 1;
+		m_aAutoEdgeHookActive[Dummy] = true;
+	}
+	else
+	{
+		m_aAutoEdgeHookActive[Dummy] = false;
 	}
 }
-
 int CControls::SnapInput(int *pData)
 {
 	// update player state
@@ -1183,7 +1222,7 @@ int CControls::SnapInput(int *pData)
 
 		ApplyHookAutomation(g_Config.m_ClDummy);
 		ApplyEdgeAssist(g_Config.m_ClDummy);
-		ApplyEdgeJump(g_Config.m_ClDummy);
+		ApplyEdgeHook(g_Config.m_ClDummy);
 
 		// dummy copy moves
 		if(g_Config.m_ClDummyCopyMoves)
