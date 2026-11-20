@@ -56,7 +56,7 @@ void CMenus::RenderSettings(CUIRect MainView)
 		Localize("DDNet"),
 		Localize("Assets"),
 		Localize("Credits"),
-		Localize("Game"),
+		Localize("Игровые функции"),
 		Localize("Макросы"),
 		Localize("Клавиши")};
 	static CButtonContainer s_aTabButtons[SETTINGS_LENGTH];
@@ -528,7 +528,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 {
 	CUIRect Row, Label, NameRect, Button;
 	MainView.HSplitTop(28.0f, &Label, &MainView);
-	Ui()->DoLabel(&Label, Localize("Тренировочный макрос (TAS)"), 20.0f, TEXTALIGN_ML);
+	Ui()->DoLabel(&Label, Localize("Макросы с замедленной тренировкой"), 20.0f, TEXTALIGN_ML);
 	MainView.HSplitTop(5.0f, nullptr, &MainView);
 
 	static CButtonContainer s_PracticeStart, s_PracticeStop;
