@@ -574,7 +574,10 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput)
 		NewFrame.m_HasCoordinates = 1;
 	}
 
+	// Match DDNet's normal prediction order: direct input handles weapon
+	// presses/switches, predicted input updates movement, jump, hook and aim.
 	pCharacter->OnDirectInput(&TickInput);
+	pCharacter->OnPredictedInput(&TickInput);
 	++m_MacroPracticeWorld.m_GameTick;
 	m_MacroPracticeWorld.Tick();
 	++m_MacroPracticeTick;
