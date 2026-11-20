@@ -1194,8 +1194,11 @@ int CControls::SnapInput(int *pData)
 		ServerInput.m_Fire = m_aLastData[Dummy].m_Fire;
 		if(ServerInput.m_Fire & 1)
 			++ServerInput.m_Fire;
-		ServerInput.m_NextWeapon = m_aLastData[Dummy].m_NextWeapon;
-		ServerInput.m_PrevWeapon = m_aLastData[Dummy].m_PrevWeapon;
+		// Do not leak weapon-switch counters from the practice input to the
+		// real server tee. It must remain completely idle while practicing.
+		ServerInput.m_WantedWeapon = 0;
+		ServerInput.m_NextWeapon = 0;
+		ServerInput.m_PrevWeapon = 0;
 
 		const bool SendNeutral = ServerInput.m_PlayerFlags != m_aLastData[Dummy].m_PlayerFlags ||
 			ServerInput.m_TargetX != m_aLastData[Dummy].m_TargetX ||
