@@ -1160,10 +1160,12 @@ void CControls::ApplyEdgeAssist(int Dummy)
 		return;
 
 	const CNetObj_Character *pLocal = GameClient()->m_Snap.m_pLocalCharacter;
-	if(!pLocal)
+	const CCharacter *pPracticeLocal = m_MacroPracticeActive ? m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId) : nullptr;
+	if(!pLocal && !pPracticeLocal)
 		return;
 
-	const vec2 LocalPos((float)pLocal->m_X, (float)pLocal->m_Y);
+	const vec2 LocalPos = pPracticeLocal ? pPracticeLocal->Core()->m_Pos :
+		vec2((float)pLocal->m_X, (float)pLocal->m_Y);
 	const vec2 ManualAim((float)m_aInputData[Dummy].m_TargetX, (float)m_aInputData[Dummy].m_TargetY);
 	if(length(ManualAim) < 1.0f)
 		return;
@@ -1207,7 +1209,9 @@ void CControls::ApplyEdgeAssist(int Dummy)
 
 void CControls::ApplyEdgeHook(int Dummy)
 {
-	if(!g_Config.m_ClAutoEdgeHook || !GameClient()->m_Snap.m_pLocalCharacter ||
+	const CNetObj_Character *pLocal = GameClient()->m_Snap.m_pLocalCharacter;
+	const CCharacter *pPracticeLocal = m_MacroPracticeActive ? m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId) : nullptr;
+	if(!g_Config.m_ClAutoEdgeHook || (!pLocal && !pPracticeLocal) ||
 		m_aManualHook[Dummy] || m_aAutoHookActive[Dummy] || m_aAutoAvoidActive[Dummy])
 	{
 		m_aAutoEdgeHookActive[Dummy] = false;
@@ -1221,8 +1225,8 @@ void CControls::ApplyEdgeHook(int Dummy)
 		return;
 	}
 
-	const CNetObj_Character *pLocal = GameClient()->m_Snap.m_pLocalCharacter;
-	const vec2 LocalPos((float)pLocal->m_X, (float)pLocal->m_Y);
+	const vec2 LocalPos = pPracticeLocal ? pPracticeLocal->Core()->m_Pos :
+		vec2((float)pLocal->m_X, (float)pLocal->m_Y);
 	const bool Grounded = Collision()->IsOnGround(LocalPos, 14.0f);
 	const bool GroundAhead = Collision()->CheckPoint(LocalPos.x + Direction * 20.0f, LocalPos.y + 18.0f);
 	if(!Grounded || GroundAhead)
@@ -1525,13 +1529,15 @@ void CControls::OnRender()
 		}
 	}
 
-	// update target pos
+	// The camera and cursor follow the practice tee while the real server tee
+	// remains translucent at its original position.
+	const vec2 LocalCharacterPos = m_MacroPracticeActive ? MacroPracticePosition() : GameClient()->m_LocalCharacterPos;
 	if(GameClient()->m_Snap.m_pGameInfoObj && !GameClient()->m_Snap.m_SpecInfo.m_Active)
 	{
 		// make sure to compensate for smooth dyncam to ensure the cursor stays still in world space if zoomed
 		vec2 DyncamOffsetDelta = GameClient()->m_Camera.m_DyncamTargetCameraOffset - GameClient()->m_Camera.m_aDyncamCurrentCameraOffset[g_Config.m_ClDummy];
 		float Zoom = GameClient()->m_Camera.m_Zoom;
-		m_aTargetPos[g_Config.m_ClDummy] = GameClient()->m_LocalCharacterPos + m_aMousePos[g_Config.m_ClDummy] - DyncamOffsetDelta + DyncamOffsetDelta / Zoom;
+		m_aTargetPos[g_Config.m_ClDummy] = LocalCharacterPos + m_aMousePos[g_Config.m_ClDummy] - DyncamOffsetDelta + DyncamOffsetDelta / Zoom;
 	}
 	else if(GameClient()->m_Snap.m_SpecInfo.m_Active && GameClient()->m_Snap.m_SpecInfo.m_UsePosition)
 	{
@@ -1542,14 +1548,15 @@ void CControls::OnRender()
 		m_aTargetPos[g_Config.m_ClDummy] = m_aMousePos[g_Config.m_ClDummy];
 	}
 
-	if(g_Config.m_ClAutoHookShowRadius && GameClient()->m_Snap.m_pLocalCharacter)
+	if(g_Config.m_ClAutoHookShowRadius && (GameClient()->m_Snap.m_pLocalCharacter || m_MacroPracticeActive))
 	{
 		const float Radius = std::clamp((float)g_Config.m_ClAutoHookRange, 32.0f, 360.0f);
 		const float ConeAngle = std::clamp((float)g_Config.m_ClAutoHookAngle, 10.0f, 360.0f);
 		const float AimAngle = std::atan2(m_aMousePos[g_Config.m_ClDummy].y, m_aMousePos[g_Config.m_ClDummy].x);
 		const float HalfAngle = ConeAngle * 0.5f * pi / 180.0f;
 		const int DotCount = std::max(2, round_to_int(72.0f * ConeAngle / 360.0f));
-		const vec2 Center((float)GameClient()->m_Snap.m_pLocalCharacter->m_X, (float)GameClient()->m_Snap.m_pLocalCharacter->m_Y);
+		const vec2 Center = m_MacroPracticeActive ? MacroPracticePosition() :
+			vec2((float)GameClient()->m_Snap.m_pLocalCharacter->m_X, (float)GameClient()->m_Snap.m_pLocalCharacter->m_Y);
 		Graphics()->TextureClear();
 		Graphics()->QuadsBegin();
 		Graphics()->SetColor(0.25f, 0.80f, 1.0f, 0.65f);
