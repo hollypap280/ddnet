@@ -230,6 +230,7 @@ MACRO_CONFIG_INT(ClAutoTriplefly, cl_auto_triplefly, 0, 0, 1, CFGFLAG_CLIENT | C
 MACRO_CONFIG_INT(ClAutoUnfreezeLaser, cl_auto_unfreeze_laser, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Automatically aim and fire laser at a nearby frozen tee")
 MACRO_CONFIG_INT(ClAutoEdgeJump, cl_auto_edge_jump, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Automatically jump when moving off a ledge")
 MACRO_CONFIG_INT(ClMacroRewindStep, cl_macro_rewind_step, 50, 1, 18000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Number of recorded input ticks to seek when using the macro rewind key")
+MACRO_CONFIG_INT(ClMacroPracticeRate, cl_macro_practice_rate, 50, 1, 50, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Number of isolated macro practice ticks simulated per real second")
 MACRO_CONFIG_INT(ClAutoHookAngle, cl_auto_hook_angle, 250, 10, 360, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Width of the automatic hook aiming cone in degrees")
 MACRO_CONFIG_INT(ClAutoHookRange, cl_auto_hook_range, 360, 32, 360, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Maximum auto hook target distance in world units")
 MACRO_CONFIG_INT(ClAutoHookShowRadius, cl_auto_hook_show_radius, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show the auto hook range around your tee")
