@@ -132,10 +132,10 @@ private:
 	bool m_aAutoHookActive[NUM_DUMMIES]{};
 	bool m_aAutoHookFireActive[NUM_DUMMIES]{};
 	bool m_aAutoAvoidActive[NUM_DUMMIES]{};
-	bool m_aAutoEdgeJumpActive[NUM_DUMMIES]{};
+	bool m_aAutoEdgeHookActive[NUM_DUMMIES]{};
 	void ApplyHookAutomation(int Dummy);
 	void ApplyEdgeAssist(int Dummy);
-	void ApplyEdgeJump(int Dummy);
+	void ApplyEdgeHook(int Dummy);
 	bool MacroFilePath(const char *pName, char *pBuffer, unsigned BufferSize) const;
 	bool SeekMacro(int Offset);
 	void SimulateMacroPracticeTick(const CNetObj_PlayerInput &Input);
