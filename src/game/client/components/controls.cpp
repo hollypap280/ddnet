@@ -52,6 +52,7 @@ void CControls::OnReset()
 	m_MacroCurrentFrame = {};
 	m_MacroPlaybackAccumulator = 0.0f;
 	m_MacroHasCurrentFrame = false;
+	m_MacroHoldCurrentFrame = false;
 	m_vMacroFrames.clear();
 	std::fill(std::begin(m_aManualHook), std::end(m_aManualHook), false);
 	std::fill(std::begin(m_aAutoHookActive), std::end(m_aAutoHookActive), false);
@@ -288,6 +289,7 @@ void CControls::StartMacroRecording()
 	m_MacroCurrentFrame = {};
 	m_MacroPlaybackAccumulator = 0.0f;
 	m_MacroHasCurrentFrame = false;
+	m_MacroHoldCurrentFrame = false;
 	m_vMacroFrames.clear();
 	m_MacroRecording = true;
 	GameClient()->Echo("Macro recording started");
@@ -307,6 +309,7 @@ void CControls::StopMacroRecording()
 	m_MacroCurrentFrame = {};
 	m_MacroPlaybackAccumulator = 0.0f;
 	m_MacroHasCurrentFrame = false;
+	m_MacroHoldCurrentFrame = false;
 }
 
 bool CControls::SaveMacro(const char *pName)
@@ -360,6 +363,7 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroCurrentFrame = {};
 	m_MacroPlaybackAccumulator = 0.0f;
 	m_MacroHasCurrentFrame = false;
+	m_MacroHoldCurrentFrame = false;
 	m_MacroPlaying = true;
 	GameClient()->Echo("Macro playback started");
 	return true;
@@ -427,6 +431,7 @@ bool CControls::SeekMacro(int Offset)
 	m_MacroCurrentFrame = m_vMacroFrames[Target];
 	m_MacroPlaybackIndex = (std::size_t)Target + 1;
 	m_MacroPlaybackAccumulator = 0.0f;
+	m_MacroHoldCurrentFrame = true;
 
 	char aMessage[128];
 	str_format(aMessage, sizeof(aMessage), "Macro position: %d / %d (step %d frames)",
@@ -847,6 +852,10 @@ int CControls::SnapInput(int *pData)
 				{
 					m_MacroPlaying = false;
 				}
+			}
+			else if(m_MacroHoldCurrentFrame)
+			{
+				m_MacroHoldCurrentFrame = false;
 			}
 			else
 			{
