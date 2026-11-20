@@ -567,6 +567,7 @@ protected:
 	// found in menus_settings.cpp
 	void RenderSettingsGame(CUIRect MainView);
 	void RenderSettingsMacros(CUIRect MainView);
+	void RenderSettingsButtons(CUIRect MainView);
 
 	// found in menus_settings_assets.cpp
 	void RenderSettingsAssets(CUIRect MainView);
@@ -723,6 +724,7 @@ public:
 		SETTINGS_CREDITS,
 		SETTINGS_GAME,
 		SETTINGS_MACROS,
+		SETTINGS_BUTTONS,
 
 		SETTINGS_LENGTH,
 	};
