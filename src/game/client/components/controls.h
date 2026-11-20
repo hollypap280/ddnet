@@ -66,12 +66,21 @@ public:
 	bool MacroPlaying() const { return m_MacroPlaying; }
 	int MacroPosition() const { return m_MacroRecording ? (int)m_vMacroFrames.size() : (int)m_MacroPlaybackIndex; }
 	int MacroFrameCount() const { return (int)m_vMacroFrames.size(); }
+	struct SMacroInfo
+	{
+		char m_aName[64]{};
+		char m_aMapName[64]{};
+		int m_TickCount = 0;
+	};
+	void GetMacroList(std::vector<SMacroInfo> &vMacros);
 	int MacroSeekStep() const;
 	void SetMacroSeekStep(int Step);
 	int MacroPracticeRate() const;
 	void SetMacroPracticeRate(int Rate);
 	bool MacroPracticeActive() const { return m_MacroPracticeActive; }
 	vec2 MacroPracticePosition();
+	const CGameWorld *MacroPracticeWorld() const { return m_MacroPracticeActive ? &m_MacroPracticeWorld : nullptr; }
+	float MacroPracticeTickFraction() const { return m_MacroPracticeAccumulator; }
 	bool MacroPracticeWaiting() const { return m_MacroPracticeWaiting; }
 	bool StartMacroPractice();
 	void StopMacroPractice();
@@ -130,6 +139,7 @@ private:
 	CGameWorld m_MacroPracticeWorld;
 	CNetObj_Character m_MacroPracticeRenderChar{};
 	bool m_MacroPracticeHasRenderChar = false;
+	char m_aMacroMapName[64] = "Неизвестная карта";
 	bool m_aManualHook[NUM_DUMMIES]{};
 	bool m_aAutoHookActive[NUM_DUMMIES]{};
 	bool m_aAutoHookFireActive[NUM_DUMMIES]{};
@@ -139,6 +149,7 @@ private:
 	void ApplyEdgeAssist(int Dummy);
 	void ApplyEdgeHook(int Dummy);
 	bool MacroFilePath(const char *pName, char *pBuffer, unsigned BufferSize) const;
+	static int MacroListCallback(const char *pName, int IsDir, int DirType, void *pUser);
 	bool SeekMacro(int Offset);
 	void SimulateMacroPracticeTick(const CNetObj_PlayerInput &Input);
 	bool RestoreMacroPracticeFrame(int Index);
