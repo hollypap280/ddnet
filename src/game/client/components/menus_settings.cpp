@@ -528,8 +528,23 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 {
 	CUIRect Row, Label, NameRect, Button;
 	MainView.HSplitTop(28.0f, &Label, &MainView);
-	Ui()->DoLabel(&Label, Localize("Input macros"), 20.0f, TEXTALIGN_ML);
+	Ui()->DoLabel(&Label, Localize("TAS macro practice"), 20.0f, TEXTALIGN_ML);
 	MainView.HSplitTop(5.0f, nullptr, &MainView);
+
+	static CButtonContainer s_PracticeStart, s_PracticeStop;
+	MainView.HSplitTop(26.0f, &Row, &MainView);
+	Row.VSplitLeft(145.0f, &Button, &Row);
+	if(DoButton_Menu(&s_PracticeStart, Localize("Start practice"), 0, &Button))
+		GameClient()->m_Controls.StartMacroPractice();
+	Row.VSplitLeft(8.0f, nullptr, &Row);
+	Row.VSplitLeft(145.0f, &Button, &Row);
+	if(DoButton_Menu(&s_PracticeStop, Localize("Stop practice"), 0, &Button))
+		GameClient()->m_Controls.StopMacroPractice();
+
+	MainView.HSplitTop(4.0f, nullptr, &MainView);
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	Ui()->DoScrollbarOption(&g_Config.m_ClMacroPracticeRate, &g_Config.m_ClMacroPracticeRate, &Row,
+		Localize("Practice speed (ticks per second)"), 1, 50);
 
 	static CLineInputBuffered<64> s_MacroName;
 	MainView.HSplitTop(24.0f, &Row, &MainView);
@@ -597,17 +612,22 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		Localize("Rewind step (ticks)"), 1, 18000);
 
 	char aStatus[192];
-	str_format(aStatus, sizeof(aStatus), "%s | %s | tick %d / %d | step %d ticks (%.2f s)",
+	str_format(aStatus, sizeof(aStatus), "%s | %s | %s | tick %d / %d | seek %d | speed %d tick/s",
+		GameClient()->m_Controls.MacroPracticeActive() ? Localize("Practice active") : Localize("Practice off"),
 		GameClient()->m_Controls.MacroRecording() ? Localize("Recording") : Localize("Not recording"),
-		GameClient()->m_Controls.MacroPlaying() ? Localize("Playing") : Localize("Not playing"),
+		GameClient()->m_Controls.MacroPlaying() ? (GameClient()->m_Controls.MacroPracticeWaiting() ? Localize("Waiting for position") : Localize("Playing")) : Localize("Not playing"),
 		GameClient()->m_Controls.MacroPosition(),
 		GameClient()->m_Controls.MacroFrameCount(),
 		g_Config.m_ClMacroRewindStep,
-		g_Config.m_ClMacroRewindStep / 50.0f);
+		g_Config.m_ClMacroPracticeRate);
 	MainView.HSplitTop(8.0f, nullptr, &MainView);
 	Ui()->DoLabel(&MainView, aStatus, 14.0f, TEXTALIGN_ML);
 	MainView.HSplitTop(20.0f, nullptr, &MainView);
-	Ui()->DoLabel(&MainView, Localize("Press '<' to rewind and '>' to move forward by the selected number of ticks. Up doubles the step, Down halves it. 50 ticks = 1 second. Playback always stays at the original recording speed."), 12.0f, TEXTALIGN_ML);
+	Ui()->DoLabel(&MainView, GameClient()->m_Controls.MacroPracticeWaiting() ?
+		Localize("Playback is waiting for the practice tee to reach the next recorded coordinate.") :
+		Localize("Playback uses the recorded world coordinates for each input tick. It does not blindly fire actions on a wall-clock timer."), 12.0f, TEXTALIGN_ML);
+	MainView.HSplitTop(18.0f, nullptr, &MainView);
+	Ui()->DoLabel(&MainView, Localize("'<': rewind, '>': forward. Up doubles the seek step; Down halves it. Practice speed is independent: 1 = one simulated tick per second; 50 = normal speed. Your server tee stays idle while the local practice tee moves."), 12.0f, TEXTALIGN_ML);
 	MainView.HSplitTop(18.0f, nullptr, &MainView);
 	Ui()->DoLabel(&MainView, Localize("Macros are stored under the client's save folder in macros/*.dmacro"), 12.0f, TEXTALIGN_ML);
 }
