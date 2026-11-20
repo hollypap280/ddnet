@@ -452,10 +452,11 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput)
 	if(m_MacroRecording)
 	{
 		pCharacter->Core()->Write(&NewFrame.m_Core);
+		NewFrame.m_PreCore.m_Tick = m_MacroPracticeTick;
 		NewFrame.m_Weapon = pCharacter->GetActiveWeapon();
 		NewFrame.m_AttackTick = pCharacter->GetAttackTick();
 		NewFrame.m_Tick = m_MacroPracticeTick;
-		NewFrame.m_Core.Write(&NewFrame.m_Character);
+		static_cast<CNetObj_CharacterCore &>(NewFrame.m_Character) = NewFrame.m_Core;
 		NewFrame.m_Character.m_Weapon = NewFrame.m_Weapon;
 		NewFrame.m_Character.m_AttackTick = NewFrame.m_AttackTick;
 		NewFrame.m_Character.m_Tick = NewFrame.m_Tick;
@@ -668,7 +669,7 @@ int CControls::MacroPracticeRate() const
 
 void CControls::SetMacroPracticeRate(int Rate)
 {
-	g_Config.m_ClMacroPracticeRate = std::clamp(Rate, 1, SERVER_TICK_SPEED);
+	g_Config.m_ClMacroPracticeRate = std::clamp(Rate, 1, (int)SERVER_TICK_SPEED);
 }
 
 bool CControls::SeekMacro(int Offset)
