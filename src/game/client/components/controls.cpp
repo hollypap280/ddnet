@@ -10,6 +10,7 @@
 #include <base/vmath.h>
 
 #include <engine/client.h>
+#include <engine/keys.h>
 #include <engine/shared/config.h>
 #include <engine/storage.h>
 
@@ -619,6 +620,8 @@ void CControls::ApplyHookAutomation(int Dummy)
 			}
 			if(AutoWeapon == WEAPON_LASER)
 			{
+				m_aInputData[Dummy].m_Hook = ManualHook ? 1 : 0;
+				m_aAutoHookActive[Dummy] = false;
 				m_aInputData[Dummy].m_TargetX = round_to_int(BestTarget.x);
 				m_aInputData[Dummy].m_TargetY = round_to_int(BestTarget.y);
 				if(g_Config.m_ClAutoHookAimAtTee && !g_Config.m_ClAutoHookBackhook)
