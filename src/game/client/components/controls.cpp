@@ -295,7 +295,7 @@ bool CControls::StartMacroPractice()
 		!GameClient()->m_Snap.m_pLocalCharacter ||
 		!GameClient()->m_PredictedWorld.GetCharacterById(LocalId))
 	{
-		GameClient()->Echo("Macro practice requires an online local tee with prediction available");
+		GameClient()->Echo("Для тренировки нужно подключиться к серверу и иметь доступного локального тии");
 		return false;
 	}
 
@@ -303,7 +303,7 @@ bool CControls::StartMacroPractice()
 	if(!m_MacroPracticeWorld.GetCharacterById(LocalId))
 	{
 		m_MacroPracticeWorld.Clear();
-		GameClient()->Echo("Could not create the isolated macro practice world");
+		GameClient()->Echo("Не удалось создать отдельный тренировочный мир");
 		return false;
 	}
 
@@ -316,7 +316,7 @@ bool CControls::StartMacroPractice()
 
 	CCharacter *pPracticeChar = m_MacroPracticeWorld.GetCharacterById(LocalId);
 	UpdateMacroPracticeGhost(pPracticeChar);
-	GameClient()->Echo("Macro practice started. Your server tee is now idle; the practice tee is local only.");
+	GameClient()->Echo("Тренировка началась. Серверный тии неподвижен, тренировочный тии существует только локально.");
 	return true;
 }
 
@@ -391,7 +391,7 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput)
 	CCharacter *pCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId);
 	if(!pCharacter)
 	{
-		GameClient()->Echo("Macro practice lost its local tee and has stopped");
+		GameClient()->Echo("Тренировочный тии потерян. Тренировка остановлена.");
 		StopMacroPractice();
 		return;
 	}
@@ -405,7 +405,7 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput)
 		{
 			m_MacroPlaying = false;
 			m_MacroPracticeWaiting = false;
-			GameClient()->Echo("Macro playback finished");
+			GameClient()->Echo("Воспроизведение макроса завершено");
 			return;
 		}
 
@@ -444,7 +444,7 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput)
 	pCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId);
 	if(!pCharacter)
 	{
-		GameClient()->Echo("Macro practice tee disappeared");
+		GameClient()->Echo("Тренировочный тии исчез");
 		StopMacroPractice();
 		return;
 	}
@@ -464,7 +464,7 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput)
 		if(m_vMacroFrames.size() >= MACRO_MAX_FRAMES)
 		{
 			m_MacroRecording = false;
-			GameClient()->Echo("Macro recording reached the 18000-tick limit");
+			GameClient()->Echo("Запись достигла ограничения в 18000 тиков");
 		}
 	}
 	else if(m_MacroPlaying)
@@ -490,7 +490,7 @@ void CControls::StartMacroRecording()
 	m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
 	m_vMacroFrames.clear();
 	m_MacroRecording = true;
-	GameClient()->Echo("Macro recording started in the isolated practice world");
+	GameClient()->Echo("Запись началась в отдельном тренировочном мире");
 }
 
 void CControls::StopMacroRecording()
@@ -503,7 +503,7 @@ void CControls::StopMacroRecording()
 		GameClient()->Echo(aBuf);
 	}
 	if(m_MacroPlaying)
-		GameClient()->Echo("Macro playback stopped");
+		GameClient()->Echo("Воспроизведение макроса остановлено");
 	m_MacroPlaying = false;
 	m_MacroPlaybackIndex = 0;
 	m_MacroCurrentFrame = {};
@@ -608,7 +608,7 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroPracticeAccumulator = 0.0f;
 	m_MacroPlaying = true;
 	UpdateMacroPracticeGhost(pCharacter);
-	GameClient()->Echo("Macro playback started in the isolated practice world");
+	GameClient()->Echo("Макрос запущен в отдельном тренировочном мире");
 	return true;
 }
 bool CControls::DeleteMacro(const char *pName)
@@ -631,25 +631,25 @@ void CControls::ConMacroSave(IConsole::IResult *pResult, void *pUserData)
 {
 	CControls *pSelf = (CControls *)pUserData;
 	if(!pSelf->SaveMacro(pResult->GetString(0)))
-		pSelf->GameClient()->Echo("Could not save macro. Stop recording first and enter a valid name.");
+		pSelf->GameClient()->Echo("Не удалось сохранить макрос. Сначала остановите запись и введите допустимое название.");
 	else
-		pSelf->GameClient()->Echo("Macro saved");
+		pSelf->GameClient()->Echo("Макрос сохранён");
 }
 
 void CControls::ConMacroPlay(IConsole::IResult *pResult, void *pUserData)
 {
 	CControls *pSelf = (CControls *)pUserData;
 	if(!pSelf->PlayMacro(pResult->GetString(0)))
-		pSelf->GameClient()->Echo("Could not play macro. Check its name and file.");
+		pSelf->GameClient()->Echo("Не удалось запустить макрос. Проверьте название и файл.");
 }
 
 void CControls::ConMacroDelete(IConsole::IResult *pResult, void *pUserData)
 {
 	CControls *pSelf = (CControls *)pUserData;
 	if(!pSelf->DeleteMacro(pResult->GetString(0)))
-		pSelf->GameClient()->Echo("Could not delete macro. Check its name.");
+		pSelf->GameClient()->Echo("Не удалось удалить макрос. Проверьте название.");
 	else
-		pSelf->GameClient()->Echo("Macro deleted");
+		pSelf->GameClient()->Echo("Макрос удалён");
 }
 
 int CControls::MacroSeekStep() const
@@ -683,7 +683,7 @@ bool CControls::SeekMacro(int Offset)
 		return false;
 
 	char aMessage[128];
-	str_format(aMessage, sizeof(aMessage), "Macro position: tick %d / %d (step %d ticks)",
+	str_format(aMessage, sizeof(aMessage), "Позиция макроса: тик %d / %d (шаг %d тиков)",
 		Target + 1, (int)m_vMacroFrames.size(), MacroSeekStep());
 	GameClient()->Echo(aMessage);
 	return true;
@@ -709,7 +709,7 @@ bool CControls::OnInput(const IInput::CEvent &Event)
 		return false;
 
 	char aMessage[96];
-	str_format(aMessage, sizeof(aMessage), "Macro rewind step: %d ticks (%.2f s)",
+	str_format(aMessage, sizeof(aMessage), "Шаг перемотки: %d тиков (%.2f с)",
 		MacroSeekStep(), MacroSeekStep() / 50.0f);
 	GameClient()->Echo(aMessage);
 	return true;
