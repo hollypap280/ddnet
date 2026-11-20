@@ -21,6 +21,7 @@
 #include <game/client/components/menus.h>
 #include <game/client/components/scoreboard.h>
 #include <game/client/gameclient.h>
+#include <game/client/prediction/entities/character.h>
 #include <game/collision.h>
 #include <game/mapitems.h>
 #include <game/localization.h>
@@ -41,6 +42,7 @@ CControls::CControls()
 
 void CControls::OnReset()
 {
+	StopMacroPractice();
 	ResetInput(0);
 	ResetInput(1);
 
@@ -258,7 +260,7 @@ void CControls::SendPracticeTeleportToCursor(int Conn)
 namespace
 {
 	constexpr uint32_t MACRO_FILE_MAGIC = 0x444D4143;
-	constexpr uint32_t MACRO_FILE_VERSION = 1;
+	constexpr uint32_t MACRO_FILE_VERSION = 2;
 	constexpr uint32_t MACRO_MAX_FRAMES = 18000;
 }
 
@@ -283,16 +285,211 @@ bool CControls::MacroFilePath(const char *pName, char *pBuffer, unsigned BufferS
 	return true;
 }
 
+bool CControls::StartMacroPractice()
+{
+	if(m_MacroPracticeActive)
+		return true;
+
+	const int LocalId = GameClient()->m_aLocalIds[g_Config.m_ClDummy];
+	if(Client()->State() != IClient::STATE_ONLINE || LocalId < 0 || LocalId >= MAX_CLIENTS ||
+		!GameClient()->m_Snap.m_pLocalCharacter ||
+		!GameClient()->m_PredictedWorld.GetCharacterById(LocalId))
+	{
+		GameClient()->Echo("Macro practice requires an online local tee with prediction available");
+		return false;
+	}
+
+	m_MacroPracticeWorld.CopyWorld(&GameClient()->m_PredictedWorld);
+	if(!m_MacroPracticeWorld.GetCharacterById(LocalId))
+	{
+		m_MacroPracticeWorld.Clear();
+		GameClient()->Echo("Could not create the isolated macro practice world");
+		return false;
+	}
+
+	m_MacroPracticeLocalId = LocalId;
+	m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
+	m_MacroPracticeAccumulator = 0.0f;
+	m_MacroPracticeWaiting = false;
+	m_MacroPracticeActive = true;
+	m_MacroPracticeHasRenderChar = false;
+
+	CCharacter *pPracticeChar = m_MacroPracticeWorld.GetCharacterById(LocalId);
+	UpdateMacroPracticeGhost(pPracticeChar);
+	GameClient()->Echo("Macro practice started. Your server tee is now idle; the practice tee is local only.");
+	return true;
+}
+
+void CControls::StopMacroPractice()
+{
+	m_MacroRecording = false;
+	m_MacroPlaying = false;
+	m_MacroPracticeActive = false;
+	m_MacroPracticeWaiting = false;
+	m_MacroPracticeAccumulator = 0.0f;
+	m_MacroPracticeLocalId = -1;
+	m_MacroPracticeHasRenderChar = false;
+	m_MacroPlaybackIndex = 0;
+	m_MacroPracticeWorld.Clear();
+	if(GameClient())
+		GameClient()->m_Ghost.ClearMacroPracticeCharacter();
+}
+
+void CControls::UpdateMacroPracticeGhost(CCharacter *pCharacter)
+{
+	if(!pCharacter)
+		return;
+
+	CNetObj_Character Current{};
+	pCharacter->Core()->Write(&Current);
+	Current.m_Weapon = pCharacter->GetActiveWeapon();
+	Current.m_AttackTick = pCharacter->GetAttackTick();
+	Current.m_Tick = m_MacroPracticeWorld.GameTick();
+
+	CNetObj_Character Prev = m_MacroPracticeHasRenderChar ? m_MacroPracticeRenderChar : Current;
+	GameClient()->m_Ghost.SetMacroPracticeCharacter(Prev, Current);
+	m_MacroPracticeRenderChar = Current;
+	m_MacroPracticeHasRenderChar = true;
+}
+
+bool CControls::RestoreMacroPracticeFrame(int Index)
+{
+	if(!m_MacroPracticeActive || Index < 0 || Index >= (int)m_vMacroFrames.size())
+		return false;
+
+	CCharacter *pCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId);
+	if(!pCharacter)
+		return false;
+
+	const SMacroFrame &Frame = m_vMacroFrames[Index];
+	if(Frame.m_HasCoordinates)
+	{
+		CCharacterCore Core = pCharacter->GetCore();
+		Core.Read(&Frame.m_Core);
+		pCharacter->SetCore(Core);
+		pCharacter->SetActiveWeapon(Frame.m_Weapon);
+		m_MacroPracticeWorld.m_GameTick = Frame.m_Tick;
+		m_MacroPracticeTick = Frame.m_Tick;
+
+		CNetObj_Character Current = Frame.m_Character;
+		Current.m_AttackTick = Frame.m_AttackTick;
+		CNetObj_Character Prev = Index > 0 ? m_vMacroFrames[Index - 1].m_Character : Current;
+		GameClient()->m_Ghost.SetMacroPracticeCharacter(Prev, Current);
+		m_MacroPracticeRenderChar = Current;
+		m_MacroPracticeHasRenderChar = true;
+	}
+	m_MacroPlaybackIndex = (std::size_t)Index + 1;
+	m_MacroPracticeWaiting = false;
+	return true;
+}
+
+void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput)
+{
+	if(!m_MacroPracticeActive)
+		return;
+
+	CCharacter *pCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId);
+	if(!pCharacter)
+	{
+		GameClient()->Echo("Macro practice lost its local tee and has stopped");
+		StopMacroPractice();
+		return;
+	}
+
+	CNetObj_PlayerInput TickInput = LiveInput;
+	TickInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+
+	if(m_MacroPlaying)
+	{
+		if(m_MacroPlaybackIndex >= m_vMacroFrames.size())
+		{
+			m_MacroPlaying = false;
+			m_MacroPracticeWaiting = false;
+			GameClient()->Echo("Macro playback finished");
+			return;
+		}
+
+		const SMacroFrame &Frame = m_vMacroFrames[m_MacroPlaybackIndex];
+		if(Frame.m_HasCoordinates)
+		{
+			const vec2 CurrentPos = pCharacter->Core()->m_Pos;
+			const vec2 RequiredPos((float)Frame.m_PreCore.m_X, (float)Frame.m_PreCore.m_Y);
+			// A recorded action is applied only when the practice tee reaches
+			// the world coordinate where that action was originally performed.
+			if(distance(CurrentPos, RequiredPos) > 24.0f)
+			{
+				m_MacroPracticeWaiting = true;
+				return;
+			}
+		}
+		m_MacroPracticeWaiting = false;
+		TickInput = Frame.m_Input;
+		TickInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+	}
+
+	SMacroFrame NewFrame;
+	if(m_MacroRecording)
+	{
+		NewFrame.m_Input = TickInput;
+		pCharacter->Core()->Write(&NewFrame.m_PreCore);
+		NewFrame.m_PreWeapon = pCharacter->GetActiveWeapon();
+		NewFrame.m_HasCoordinates = 1;
+	}
+
+	pCharacter->OnPredictedInput(&TickInput);
+	++m_MacroPracticeWorld.m_GameTick;
+	m_MacroPracticeWorld.Tick();
+	++m_MacroPracticeTick;
+
+	pCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId);
+	if(!pCharacter)
+	{
+		GameClient()->Echo("Macro practice tee disappeared");
+		StopMacroPractice();
+		return;
+	}
+
+	if(m_MacroRecording)
+	{
+		pCharacter->Core()->Write(&NewFrame.m_Core);
+		NewFrame.m_Weapon = pCharacter->GetActiveWeapon();
+		NewFrame.m_AttackTick = pCharacter->GetAttackTick();
+		NewFrame.m_Tick = m_MacroPracticeTick;
+		NewFrame.m_Core.Write(&NewFrame.m_Character);
+		NewFrame.m_Character.m_Weapon = NewFrame.m_Weapon;
+		NewFrame.m_Character.m_AttackTick = NewFrame.m_AttackTick;
+		NewFrame.m_Character.m_Tick = NewFrame.m_Tick;
+		m_vMacroFrames.push_back(NewFrame);
+		if(m_vMacroFrames.size() >= MACRO_MAX_FRAMES)
+		{
+			m_MacroRecording = false;
+			GameClient()->Echo("Macro recording reached the 18000-tick limit");
+		}
+	}
+	else if(m_MacroPlaying)
+	{
+		++m_MacroPlaybackIndex;
+	}
+
+	UpdateMacroPracticeGhost(pCharacter);
+}
+
 void CControls::StartMacroRecording()
 {
+	if(!StartMacroPractice())
+		return;
+
 	m_MacroPlaying = false;
 	m_MacroPlaybackIndex = 0;
 	m_MacroCurrentFrame = {};
 	m_MacroHasCurrentFrame = false;
 	m_MacroHoldCurrentFrame = false;
+	m_MacroPracticeWaiting = false;
+	m_MacroPracticeAccumulator = 0.0f;
+	m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
 	m_vMacroFrames.clear();
 	m_MacroRecording = true;
-	GameClient()->Echo("Macro recording started");
+	GameClient()->Echo("Macro recording started in the isolated practice world");
 }
 
 void CControls::StopMacroRecording()
@@ -300,15 +497,18 @@ void CControls::StopMacroRecording()
 	if(m_MacroRecording)
 	{
 		m_MacroRecording = false;
-		char aBuf[96];
-		str_format(aBuf, sizeof(aBuf), "Macro recording stopped (%d frames)", (int)m_vMacroFrames.size());
+		char aBuf[112];
+		str_format(aBuf, sizeof(aBuf), "Macro recording stopped (%d practice ticks)", (int)m_vMacroFrames.size());
 		GameClient()->Echo(aBuf);
 	}
+	if(m_MacroPlaying)
+		GameClient()->Echo("Macro playback stopped");
 	m_MacroPlaying = false;
 	m_MacroPlaybackIndex = 0;
 	m_MacroCurrentFrame = {};
 	m_MacroHasCurrentFrame = false;
 	m_MacroHoldCurrentFrame = false;
+	m_MacroPracticeWaiting = false;
 }
 
 bool CControls::SaveMacro(const char *pName)
@@ -339,34 +539,77 @@ bool CControls::PlayMacro(const char *pName)
 	IOHANDLE File = Storage()->OpenFile(aPath, IOFLAG_READ, IStorage::TYPE_SAVE);
 	if(!File)
 		return false;
+
 	uint32_t Magic = 0;
 	uint32_t Version = 0;
 	uint32_t Count = 0;
 	bool Valid = io_read(File, &Magic, sizeof(Magic)) == sizeof(Magic) &&
 		io_read(File, &Version, sizeof(Version)) == sizeof(Version) &&
 		io_read(File, &Count, sizeof(Count)) == sizeof(Count) &&
-		Magic == MACRO_FILE_MAGIC && Version == MACRO_FILE_VERSION &&
+		Magic == MACRO_FILE_MAGIC && (Version == 1 || Version == MACRO_FILE_VERSION) &&
 		Count > 0 && Count <= MACRO_MAX_FRAMES;
+
 	std::vector<SMacroFrame> Frames;
-	if(Valid)
+	if(Valid && Version == MACRO_FILE_VERSION)
 	{
 		Frames.resize(Count);
 		Valid = io_read(File, Frames.data(), Count * sizeof(SMacroFrame)) == Count * sizeof(SMacroFrame);
 	}
+	else if(Valid && Version == 1)
+	{
+		std::vector<SMacroFrameV1> OldFrames(Count);
+		Valid = io_read(File, OldFrames.data(), Count * sizeof(SMacroFrameV1)) == Count * sizeof(SMacroFrameV1);
+		if(Valid)
+		{
+			Frames.resize(Count);
+			for(uint32_t i = 0; i < Count; ++i)
+			{
+				Frames[i].m_Input.m_Direction = OldFrames[i].m_Direction;
+				Frames[i].m_Input.m_Jump = OldFrames[i].m_Jump;
+				Frames[i].m_Input.m_Fire = OldFrames[i].m_Fire;
+				Frames[i].m_Input.m_Hook = OldFrames[i].m_Hook;
+				Frames[i].m_Input.m_WantedWeapon = OldFrames[i].m_WantedWeapon;
+				Frames[i].m_Input.m_NextWeapon = OldFrames[i].m_NextWeapon;
+				Frames[i].m_Input.m_PrevWeapon = OldFrames[i].m_PrevWeapon;
+				Frames[i].m_Input.m_TargetX = OldFrames[i].m_TargetX;
+				Frames[i].m_Input.m_TargetY = OldFrames[i].m_TargetY;
+				Frames[i].m_Tick = (int)i + 1;
+				Frames[i].m_HasCoordinates = 0;
+			}
+		}
+	}
 	io_close(File);
-	if(!Valid)
+	if(!Valid || !StartMacroPractice())
 		return false;
+
+	// Reset only the local practice tee. The server tee remains idle.
+	m_MacroPracticeWorld.CopyWorld(&GameClient()->m_PredictedWorld);
+	CCharacter *pCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId);
+	if(!pCharacter)
+		return false;
+	if(Frames[0].m_HasCoordinates)
+	{
+		CCharacterCore Core = pCharacter->GetCore();
+		Core.Read(&Frames[0].m_PreCore);
+		pCharacter->SetCore(Core);
+		pCharacter->SetActiveWeapon(Frames[0].m_PreWeapon);
+		m_MacroPracticeWorld.m_GameTick = Frames[0].m_Tick - 1;
+		m_MacroPracticeTick = Frames[0].m_Tick - 1;
+	}
+
 	m_vMacroFrames = std::move(Frames);
 	m_MacroRecording = false;
 	m_MacroPlaybackIndex = 0;
 	m_MacroCurrentFrame = {};
 	m_MacroHasCurrentFrame = false;
 	m_MacroHoldCurrentFrame = false;
+	m_MacroPracticeWaiting = false;
+	m_MacroPracticeAccumulator = 0.0f;
 	m_MacroPlaying = true;
-	GameClient()->Echo("Macro playback started");
+	UpdateMacroPracticeGhost(pCharacter);
+	GameClient()->Echo("Macro playback started in the isolated practice world");
 	return true;
 }
-
 bool CControls::DeleteMacro(const char *pName)
 {
 	char aPath[128];
@@ -418,6 +661,16 @@ void CControls::SetMacroSeekStep(int Step)
 	g_Config.m_ClMacroRewindStep = std::clamp(Step, 1, 18000);
 }
 
+int CControls::MacroPracticeRate() const
+{
+	return g_Config.m_ClMacroPracticeRate;
+}
+
+void CControls::SetMacroPracticeRate(int Rate)
+{
+	g_Config.m_ClMacroPracticeRate = std::clamp(Rate, 1, SERVER_TICK_SPEED);
+}
+
 bool CControls::SeekMacro(int Offset)
 {
 	if(!m_MacroPlaying || m_vMacroFrames.empty())
@@ -425,10 +678,8 @@ bool CControls::SeekMacro(int Offset)
 
 	const int Current = std::clamp((int)m_MacroPlaybackIndex - 1, 0, (int)m_vMacroFrames.size() - 1);
 	const int Target = std::clamp(Current + Offset, 0, (int)m_vMacroFrames.size() - 1);
-	m_MacroCurrentFrame = m_vMacroFrames[Target];
-	m_MacroPlaybackIndex = (std::size_t)Target + 1;
-	m_MacroHasCurrentFrame = true;
-	m_MacroHoldCurrentFrame = true;
+	if(!RestoreMacroPracticeFrame(Target))
+		return false;
 
 	char aMessage[128];
 	str_format(aMessage, sizeof(aMessage), "Macro position: tick %d / %d (step %d ticks)",
@@ -439,7 +690,7 @@ bool CControls::SeekMacro(int Offset)
 
 bool CControls::OnInput(const IInput::CEvent &Event)
 {
-	if(!m_MacroPlaying || GameClient()->m_Chat.IsActive() || GameClient()->m_Menus.IsActive() ||
+	if(!m_MacroPlaying || !m_MacroPracticeActive || GameClient()->m_Chat.IsActive() || GameClient()->m_Menus.IsActive() ||
 		!(Event.m_Flags & IInput::FLAG_PRESS))
 		return false;
 
@@ -831,6 +1082,58 @@ int CControls::SnapInput(int *pData)
 		break;
 	}
 
+	// Isolated macro practice: inputs are consumed by a cloned prediction world.
+	// Only neutral input is ever sent to the real server character.
+	if(m_MacroPracticeActive)
+	{
+		const int Dummy = g_Config.m_ClDummy;
+		CNetObj_PlayerInput PracticeInput = m_aInputData[Dummy];
+		PracticeInput.m_Direction = 0;
+		if(m_aInputDirectionLeft[Dummy] && !m_aInputDirectionRight[Dummy])
+			PracticeInput.m_Direction = -1;
+		if(!m_aInputDirectionLeft[Dummy] && m_aInputDirectionRight[Dummy])
+			PracticeInput.m_Direction = 1;
+		PracticeInput.m_TargetX = (int)m_aMousePos[Dummy].x;
+		PracticeInput.m_TargetY = (int)m_aMousePos[Dummy].y;
+		PracticeInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+
+		if(m_aInputData[Dummy].m_PlayerFlags & PLAYERFLAG_PLAYING)
+		{
+			m_MacroPracticeAccumulator += MacroPracticeRate() / (float)SERVER_TICK_SPEED;
+			int Steps = 0;
+			while(m_MacroPracticeAccumulator >= 1.0f && Steps < SERVER_TICK_SPEED)
+			{
+				SimulateMacroPracticeTick(PracticeInput);
+				m_MacroPracticeAccumulator -= 1.0f;
+				++Steps;
+				if(!m_MacroPracticeActive)
+					break;
+			}
+		}
+
+		CNetObj_PlayerInput ServerInput{};
+		ServerInput.m_PlayerFlags = m_aInputData[Dummy].m_PlayerFlags;
+		ServerInput.m_TargetX = (int)m_aMousePos[Dummy].x;
+		ServerInput.m_TargetY = (int)m_aMousePos[Dummy].y;
+		ServerInput.m_Fire = m_aLastData[Dummy].m_Fire;
+		if(ServerInput.m_Fire & 1)
+			++ServerInput.m_Fire;
+		ServerInput.m_NextWeapon = m_aLastData[Dummy].m_NextWeapon;
+		ServerInput.m_PrevWeapon = m_aLastData[Dummy].m_PrevWeapon;
+
+		const bool SendNeutral = ServerInput.m_PlayerFlags != m_aLastData[Dummy].m_PlayerFlags ||
+			ServerInput.m_TargetX != m_aLastData[Dummy].m_TargetX ||
+			ServerInput.m_TargetY != m_aLastData[Dummy].m_TargetY ||
+			ServerInput.m_Fire != m_aLastData[Dummy].m_Fire ||
+			time_get() > m_LastSendTime + time_freq() / 25;
+		m_aLastData[Dummy] = ServerInput;
+		if(!SendNeutral)
+			return 0;
+		m_LastSendTime = time_get();
+		mem_copy(pData, &ServerInput, sizeof(ServerInput));
+		return sizeof(ServerInput);
+	}
+
 	bool Send = m_aLastData[g_Config.m_ClDummy].m_PlayerFlags != m_aInputData[g_Config.m_ClDummy].m_PlayerFlags;
 
 	m_aLastData[g_Config.m_ClDummy].m_PlayerFlags = m_aInputData[g_Config.m_ClDummy].m_PlayerFlags;
@@ -935,60 +1238,6 @@ int CControls::SnapInput(int *pData)
 			m_aInputData[g_Config.m_ClDummy].m_TargetY = (int)(std::cos(t * 3) * 100.0f);
 		}
 
-		// Macro playback runs at original recording speed: one saved input
-		// frame per game tick. Seeking never changes playback speed.
-		if(m_MacroPlaying)
-		{
-			if(m_MacroHoldCurrentFrame)
-			{
-				m_MacroHoldCurrentFrame = false;
-			}
-			else if(m_MacroPlaybackIndex < m_vMacroFrames.size())
-			{
-				m_MacroCurrentFrame = m_vMacroFrames[m_MacroPlaybackIndex++];
-				m_MacroHasCurrentFrame = true;
-			}
-			else
-			{
-				m_MacroPlaying = false;
-				m_MacroHasCurrentFrame = false;
-			}
-
-			if(m_MacroPlaying && m_MacroHasCurrentFrame)
-			{
-				const SMacroFrame &Frame = m_MacroCurrentFrame;
-				CNetObj_PlayerInput &Input = m_aInputData[g_Config.m_ClDummy];
-				Input.m_Direction = Frame.m_Direction;
-				Input.m_Jump = Frame.m_Jump;
-				Input.m_Fire = Frame.m_Fire;
-				Input.m_Hook = Frame.m_Hook;
-				Input.m_WantedWeapon = Frame.m_WantedWeapon;
-				Input.m_NextWeapon = Frame.m_NextWeapon;
-				Input.m_PrevWeapon = Frame.m_PrevWeapon;
-				Input.m_TargetX = Frame.m_TargetX;
-				Input.m_TargetY = Frame.m_TargetY;
-				Send = true;
-			}
-			else
-			{
-				m_aInputData[g_Config.m_ClDummy].m_Direction = 0;
-				m_aInputData[g_Config.m_ClDummy].m_Jump = 0;
-				m_aInputData[g_Config.m_ClDummy].m_Hook = 0;
-				if(m_aInputData[g_Config.m_ClDummy].m_Fire & 1)
-					m_aInputData[g_Config.m_ClDummy].m_Fire++;
-				Send = true;
-			}
-		}
-		if(m_MacroRecording && !m_MacroPlaying && m_vMacroFrames.size() < 18000)
-		{
-			const CNetObj_PlayerInput &Input = m_aInputData[g_Config.m_ClDummy];
-			m_vMacroFrames.push_back({Input.m_Direction, Input.m_Jump, Input.m_Fire, Input.m_Hook,
-				Input.m_WantedWeapon, Input.m_NextWeapon, Input.m_PrevWeapon, Input.m_TargetX, Input.m_TargetY});
-		}
-		else if(m_MacroRecording && m_vMacroFrames.size() >= 18000)
-		{
-			StopMacroRecording();
-		}
 
 		// check if we need to send input
 		Send = Send || m_aInputData[g_Config.m_ClDummy].m_Direction != m_aLastData[g_Config.m_ClDummy].m_Direction;
