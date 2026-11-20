@@ -518,9 +518,7 @@ void CPlayers::RenderHook(
 		Position = mix(vec2(Prev.m_X, Prev.m_Y), vec2(Player.m_X, Player.m_Y), Intra);
 
 	// draw hook
-	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
-	if(ClientId < 0)
-		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 0.5f);
+	Graphics()->SetColor(1.0f, 1.0f, 1.0f, Alpha);
 
 	vec2 Pos = Position;
 	vec2 HookPos;
