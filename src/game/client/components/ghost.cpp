@@ -3,6 +3,8 @@
 #include "ghost.h"
 
 #include <base/log.h>
+
+#include <algorithm>
 #include <base/mem.h>
 #include <base/process.h>
 #include <base/time.h>
@@ -393,6 +395,8 @@ void CGhost::OnRender()
 
 void CGhost::SetMacroPracticeWorld(CGameWorld *pWorld)
 {
+	bool aWasVisible[MAX_CLIENTS];
+	std::copy(std::begin(m_aMacroPracticeVisible), std::end(m_aMacroPracticeVisible), std::begin(aWasVisible));
 	std::fill(std::begin(m_aMacroPracticeVisible), std::end(m_aMacroPracticeVisible), false);
 	if(!pWorld)
 		return;
@@ -410,7 +414,7 @@ void CGhost::SetMacroPracticeWorld(CGameWorld *pWorld)
 		Current.m_AttackTick = pCharacter->GetAttackTick();
 		Current.m_Tick = pWorld->GameTick();
 
-		m_aMacroPracticePrev[ClientId] = m_aMacroPracticeVisible[ClientId] ? m_aMacroPracticeCurrent[ClientId] : Current;
+		m_aMacroPracticePrev[ClientId] = aWasVisible[ClientId] ? m_aMacroPracticeCurrent[ClientId] : Current;
 		m_aMacroPracticeCurrent[ClientId] = Current;
 		m_aMacroPracticeVisible[ClientId] = true;
 	}
