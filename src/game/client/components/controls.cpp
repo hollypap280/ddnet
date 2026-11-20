@@ -855,11 +855,16 @@ int CControls::SnapInput(int *pData)
 				if(FramesToAdvance > 0)
 				{
 					m_MacroPlaybackAccumulator -= FramesToAdvance;
-					for(int i = 0; i < FramesToAdvance && m_MacroPlaybackIndex < m_vMacroFrames.size(); ++i)
-						m_MacroCurrentFrame = m_vMacroFrames[m_MacroPlaybackIndex++];
+					if(m_MacroPlaybackIndex >= m_vMacroFrames.size())
+					{
+						m_MacroPlaying = false;
+					}
+					else
+					{
+						for(int i = 0; i < FramesToAdvance && m_MacroPlaybackIndex < m_vMacroFrames.size(); ++i)
+							m_MacroCurrentFrame = m_vMacroFrames[m_MacroPlaybackIndex++];
+					}
 				}
-				if(m_MacroPlaybackIndex >= m_vMacroFrames.size() && FramesToAdvance > 0)
-					m_MacroPlaybackAccumulator = 0.0f;
 			}
 
 			if(m_MacroPlaying && m_MacroHasCurrentFrame)
