@@ -570,6 +570,18 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	if(!s_MacroListLoaded)
 		RefreshMacroList();
 
+	auto SaveCapturedMacro = [&](const char *pName) {
+		if(pName && pName[0] && GameClient()->m_Controls.SaveMacro(pName))
+		{
+			GameClient()->Echo(Localize("Макрос сохранён"));
+			str_copy(s_aSelectedMacro, pName);
+			RefreshMacroList();
+			return true;
+		}
+		GameClient()->Echo(Localize("Не удалось сохранить макрос. Проверь название."));
+		return false;
+	};
+
 	if(s_MacroSubPage == 0)
 	{
 		CUIRect Header;
@@ -590,23 +602,20 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		{
 			const bool Recording = GameClient()->m_Controls.MacroRecording();
 			const bool Playing = GameClient()->m_Controls.MacroPlaying();
+			const bool PendingSave = !Recording && !Playing && s_aRecordingMacroName[0] &&
+				GameClient()->m_Controls.MacroFrameCount() > 0;
 			RecordingRow.VSplitLeft(174.0f, &Button, &Row);
 			const char *pRecordLabel = Recording ? Localize("Остановить и сохранить") :
-				Playing ? Localize("Остановить воспроизведение") : Localize("Начать запись");
-			if(DoButton_Menu(&s_RecordToggle, pRecordLabel, Recording || Playing, &Button))
+				Playing ? Localize("Остановить воспроизведение") :
+				PendingSave ? Localize("Сохранить запись") : Localize("Начать запись");
+			if(DoButton_Menu(&s_RecordToggle, pRecordLabel, Recording || Playing || PendingSave, &Button))
 			{
-				if(Recording)
+				if(Recording || PendingSave)
 				{
-					GameClient()->m_Controls.StopMacroRecording();
-					if(s_aRecordingMacroName[0] && GameClient()->m_Controls.SaveMacro(s_aRecordingMacroName))
-					{
-						GameClient()->Echo(Localize("Макрос сохранён"));
-						str_copy(s_aSelectedMacro, s_aRecordingMacroName);
-						RefreshMacroList();
-					}
-					else
-						GameClient()->Echo(Localize("Запись остановлена, но сохранить не удалось. Сохрани вручную."));
-					s_aRecordingMacroName[0] = '\0';
+					if(Recording)
+						GameClient()->m_Controls.StopMacroRecording();
+					if(SaveCapturedMacro(s_aRecordingMacroName))
+						s_aRecordingMacroName[0] = '\0';
 				}
 				else if(Playing)
 				{
@@ -715,7 +724,12 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			Row.VSplitLeft(7.0f, nullptr, &Row);
 			Row.VSplitLeft(100.0f, &Button, &Row);
 			if(DoButton_Menu(&s_Stop, Localize("Остановить"), 0, &Button))
+			{
+				const bool WasRecording = GameClient()->m_Controls.MacroRecording();
 				GameClient()->m_Controls.StopMacroRecording();
+				if(WasRecording && s_aRecordingMacroName[0] && SaveCapturedMacro(s_aRecordingMacroName))
+					s_aRecordingMacroName[0] = '\0';
+			}
 			Row.VSplitLeft(7.0f, nullptr, &Row);
 			Row.VSplitLeft(100.0f, &Button, nullptr);
 			if(DoButton_Menu(&s_Delete, Localize("Удалить"), 0, &Button) && s_aSelectedMacro[0])
@@ -758,12 +772,8 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 				if(GameClient()->m_Controls.MacroRecording())
 				{
 					GameClient()->m_Controls.StopMacroRecording();
-					if(s_aRecordingMacroName[0] && GameClient()->m_Controls.SaveMacro(s_aRecordingMacroName))
-					{
-						str_copy(s_aSelectedMacro, s_aRecordingMacroName);
-						RefreshMacroList();
-					}
-					s_aRecordingMacroName[0] = '\0';
+					if(SaveCapturedMacro(s_aRecordingMacroName))
+						s_aRecordingMacroName[0] = '\0';
 				}
 				else if(GameClient()->m_Controls.MacroPlaying())
 					GameClient()->m_Controls.StopMacroRecording();
