@@ -670,7 +670,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	}
 	MainView.HSplitTop(24.0f, &Row, &MainView);
 	Row.VSplitLeft(150.0f, &Label, &NameRect);
-	Ui()->DoLabel(&Label, Localize("Шаг перемотки в тиках"), 13.0f, TEXTALIGN_ML);
+	Ui()->DoLabel(&Label, Localize("Шаг телепорта / перемотки (тиков)"), 13.0f, TEXTALIGN_ML);
 	Ui()->DoEditBox(&s_RewindStep, &NameRect, 14.0f);
 	if(s_RewindStep.WasChanged())
 	{
@@ -699,7 +699,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	const char *pHint = GameClient()->m_Controls.MacroPlaybackLive() ?
 		(GameClient()->m_Controls.MacroPracticeWaiting() ?
 			Localize("Ожидание: подведи реального тии к точке, где начиналась запись.") :
-			Localize("Макрос управляет настоящим персонажем на сервере. Стрелки ← / → перематывают на один шаг.")) :
+			Localize("Макрос управляет настоящим персонажем на сервере. Стрелки ← / → перематывают на заданный шаг; назначенная клавиша телепортирует вперёд на это число тиков.")) :
 		Localize("Запись идёт в отдельной копии. Другие тии стоят AFK и могут быть скрыты переключателем выше.");
 	MainView.HSplitTop(24.0f, &Label, &MainView);
 	Ui()->DoLabel(&Label, pHint, 12.0f, TEXTALIGN_ML);
@@ -729,6 +729,7 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 		{ "Подхват крюком у края", "toggle cl_auto_edge_hook 0 1" },
 		{ "Полёт дамми (хаммерфлай)", "toggle cl_dummy_hammer 0 1" },
 		{ "Перемотка макроса назад (удерживать)", "+macro_rewind" },
+		{ "Телепорт макроса вперёд (одно нажатие)", "+macro_seek" },
 		{ "Замедлить макрос (удерживать)", "+macro_slow" },
 	};
 	static CButtonContainer s_aKeyReaders[std::size(s_aHotkeys)];
@@ -768,5 +769,5 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 	}
 
 	MainView.HSplitTop(12.0f, nullptr, &MainView);
-	Ui()->DoLabel(&MainView, Localize("Нажмите на поле клавиши и выберите кнопку. Значок корзины очищает назначение. Для макроса удерживайте кнопку: перемотка будет повторяться быстрее, а замедление действует только пока клавиша зажата."), 12.0f, TEXTALIGN_ML);
+	Ui()->DoLabel(&MainView, Localize("Нажмите на поле клавиши и выберите кнопку. Значок корзины очищает назначение. Телепорт вперёд срабатывает один раз на нажатие; перемотка назад повторяется при удержании; замедление действует, пока клавиша зажата."), 12.0f, TEXTALIGN_ML);
 }

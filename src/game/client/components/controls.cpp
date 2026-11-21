@@ -229,6 +229,7 @@ void CControls::OnConsoleInit()
 	Console()->Register("macro_play", "s[name]", CFGFLAG_CLIENT, ConMacroPlay, this, "Play a saved player input macro");
 	Console()->Register("macro_delete", "s[name]", CFGFLAG_CLIENT, ConMacroDelete, this, "Delete a saved player input macro");
 	Console()->Register("+macro_rewind", "", CFGFLAG_CLIENT, ConMacroRewind, this, "Hold to rewind a macro; repeat speed increases while held");
+	Console()->Register("+macro_seek", "", CFGFLAG_CLIENT, ConMacroSeek, this, "Jump forward by the configured number of macro ticks");
 	Console()->Register("+macro_slow", "", CFGFLAG_CLIENT, ConMacroSlow, this, "Hold to slow down macro playback");
 }
 
@@ -524,7 +525,7 @@ void CControls::PopulateMacroPracticeWorld()
 		pPracticeCharacter->m_GameTeam = GameTeam;
 	}
 
-	m_MacroPracticeWorld.RemoveEntities();
+	m_MacroPracticeWorld.RemoveMarkedEntities();
 	m_MacroPracticeWorld.m_GameTick = PracticeTick;
 	UpdateMacroPracticeGhost(m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId));
 }
@@ -966,6 +967,18 @@ void CControls::ConMacroRewind(IConsole::IResult *pResult, void *pUserData)
 		pSelf->m_MacroRewindHeldSince = 0;
 		pSelf->m_MacroRewindNextRepeat = 0;
 	}
+}
+
+void CControls::ConMacroSeek(IConsole::IResult *pResult, void *pUserData)
+{
+	if(pResult->GetInteger(0) == 0)
+		return;
+
+	CControls *pSelf = (CControls *)pUserData;
+	if(pSelf->GameClient()->m_Chat.IsActive() || pSelf->GameClient()->m_Menus.IsActive())
+		return;
+
+	pSelf->SeekMacro(pSelf->MacroSeekStep());
 }
 
 void CControls::ConMacroSlow(IConsole::IResult *pResult, void *pUserData)

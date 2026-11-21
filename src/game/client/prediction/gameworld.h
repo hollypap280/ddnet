@@ -103,6 +103,7 @@ public:
 	void CopyWorld(CGameWorld *pFrom);
 	CEntity *FindMatch(int ObjId, int ObjType, const void *pObjData);
 	void Clear();
+	void RemoveMarkedEntities() { RemoveEntities(); }
 
 	const CTuningParams *TuningList() const { return m_pTuningList; }
 	CTuningParams *TuningList() { return m_pTuningList; }
