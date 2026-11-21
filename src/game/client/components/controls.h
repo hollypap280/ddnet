@@ -80,7 +80,10 @@ public:
 	int MacroPracticeRate() const;
 	void SetMacroPracticeRate(int Rate);
 	bool MacroPracticeActive() const { return m_MacroPracticeActive; }
+	int MacroPracticeTick() const { return m_MacroPracticeTick; }
 	vec2 MacroPracticePosition();
+	void OnMacroPracticeDummySwap();
+	bool IsMacroPracticeBindSafe(const char *pBind) const;
 	CGameWorld *MacroPracticeWorld() { return m_MacroPracticeActive ? &m_MacroPracticeWorld : nullptr; }
 	float MacroPracticeTickFraction() const { return m_MacroPracticeAccumulator; }
 	bool MacroPracticeWaiting() const { return m_MacroPracticeWaiting; }

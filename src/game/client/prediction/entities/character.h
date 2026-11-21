@@ -63,7 +63,8 @@ public:
 	void ApplyMoveRestrictions();
 
 	bool m_IsLocal;
-	// Used only by the isolated macro practice world for stationary player targets.
+	// Set once when this tee is copied from a live snapshot. In the private
+	// practice world it stays AFK but still runs physics and can be interacted with.
 	bool m_IsMacroPracticeStatic = false;
 
 	CTeamsCore *TeamsCore();
