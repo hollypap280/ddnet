@@ -520,15 +520,26 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	static bool s_MacroListLoaded = false;
 	static char s_aSelectedMacro[64]{};
 	static char s_aRecordingMacroName[64]{};
+	static int s_MacroSubPage = 0;
+	static CButtonContainer s_MacroTab, s_SettingsTab;
 	static CButtonContainer s_PracticeToggle, s_ShowOthers;
 	static CButtonContainer s_RecordToggle, s_Save;
 	static CButtonContainer s_Refresh, s_Play, s_Stop, s_Delete;
+
+	CUIRect TabRow, MacroTab, TabGap, SettingsTab;
+	MainView.HSplitTop(30.0f, &TabRow, &MainView);
+	TabRow.VSplitLeft(TabRow.w * 0.5f - 2.0f, &MacroTab, &TabGap);
+	TabGap.VSplitLeft(4.0f, nullptr, &SettingsTab);
+	if(DoButton_Menu(&s_MacroTab, Localize("Макрос"), s_MacroSubPage == 0, &MacroTab))
+		s_MacroSubPage = 0;
+	if(DoButton_Menu(&s_SettingsTab, Localize("Настройки"), s_MacroSubPage == 1, &SettingsTab))
+		s_MacroSubPage = 1;
 
 	static CScrollRegion s_MacroScrollRegion;
 	CScrollRegionParams ScrollParams;
 	ScrollParams.m_ScrollbarThickness = 12.0f;
 	ScrollParams.m_ScrollbarMargin = 3.0f;
-	ScrollParams.m_ScrollUnit = 54.0f;
+	ScrollParams.m_ScrollUnit = 48.0f;
 	s_MacroScrollRegion.Begin(&MainView, &ScrollParams);
 
 	auto AddRow = [&](float Height, CUIRect &Rect) {
@@ -537,11 +548,11 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	};
 	auto AddSection = [&](const char *pTitle) {
 		CUIRect Section;
-		if(AddRow(25.0f, Section))
+		if(AddRow(24.0f, Section))
 		{
 			Section.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.12f), IGraphics::CORNER_ALL, 4.0f);
 			Section.Margin(6.0f, &Section);
-			Ui()->DoLabel(&Section, Localize(pTitle), 14.0f, TEXTALIGN_ML);
+			Ui()->DoLabel(&Section, Localize(pTitle), 13.0f, TEXTALIGN_ML);
 		}
 	};
 	auto RefreshMacroList = [&]() {
@@ -559,234 +570,252 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	if(!s_MacroListLoaded)
 		RefreshMacroList();
 
-	CUIRect Header;
-	if(AddRow(32.0f, Header))
-		Ui()->DoLabel(&Header, Localize("Макросы"), 20.0f, TEXTALIGN_ML);
-
-	AddSection("ТРЕНИРОВКА");
-	const bool PracticeActive = GameClient()->m_Controls.MacroPracticeActive();
-	CUIRect PracticeStatus;
-	if(AddRow(22.0f, PracticeStatus))
+	if(s_MacroSubPage == 0)
 	{
-		Ui()->DoLabel(&PracticeStatus,
-			PracticeActive ? Localize("Состояние: тренировка включена") : Localize("Состояние: тренировка выключена"),
-			13.0f, TEXTALIGN_ML);
-	}
+		CUIRect Header;
+		if(AddRow(28.0f, Header))
+			Ui()->DoLabel(&Header, Localize("Запись и воспроизведение"), 18.0f, TEXTALIGN_ML);
 
-	CUIRect PracticeButtonRow;
-	if(AddRow(30.0f, PracticeButtonRow))
-	{
-		if(DoButton_Menu(&s_PracticeToggle,
-			PracticeActive ? Localize("Завершить тренировку") : Localize("Начать тренировку"),
-			PracticeActive ? 1 : 0, &PracticeButtonRow))
+		AddSection("СОЗДАНИЕ МАКРОСА");
+		CUIRect NameRow;
+		if(AddRow(28.0f, NameRow))
 		{
-			if(PracticeActive)
-				GameClient()->m_Controls.StopMacroPractice();
-			else
-				GameClient()->m_Controls.StartMacroPractice();
+			NameRow.VSplitLeft(150.0f, &Label, &NameRect);
+			Ui()->DoLabel(&Label, Localize("Название"), 13.0f, TEXTALIGN_ML);
+			Ui()->DoEditBox(&s_MacroName, &NameRect, 14.0f);
 		}
-	}
 
-	CUIRect ShowOthersRow;
-	if(AddRow(25.0f, ShowOthersRow) &&
-		DoButton_CheckBox(&s_ShowOthers, Localize("Показывать других тии как неподвижные цели"),
-			g_Config.m_ClMacroPracticeShowOthers, &ShowOthersRow))
-		g_Config.m_ClMacroPracticeShowOthers ^= 1;
-
-	CUIRect PracticeRateRow;
-	if(AddRow(26.0f, PracticeRateRow))
-		Ui()->DoScrollbarOption(&g_Config.m_ClMacroPracticeRate, &g_Config.m_ClMacroPracticeRate,
-			&PracticeRateRow, Localize("Скорость тренировки (тиков в секунду)"), 1, 50);
-
-	AddSection("ЗАПИСЬ МАКРОСА");
-	CUIRect NameRow;
-	if(AddRow(28.0f, NameRow))
-	{
-		NameRow.VSplitLeft(155.0f, &Label, &NameRect);
-		Ui()->DoLabel(&Label, Localize("Название перед записью"), 13.0f, TEXTALIGN_ML);
-		Ui()->DoEditBox(&s_MacroName, &NameRect, 14.0f);
-	}
-
-	CUIRect RecordingRow;
-	if(AddRow(30.0f, RecordingRow))
-	{
-		const bool Recording = GameClient()->m_Controls.MacroRecording();
-		RecordingRow.VSplitLeft(178.0f, &Button, &Row);
-		if(DoButton_Menu(&s_RecordToggle,
-			Recording ? Localize("Остановить и сохранить") : Localize("Начать запись"),
-			Recording ? 1 : 0, &Button))
+		CUIRect RecordingRow;
+		if(AddRow(29.0f, RecordingRow))
 		{
-			if(Recording)
+			const bool Recording = GameClient()->m_Controls.MacroRecording();
+			const bool Playing = GameClient()->m_Controls.MacroPlaying();
+			RecordingRow.VSplitLeft(174.0f, &Button, &Row);
+			const char *pRecordLabel = Recording ? Localize("Остановить и сохранить") :
+				Playing ? Localize("Остановить воспроизведение") : Localize("Начать запись");
+			if(DoButton_Menu(&s_RecordToggle, pRecordLabel, Recording || Playing, &Button))
 			{
-				GameClient()->m_Controls.StopMacroRecording();
-				if(s_aRecordingMacroName[0] && GameClient()->m_Controls.SaveMacro(s_aRecordingMacroName))
+				if(Recording)
 				{
-					GameClient()->Echo(Localize("Макрос записан и сохранён"));
-					str_copy(s_aSelectedMacro, s_aRecordingMacroName);
-					RefreshMacroList();
+					GameClient()->m_Controls.StopMacroRecording();
+					if(s_aRecordingMacroName[0] && GameClient()->m_Controls.SaveMacro(s_aRecordingMacroName))
+					{
+						GameClient()->Echo(Localize("Макрос сохранён"));
+						str_copy(s_aSelectedMacro, s_aRecordingMacroName);
+						RefreshMacroList();
+					}
+					else
+						GameClient()->Echo(Localize("Запись остановлена, но сохранить не удалось. Сохрани вручную."));
+					s_aRecordingMacroName[0] = '\0';
+				}
+				else if(Playing)
+				{
+					GameClient()->m_Controls.StopMacroRecording();
+				}
+				else if(s_MacroName.IsEmpty())
+				{
+					GameClient()->Echo(Localize("Сначала введи название макроса"));
 				}
 				else
 				{
-					GameClient()->Echo(Localize("Запись остановлена, но сохранить не удалось. Проверь название и нажми «Сохранить вручную»."));
+					str_copy(s_aRecordingMacroName, s_MacroName.GetString());
+					GameClient()->m_Controls.StartMacroRecording();
+					if(!GameClient()->m_Controls.MacroRecording())
+						s_aRecordingMacroName[0] = '\0';
 				}
-				s_aRecordingMacroName[0] = '\0';
 			}
-			else if(s_MacroName.IsEmpty())
+			Row.VSplitLeft(7.0f, nullptr, &Row);
+			Row.VSplitLeft(116.0f, &Button, nullptr);
+			if(DoButton_Menu(&s_Save, Localize("Сохранить вручную"), 0, &Button))
 			{
-				GameClient()->Echo(Localize("Сначала введи название макроса"));
+				if(s_MacroName.IsEmpty() || !GameClient()->m_Controls.SaveMacro(s_MacroName.GetString()))
+					GameClient()->Echo(Localize("Не удалось сохранить. Сначала останови запись."));
+				else
+				{
+					GameClient()->Echo(Localize("Макрос сохранён"));
+					str_copy(s_aSelectedMacro, s_MacroName.GetString());
+					RefreshMacroList();
+				}
 			}
+		}
+
+		CUIRect StatusRow;
+		if(AddRow(22.0f, StatusRow))
+		{
+			char aStatus[160];
+			if(GameClient()->m_Controls.MacroRecording())
+				str_format(aStatus, sizeof(aStatus), "ИДЁТ ЗАПИСЬ  |  %d тиков", GameClient()->m_Controls.MacroFrameCount());
+			else if(GameClient()->m_Controls.MacroPlaying())
+				str_format(aStatus, sizeof(aStatus), "ВОСПРОИЗВЕДЕНИЕ  |  %d / %d тиков",
+					GameClient()->m_Controls.MacroPosition(), GameClient()->m_Controls.MacroFrameCount());
 			else
+				str_format(aStatus, sizeof(aStatus), "ОСТАНОВЛЕНО  |  %d тиков", GameClient()->m_Controls.MacroFrameCount());
+			Ui()->DoLabel(&StatusRow, aStatus, 12.0f, TEXTALIGN_ML);
+		}
+
+		AddSection("СОХРАНЁННЫЕ МАКРОСЫ");
+		CUIRect SearchRow;
+		if(AddRow(27.0f, SearchRow))
+		{
+			SearchRow.VSplitRight(78.0f, &SearchRect, &Button);
+			SearchRect.VSplitLeft(78.0f, &Label, &SearchRect);
+			Ui()->DoLabel(&Label, Localize("Поиск"), 12.0f, TEXTALIGN_ML);
+			Ui()->DoEditBox(&s_MacroSearch, &SearchRect, 13.0f);
+			if(DoButton_Menu(&s_Refresh, Localize("Обновить"), 0, &Button))
+				RefreshMacroList();
+		}
+
+		int VisibleMacroCount = 0;
+		for(std::size_t i = 0; i < s_vMacros.size(); ++i)
+		{
+			const CControls::SMacroInfo &Info = s_vMacros[i];
+			if(!s_MacroSearch.IsEmpty() &&
+				!str_utf8_find_nocase(Info.m_aName, s_MacroSearch.GetString()) &&
+				!str_utf8_find_nocase(Info.m_aMapName, s_MacroSearch.GetString()))
+				continue;
+
+			++VisibleMacroCount;
+			CUIRect MacroRow;
+			if(!AddRow(27.0f, MacroRow))
+				continue;
+
+			char aEntry[196];
+			str_format(aEntry, sizeof(aEntry), "%s   |   %s   |   %d %s",
+				Info.m_aName, Info.m_aMapName, Info.m_TickCount, Localize("тиков"));
+			if(DoButton_Menu(&s_vMacroButtons[i], aEntry,
+				str_comp(s_aSelectedMacro, Info.m_aName) == 0, &MacroRow))
+				str_copy(s_aSelectedMacro, Info.m_aName);
+		}
+
+		if(VisibleMacroCount == 0)
+		{
+			CUIRect EmptyRow;
+			if(AddRow(24.0f, EmptyRow))
+				Ui()->DoLabel(&EmptyRow, Localize("Макросов не найдено"), 12.0f, TEXTALIGN_ML);
+		}
+
+		AddSection("ЗАПУСК");
+		CUIRect SelectedRow;
+		if(AddRow(21.0f, SelectedRow))
+		{
+			char aSelected[128];
+			str_format(aSelected, sizeof(aSelected), "%s: %s",
+				Localize("Выбранный макрос"), s_aSelectedMacro[0] ? s_aSelectedMacro : Localize("не выбран"));
+			Ui()->DoLabel(&SelectedRow, aSelected, 12.0f, TEXTALIGN_ML);
+		}
+		CUIRect PlaybackRow;
+		if(AddRow(29.0f, PlaybackRow))
+		{
+			PlaybackRow.VSplitLeft(100.0f, &Button, &Row);
+			if(DoButton_Menu(&s_Play, Localize("Запустить"), 0, &Button) && s_aSelectedMacro[0])
 			{
-				str_copy(s_aRecordingMacroName, s_MacroName.GetString());
-				GameClient()->m_Controls.StartMacroRecording();
-				if(!GameClient()->m_Controls.MacroRecording())
+				if(!GameClient()->m_Controls.PlayMacro(s_aSelectedMacro))
+					GameClient()->Echo(Localize("Не удалось запустить выбранный макрос."));
+			}
+			Row.VSplitLeft(7.0f, nullptr, &Row);
+			Row.VSplitLeft(100.0f, &Button, &Row);
+			if(DoButton_Menu(&s_Stop, Localize("Остановить"), 0, &Button))
+				GameClient()->m_Controls.StopMacroRecording();
+			Row.VSplitLeft(7.0f, nullptr, &Row);
+			Row.VSplitLeft(100.0f, &Button, nullptr);
+			if(DoButton_Menu(&s_Delete, Localize("Удалить"), 0, &Button) && s_aSelectedMacro[0])
+			{
+				if(GameClient()->m_Controls.MacroPlaying())
+					GameClient()->m_Controls.StopMacroRecording();
+				if(GameClient()->m_Controls.DeleteMacro(s_aSelectedMacro))
+				{
+					GameClient()->Echo(Localize("Макрос удалён"));
+					s_aSelectedMacro[0] = '\0';
+					RefreshMacroList();
+				}
+				else
+					GameClient()->Echo(Localize("Не удалось удалить макрос."));
+			}
+		}
+	}
+	else
+	{
+		CUIRect Header;
+		if(AddRow(28.0f, Header))
+			Ui()->DoLabel(&Header, Localize("Настройки тренировочного мира"), 18.0f, TEXTALIGN_ML);
+
+		AddSection("ТРЕНИРОВОЧНЫЙ МИР");
+		const bool PracticeActive = GameClient()->m_Controls.MacroPracticeActive();
+		CUIRect PracticeStatus;
+		if(AddRow(21.0f, PracticeStatus))
+			Ui()->DoLabel(&PracticeStatus,
+				PracticeActive ? Localize("Состояние: тренировка включена") : Localize("Состояние: тренировка выключена"),
+				12.0f, TEXTALIGN_ML);
+
+		CUIRect PracticeButtonRow;
+		if(AddRow(29.0f, PracticeButtonRow) &&
+			DoButton_Menu(&s_PracticeToggle,
+				PracticeActive ? Localize("Завершить тренировку") : Localize("Начать тренировку"),
+				PracticeActive ? 1 : 0, &PracticeButtonRow))
+		{
+			if(PracticeActive)
+			{
+				if(GameClient()->m_Controls.MacroRecording())
+				{
+					GameClient()->m_Controls.StopMacroRecording();
+					if(s_aRecordingMacroName[0] && GameClient()->m_Controls.SaveMacro(s_aRecordingMacroName))
+					{
+						str_copy(s_aSelectedMacro, s_aRecordingMacroName);
+						RefreshMacroList();
+					}
 					s_aRecordingMacroName[0] = '\0';
+				}
+				else if(GameClient()->m_Controls.MacroPlaying())
+					GameClient()->m_Controls.StopMacroRecording();
+				GameClient()->m_Controls.StopMacroPractice();
 			}
-		}
-		Row.VSplitLeft(8.0f, nullptr, &Row);
-		Row.VSplitLeft(112.0f, &Button, nullptr);
-		if(DoButton_Menu(&s_Save, Localize("Сохранить вручную"), 0, &Button))
-		{
-			if(s_MacroName.IsEmpty() || !GameClient()->m_Controls.SaveMacro(s_MacroName.GetString()))
-				GameClient()->Echo(Localize("Не удалось сохранить. Введи название и останови запись."));
 			else
+				GameClient()->m_Controls.StartMacroPractice();
+		}
+
+		CUIRect ShowOthersRow;
+		if(AddRow(25.0f, ShowOthersRow) &&
+			DoButton_CheckBox(&s_ShowOthers,
+				Localize("Другие тии: AFK, но двигаются от крюка, ударов и столкновений"),
+				g_Config.m_ClMacroPracticeShowOthers, &ShowOthersRow))
+			g_Config.m_ClMacroPracticeShowOthers ^= 1;
+
+		CUIRect PracticeRateRow;
+		if(AddRow(26.0f, PracticeRateRow))
+			Ui()->DoScrollbarOption(&g_Config.m_ClMacroPracticeRate, &g_Config.m_ClMacroPracticeRate,
+				&PracticeRateRow, Localize("Скорость тренировки (тиков в секунду)"), 1, 50);
+
+		AddSection("ПЕРЕМОТКА И ВОСПРОИЗВЕДЕНИЕ");
+		if(!s_RewindStepInitialized)
+		{
+			s_RewindStep.SetInteger(g_Config.m_ClMacroRewindStep);
+			s_RewindStepInitialized = true;
+		}
+		CUIRect StepRow;
+		if(AddRow(27.0f, StepRow))
+		{
+			StepRow.VSplitLeft(190.0f, &Label, &NameRect);
+			Ui()->DoLabel(&Label, Localize("Шаг перехода (тиков)"), 12.0f, TEXTALIGN_ML);
+			Ui()->DoEditBox(&s_RewindStep, &NameRect, 13.0f);
+			if(s_RewindStep.WasChanged())
 			{
-				GameClient()->Echo(Localize("Макрос сохранён"));
-				str_copy(s_aSelectedMacro, s_MacroName.GetString());
-				RefreshMacroList();
+				const int Step = s_RewindStep.GetInteger();
+				if(Step >= 1 && Step <= 18000)
+					g_Config.m_ClMacroRewindStep = Step;
+				else
+					s_RewindStep.SetInteger(g_Config.m_ClMacroRewindStep);
 			}
 		}
-	}
+		CUIRect SlowRow;
+		if(AddRow(26.0f, SlowRow))
+			Ui()->DoScrollbarOption(&g_Config.m_ClMacroSlowFactor, &g_Config.m_ClMacroSlowFactor,
+				&SlowRow, Localize("Замедление при удержании клавиши"), 2, 10);
 
-	CUIRect RecordingStatus;
-	if(AddRow(21.0f, RecordingStatus))
-	{
-		char aRecordingStatus[128];
-		str_format(aRecordingStatus, sizeof(aRecordingStatus), "%s: %d %s",
-			GameClient()->m_Controls.MacroRecording() ? Localize("Записывается") : Localize("Записано"),
-			GameClient()->m_Controls.MacroFrameCount(), Localize("тиков"));
-		Ui()->DoLabel(&RecordingStatus, aRecordingStatus, 12.0f, TEXTALIGN_ML);
-	}
-
-	AddSection("БИБЛИОТЕКА МАКРОСОВ");
-	CUIRect SearchRow;
-	if(AddRow(28.0f, SearchRow))
-	{
-		SearchRow.VSplitRight(82.0f, &SearchRect, &Button);
-		SearchRect.VSplitLeft(105.0f, &Label, &SearchRect);
-		Ui()->DoLabel(&Label, Localize("Поиск"), 13.0f, TEXTALIGN_ML);
-		Ui()->DoEditBox(&s_MacroSearch, &SearchRect, 14.0f);
-		if(DoButton_Menu(&s_Refresh, Localize("Обновить"), 0, &Button))
-			RefreshMacroList();
-	}
-
-	int VisibleMacroCount = 0;
-	for(std::size_t i = 0; i < s_vMacros.size(); ++i)
-	{
-		const CControls::SMacroInfo &Info = s_vMacros[i];
-		if(!s_MacroSearch.IsEmpty() &&
-			!str_utf8_find_nocase(Info.m_aName, s_MacroSearch.GetString()) &&
-			!str_utf8_find_nocase(Info.m_aMapName, s_MacroSearch.GetString()))
-			continue;
-
-		++VisibleMacroCount;
-		CUIRect MacroRow;
-		if(!AddRow(29.0f, MacroRow))
-			continue;
-
-		char aEntry[196];
-		str_format(aEntry, sizeof(aEntry), "%s   |   %s   |   %d %s",
-			Info.m_aName, Info.m_aMapName, Info.m_TickCount, Localize("тиков"));
-		if(DoButton_Menu(&s_vMacroButtons[i], aEntry,
-			str_comp(s_aSelectedMacro, Info.m_aName) == 0, &MacroRow))
-			str_copy(s_aSelectedMacro, Info.m_aName);
-	}
-
-	if(VisibleMacroCount == 0)
-	{
-		CUIRect EmptyRow;
-		if(AddRow(25.0f, EmptyRow))
-			Ui()->DoLabel(&EmptyRow, Localize("Макросов не найдено"), 13.0f, TEXTALIGN_ML);
-	}
-
-	AddSection("ВОСПРОИЗВЕДЕНИЕ");
-	CUIRect SelectedRow;
-	if(AddRow(22.0f, SelectedRow))
-	{
-		char aSelected[128];
-		str_format(aSelected, sizeof(aSelected), "%s: %s",
-			Localize("Выбранный макрос"), s_aSelectedMacro[0] ? s_aSelectedMacro : Localize("не выбран"));
-		Ui()->DoLabel(&SelectedRow, aSelected, 12.0f, TEXTALIGN_ML);
-	}
-
-	CUIRect PlaybackRow;
-	if(AddRow(30.0f, PlaybackRow))
-	{
-		PlaybackRow.VSplitLeft(130.0f, &Button, &Row);
-		if(DoButton_Menu(&s_Play, Localize("Запустить"), 0, &Button) && s_aSelectedMacro[0])
-		{
-			if(!GameClient()->m_Controls.PlayMacro(s_aSelectedMacro))
-				GameClient()->Echo(Localize("Не удалось запустить выбранный макрос."));
-		}
-		Row.VSplitLeft(7.0f, nullptr, &Row);
-		Row.VSplitLeft(105.0f, &Button, &Row);
-		if(DoButton_Menu(&s_Stop, Localize("Остановить"), 0, &Button))
-			GameClient()->m_Controls.StopMacroRecording();
-		Row.VSplitLeft(7.0f, nullptr, &Row);
-		Row.VSplitLeft(112.0f, &Button, nullptr);
-		if(DoButton_Menu(&s_Delete, Localize("Удалить"), 0, &Button) && s_aSelectedMacro[0])
-		{
-			if(GameClient()->m_Controls.DeleteMacro(s_aSelectedMacro))
-			{
-				GameClient()->Echo(Localize("Макрос удалён"));
-				s_aSelectedMacro[0] = '\0';
-				RefreshMacroList();
-			}
-			else
-				GameClient()->Echo(Localize("Не удалось удалить макрос."));
-		}
-	}
-
-	AddSection("ПАРАМЕТРЫ ПЕРЕХОДА");
-	if(!s_RewindStepInitialized)
-	{
-		s_RewindStep.SetInteger(g_Config.m_ClMacroRewindStep);
-		s_RewindStepInitialized = true;
-	}
-
-	CUIRect StepRow;
-	if(AddRow(28.0f, StepRow))
-	{
-		StepRow.VSplitLeft(210.0f, &Label, &NameRect);
-		Ui()->DoLabel(&Label, Localize("Шаг перехода (тиков)"), 13.0f, TEXTALIGN_ML);
-		Ui()->DoEditBox(&s_RewindStep, &NameRect, 14.0f);
-		if(s_RewindStep.WasChanged())
-		{
-			const int Step = s_RewindStep.GetInteger();
-			if(Step >= 1 && Step <= 18000)
-				g_Config.m_ClMacroRewindStep = Step;
-			else
-				s_RewindStep.SetInteger(g_Config.m_ClMacroRewindStep);
-		}
-	}
-
-	CUIRect SlowRow;
-	if(AddRow(26.0f, SlowRow))
-		Ui()->DoScrollbarOption(&g_Config.m_ClMacroSlowFactor, &g_Config.m_ClMacroSlowFactor,
-			&SlowRow, Localize("Замедление при удержании клавиши"), 2, 10);
-
-	CUIRect StatusRow;
-	if(AddRow(22.0f, StatusRow))
-	{
-		const char *pMode = GameClient()->m_Controls.MacroRecording() ? Localize("ИДЁТ ЗАПИСЬ") :
-			GameClient()->m_Controls.MacroPlaybackLive() ? Localize("ИДЁТ ВОСПРОИЗВЕДЕНИЕ") :
-			GameClient()->m_Controls.MacroPlaying() ? Localize("ВОСПРОИЗВЕДЕНИЕ В ТРЕНИРОВКЕ") :
-			PracticeActive ? Localize("ТРЕНИРОВКА ВКЛЮЧЕНА") : Localize("ОСТАНОВЛЕНО");
-		char aStatus[160];
-		str_format(aStatus, sizeof(aStatus), "%s   |   %d / %d %s",
-			pMode, GameClient()->m_Controls.MacroPosition(),
-			GameClient()->m_Controls.MacroFrameCount(), Localize("тиков"));
-		Ui()->DoLabel(&StatusRow, aStatus, 12.0f, TEXTALIGN_ML);
+		CUIRect InfoRow;
+		if(AddRow(40.0f, InfoRow))
+			Ui()->DoLabel(&InfoRow,
+				Localize("В тренировке игровые кнопки работают только в копии мира. Команды серверу из биндов блокируются; переключение дамми остаётся доступным."),
+				12.0f, TEXTALIGN_ML);
 	}
 
 	s_MacroScrollRegion.End();
