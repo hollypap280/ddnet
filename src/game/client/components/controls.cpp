@@ -962,7 +962,7 @@ void CControls::ConMacroRewind(IConsole::IResult *pResult, void *pUserData)
 			pSelf->m_MacroRewindHeld = true;
 			pSelf->m_MacroRewindHeldSince = time_get();
 			pSelf->m_MacroRewindNextRepeat = pSelf->m_MacroRewindHeldSince + time_freq() * 3 / 10;
-			pSelf->SeekMacro(-pSelf->MacroSeekStep(), true, true);
+			pSelf->SeekMacro(-pSelf->MacroSeekStep());
 		}
 	}
 	else
@@ -1793,7 +1793,7 @@ void CControls::OnRender()
 		const int64_t Now = time_get();
 		if(Now >= m_MacroRewindNextRepeat)
 		{
-			SeekMacro(-MacroSeekStep(), false, true);
+			SeekMacro(-MacroSeekStep(), false);
 			const int64_t HeldFor = Now - m_MacroRewindHeldSince;
 			const int64_t RepeatDelay = HeldFor >= time_freq() ? time_freq() / 16 :
 				HeldFor >= time_freq() / 2 ? time_freq() / 8 : time_freq() / 4;
