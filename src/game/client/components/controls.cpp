@@ -27,6 +27,7 @@
 #include <game/localization.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <utility>
 
@@ -439,6 +440,22 @@ bool CControls::StartMacroPractice()
 
 void CControls::StopMacroPractice()
 {
+	const int Dummy = g_Config.m_ClDummy;
+	m_aInputDirectionLeft[Dummy] = 0;
+	m_aInputDirectionRight[Dummy] = 0;
+	m_aInputData[Dummy].m_Direction = 0;
+	m_aInputData[Dummy].m_Jump = 0;
+	m_aInputData[Dummy].m_Hook = 0;
+	if(m_aInputData[Dummy].m_Fire & 1)
+		++m_aInputData[Dummy].m_Fire;
+	m_aInputData[Dummy].m_WantedWeapon = 0;
+	m_aInputData[Dummy].m_NextWeapon = 0;
+	m_aInputData[Dummy].m_PrevWeapon = 0;
+	m_aManualHook[Dummy] = false;
+	m_aAutoHookActive[Dummy] = false;
+	m_aAutoHookFireActive[Dummy] = false;
+	m_aAutoAvoidActive[Dummy] = false;
+	m_aAutoEdgeHookActive[Dummy] = false;
 	m_MacroRecording = false;
 	m_MacroPlaying = false;
 	m_MacroPracticeActive = false;
@@ -584,6 +601,10 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput)
 		{
 			m_MacroPlaying = false;
 			m_MacroPracticeWaiting = false;
+			CNetObj_PlayerInput IdleInput{};
+			IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+			IdleInput.m_TargetX = 1;
+			pCharacter->SetInput(&IdleInput);
 			GameClient()->Echo("Воспроизведение макроса завершено");
 			return;
 		}
@@ -763,6 +784,16 @@ void CControls::StopMacroRecording()
 	m_MacroHasCurrentFrame = false;
 	m_MacroHoldCurrentFrame = false;
 	m_MacroPracticeWaiting = false;
+	if(m_MacroPracticeActive)
+	{
+		if(CCharacter *pCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId))
+		{
+			CNetObj_PlayerInput IdleInput{};
+			IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+			IdleInput.m_TargetX = 1;
+			pCharacter->SetInput(&IdleInput);
+		}
+	}
 }
 
 bool CControls::SaveMacro(const char *pName)
@@ -845,35 +876,59 @@ bool CControls::PlayMacro(const char *pName)
 		Valid = false;
 
 	io_close(File);
-	if(!Valid || m_MacroRecording || Client()->State() != IClient::STATE_ONLINE ||
+	if(!Valid || Client()->State() != IClient::STATE_ONLINE ||
 		GameClient()->m_Snap.m_LocalClientId < 0 || !GameClient()->m_Snap.m_pLocalCharacter)
 	{
-		GameClient()->Echo("Не удалось запустить макрос: останови запись и подключись к серверу.");
+		GameClient()->Echo("Не удалось запустить макрос: проверь файл и подключение к серверу.");
+		return false;
+	}
+	if(m_MacroRecording)
+	{
+		GameClient()->Echo("Сначала останови текущую запись макроса.");
+		return false;
+	}
+	if(m_MacroPlaying)
+		StopMacroRecording();
+	if(!m_MacroPracticeActive && !StartMacroPractice())
+		return false;
+
+	CCharacter *pPracticeCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId);
+	if(!pPracticeCharacter)
+	{
+		GameClient()->Echo("Не удалось найти тренировочного тии для воспроизведения.");
 		return false;
 	}
 
-	// Stop any previous live stream and the private practice copy before
-	// sending a new macro through the normal server input path.
-	if(m_MacroPlaybackLive)
-		StopMacroRecording();
-	StopMacroPractice();
 	m_vMacroFrames = std::move(Frames);
 	m_MacroRecording = false;
+	m_MacroPlaybackLive = false;
+	m_MacroPlaying = true;
 	m_MacroPlaybackIndex = 0;
 	m_MacroCurrentFrame = {};
 	m_MacroHasCurrentFrame = false;
 	m_MacroHoldCurrentFrame = false;
+	m_MacroPlaybackLastTick = -1;
+	m_MacroPlaybackSlowTickCounter = 0;
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeAccumulator = 0.0f;
-	m_MacroPracticeLastTime = 0;
-	m_MacroPlaybackLive = true;
-	m_MacroPlaybackLastTick = -1;
-	m_MacroPlaying = true;
+	m_MacroPracticeLastTime = time_get();
 
-	const int Dummy = g_Config.m_ClDummy;
-	m_MacroLiveFireOffset = (m_aLastData[Dummy].m_Fire - m_vMacroFrames[0].m_Input.m_Fire) & INPUT_STATE_MASK;
-	m_MacroLiveNextWeaponOffset = (m_aLastData[Dummy].m_NextWeapon - m_vMacroFrames[0].m_Input.m_NextWeapon) & INPUT_STATE_MASK;
-	m_MacroLivePrevWeaponOffset = (m_aLastData[Dummy].m_PrevWeapon - m_vMacroFrames[0].m_Input.m_PrevWeapon) & INPUT_STATE_MASK;
+	// Restore the first pre-input state in the local-only practice world.
+	// Nothing is teleported or replayed on the server-controlled tee.
+	if(m_vMacroFrames[0].m_HasCoordinates)
+	{
+		const SMacroFrame &FirstFrame = m_vMacroFrames[0];
+		CCharacterCore Core = pPracticeCharacter->GetCore();
+		Core.Read(&FirstFrame.m_PreCore);
+		pPracticeCharacter->SetCore(Core);
+		pPracticeCharacter->m_Pos = Core.m_Pos;
+		pPracticeCharacter->m_PrevPos = Core.m_Pos;
+		pPracticeCharacter->m_PrevPrevPos = Core.m_Pos;
+		pPracticeCharacter->SetActiveWeapon(FirstFrame.m_PreWeapon);
+		pPracticeCharacter->m_IsLocal = true;
+		m_MacroPracticeWorld.m_GameTick = std::max(0, FirstFrame.m_Tick - 1);
+		m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
+	}
 
 	char aCurrentMapName[64] = "Неизвестная карта";
 	const char *pMapName = Client()->MapDownloadName();
@@ -885,7 +940,7 @@ bool CControls::PlayMacro(const char *pName)
 				pBaseName = p + 1;
 		str_copy(aCurrentMapName, pBaseName);
 		for(char *p = aCurrentMapName; *p; ++p)
-			if(*p == '.') { *p = '\0'; break; }
+			if(*p == '.') { *p = '\\0'; break; }
 	}
 
 	if(aRecordedMapName[0] && str_comp_nocase(aRecordedMapName, aCurrentMapName) != 0)
@@ -896,20 +951,10 @@ bool CControls::PlayMacro(const char *pName)
 		GameClient()->Echo(aMessage);
 	}
 
-	if(m_vMacroFrames[0].m_HasCoordinates)
-	{
-		const vec2 CurrentPos = GameClient()->m_PredictedChar.m_Pos;
-		const vec2 StartPos((float)m_vMacroFrames[0].m_PreCore.m_X, (float)m_vMacroFrames[0].m_PreCore.m_Y);
-		m_MacroPracticeWaiting = distance(CurrentPos, StartPos) > 24.0f;
-	}
-
-	if(m_MacroPracticeWaiting)
-		GameClient()->Echo("Макрос выбран. Подведи настоящего тии к начальной точке записи.");
-	else
-		GameClient()->Echo("Макрос запущен в основном игровом мире.");
+	UpdateMacroPracticeGhost(pPracticeCharacter);
+	GameClient()->Echo("Макрос запущен в отдельном тренировочном мире. Настоящий тии остаётся неподвижным.");
 	return true;
 }
-
 bool CControls::DeleteMacro(const char *pName)
 {
 	char aPath[128];
@@ -1001,6 +1046,119 @@ int CControls::MacroSeekStep() const
 void CControls::SetMacroSeekStep(int Step)
 {
 	g_Config.m_ClMacroRewindStep = std::clamp(Step, 1, 18000);
+}
+
+bool CControls::IsMacroPracticeBindSafe(const char *pBind) const
+{
+	if(!m_MacroPracticeActive)
+		return true;
+	if(!pBind || !pBind[0])
+		return false;
+
+	bool HasCommand = false;
+	const char *p = pBind;
+	while(*p)
+	{
+		while(*p && (std::isspace((unsigned char)*p) || *p == ';'))
+			++p;
+		if(!*p)
+			break;
+
+		const char *pCommandStart = p;
+		while(*p && !std::isspace((unsigned char)*p) && *p != ';')
+			++p;
+		const size_t CommandLength = (size_t)(p - pCommandStart);
+		if(CommandLength == 0 || CommandLength >= 64)
+			return false;
+
+		char aCommand[64];
+		str_copy(aCommand, pCommandStart, CommandLength + 1);
+		const char *pName = aCommand;
+		if(*pName == '+' || *pName == '-')
+			++pName;
+
+		const bool IsInputCommand =
+			str_comp(pName, "left") == 0 ||
+			str_comp(pName, "right") == 0 ||
+			str_comp(pName, "jump") == 0 ||
+			str_comp(pName, "hook") == 0 ||
+			str_comp(pName, "fire") == 0 ||
+			str_comp(pName, "weapon1") == 0 ||
+			str_comp(pName, "weapon2") == 0 ||
+			str_comp(pName, "weapon3") == 0 ||
+			str_comp(pName, "weapon4") == 0 ||
+			str_comp(pName, "weapon5") == 0 ||
+			str_comp(pName, "nextweapon") == 0 ||
+			str_comp(pName, "prevweapon") == 0 ||
+			str_comp(pName, "showhookcoll") == 0 ||
+			str_comp(pName, "macro_rewind") == 0 ||
+			str_comp(pName, "macro_seek") == 0 ||
+			str_comp(pName, "macro_slow") == 0 ||
+			str_comp(pName, "cl_dummy") == 0;
+
+		bool IsDummyToggle = false;
+		if(str_comp(pName, "toggle") == 0)
+		{
+			while(*p && std::isspace((unsigned char)*p))
+				++p;
+			const char *pVariable = p;
+			while(*p && !std::isspace((unsigned char)*p) && *p != ';')
+				++p;
+			IsDummyToggle = (size_t)(p - pVariable) == str_length("cl_dummy") &&
+				str_comp_num(pVariable, "cl_dummy", str_length("cl_dummy")) == 0;
+		}
+
+		if(!IsInputCommand && !IsDummyToggle)
+			return false;
+
+		HasCommand = true;
+		while(*p && *p != ';')
+			++p;
+		if(*p == ';')
+			++p;
+	}
+	return HasCommand;
+}
+
+void CControls::OnMacroPracticeDummySwap()
+{
+	if(!m_MacroPracticeActive)
+		return;
+
+	const int NewClientId = GameClient()->m_aLocalIds[g_Config.m_ClDummy];
+	if(NewClientId < 0 || NewClientId >= MAX_CLIENTS)
+		return;
+
+	PopulateMacroPracticeWorld();
+	CCharacter *pNewCharacter = m_MacroPracticeWorld.GetCharacterById(NewClientId);
+	if(!pNewCharacter)
+	{
+		GameClient()->Echo(Localize("Не удалось найти выбранного тии в тренировочном мире"));
+		return;
+	}
+
+	if(NewClientId == m_MacroPracticeLocalId)
+		return;
+
+	CNetObj_PlayerInput IdleInput{};
+	IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+	IdleInput.m_TargetX = 1;
+	if(CCharacter *pOldCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId))
+	{
+		pOldCharacter->SetInput(&IdleInput);
+		pOldCharacter->m_IsLocal = false;
+	}
+
+	pNewCharacter->m_IsLocal = true;
+	m_MacroPracticeLocalId = NewClientId;
+	m_MacroPracticeWorld.m_LocalClientId = NewClientId;
+	m_MacroPracticePendingFireTransitions = 0;
+	m_MacroPracticePendingJump = false;
+	m_MacroPracticePendingHook = false;
+	m_MacroPracticeFireCounter = m_aInputData[g_Config.m_ClDummy].m_Fire & INPUT_STATE_MASK;
+	m_MacroPracticeAccumulator = 0.0f;
+	m_MacroPracticeLastTime = time_get();
+	UpdateMacroPracticeGhost(pNewCharacter);
 }
 
 vec2 CControls::MacroPracticePosition()
@@ -1892,6 +2050,25 @@ void CControls::OnRender()
 		}
 		Graphics()->QuadsEnd();
 		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+	}
+
+	if(m_MacroPracticeActive)
+	{
+		const CScreenRect PreviousScreen = Graphics()->GetScreen();
+		Graphics()->MapScreenToSize(Graphics()->ScreenWidth(), Graphics()->ScreenHeight());
+		char aTickLabel[96];
+		if(m_MacroRecording)
+			str_format(aTickLabel, sizeof(aTickLabel), "ЗАПИСЬ  |  %d тиков", (int)m_vMacroFrames.size());
+		else if(m_MacroPlaying)
+			str_format(aTickLabel, sizeof(aTickLabel), "ВОСПРОИЗВЕДЕНИЕ  |  %d / %d тиков",
+				(int)m_MacroPlaybackIndex, (int)m_vMacroFrames.size());
+		else
+			str_format(aTickLabel, sizeof(aTickLabel), "ТРЕНИРОВКА  |  %d тиков", m_MacroPracticeTick);
+		const float Width = TextRender()->TextWidth(14.0f, aTickLabel);
+		TextRender()->TextColor(0.55f, 0.9f, 1.0f, 1.0f);
+		TextRender()->Text((Graphics()->ScreenWidth() - Width) * 0.5f, 12.0f, 14.0f, aTickLabel);
+		TextRender()->TextColor(TextRender()->DefaultTextColor());
+		Graphics()->MapScreen(PreviousScreen);
 	}
 }
 
