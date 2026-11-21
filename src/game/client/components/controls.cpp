@@ -504,7 +504,8 @@ void CControls::PopulateMacroPracticeWorld()
 		if(ClientId == m_MacroPracticeLocalId)
 			continue;
 
-		if(!g_Config.m_ClMacroPracticeShowOthers || !Info.m_Active)
+		const bool IsOwnDummy = ClientId == GameClient()->m_aLocalIds[0] || ClientId == GameClient()->m_aLocalIds[1];
+		if((!g_Config.m_ClMacroPracticeShowOthers && !IsOwnDummy) || !Info.m_Active)
 		{
 			if(pPracticeCharacter)
 				pPracticeCharacter->Destroy();
@@ -519,8 +520,8 @@ void CControls::PopulateMacroPracticeWorld()
 		// CCharacter::Team()/SameTeam() read CTeamsCore, not m_GameTeam.
 		m_MacroPracticeWorld.Teams()->Team(ClientId, GameTeam);
 
-		// Copy each remote tee once. They remain AFK and fixed in place while
-		// the local practice tee can hook, bump and shoot them as targets.
+		// Copy each remote tee once. Other players stay AFK, but their cloned
+		// physics continues, so hooks, hammers and collisions can move them.
 		if(!pPracticeCharacter)
 		{
 			CNetObj_Character Character = Info.m_Cur;
@@ -703,7 +704,18 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput)
 	}
 	else if(m_MacroPlaying && ReplayRecordedFrame)
 	{
+		const SMacroFrame &PlayedFrame = m_vMacroFrames[m_MacroPlaybackIndex];
 		++m_MacroPlaybackIndex;
+		if(PlayedFrame.m_HasCoordinates)
+		{
+			CCharacterCore RecordedCore = pCharacter->GetCore();
+			RecordedCore.Read(&PlayedFrame.m_Core);
+			pCharacter->SetCore(RecordedCore);
+			pCharacter->m_Pos = RecordedCore.m_Pos;
+			pCharacter->SetActiveWeapon(PlayedFrame.m_Weapon);
+			m_MacroPracticeWorld.m_GameTick = PlayedFrame.m_Tick;
+			m_MacroPracticeTick = PlayedFrame.m_Tick;
+		}
 	}
 
 	UpdateMacroPracticeGhost(pCharacter);

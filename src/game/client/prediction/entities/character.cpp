@@ -627,7 +627,7 @@ void CCharacter::ResetInput()
 
 void CCharacter::PreTick()
 {
-		DDRaceTick();
+	DDRaceTick();
 
 	m_Core.m_Input = m_Input;
 	m_Core.Tick(true, !m_pGameWorld->m_WorldConfig.m_NoWeakHookAndBounce);
@@ -635,7 +635,7 @@ void CCharacter::PreTick()
 
 void CCharacter::Tick()
 {
-		if(m_pGameWorld->m_WorldConfig.m_NoWeakHookAndBounce)
+	if(m_pGameWorld->m_WorldConfig.m_NoWeakHookAndBounce)
 	{
 		m_Core.TickDeferred();
 	}
@@ -669,7 +669,7 @@ void CCharacter::Tick()
 
 void CCharacter::TickDeferred()
 {
-		m_Core.Move();
+	m_Core.Move();
 	m_Core.Quantize();
 	m_Pos = m_Core.m_Pos;
 }
