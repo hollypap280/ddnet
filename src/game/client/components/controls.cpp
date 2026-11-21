@@ -282,7 +282,7 @@ void CControls::SendPracticeTeleportToCursor(int Conn)
 namespace
 {
 	constexpr uint32_t MACRO_FILE_MAGIC = 0x444D4143;
-	constexpr uint32_t MACRO_FILE_VERSION = 3;
+	constexpr uint32_t MACRO_FILE_VERSION = 4;
 	constexpr uint32_t MACRO_MAX_FRAMES = 18000;
 }
 
@@ -463,6 +463,7 @@ void CControls::StopMacroPractice()
 	m_MacroPracticeAccumulator = 0.0f;
 	m_MacroPracticeLastTime = 0;
 	m_MacroPracticeLocalId = -1;
+	m_MacroPlaybackOwnsDummy = false;
 	m_MacroPlaybackLive = false;
 	m_MacroPlaybackLastTick = -1;
 	m_MacroRewindHeld = false;
@@ -550,37 +551,80 @@ void CControls::PopulateMacroPracticeWorld()
 	m_MacroPracticeWorld.RemoveMarkedEntities();
 	m_MacroPracticeWorld.m_GameTick = PracticeTick;
 
-	// The dummy connection can finish switching after OnDummySwap() ran.
-	// Promote it as soon as its character has appeared in the active snapshot,
-	// while keeping the previous tee alive in this private world.
-	const int RequestedLocalId = GameClient()->m_aLocalIds[g_Config.m_ClDummy];
-	if(RequestedLocalId >= 0 && RequestedLocalId < MAX_CLIENTS && RequestedLocalId != m_MacroPracticeLocalId)
+	// While a macro is replaying, the recorded tee id controls the private world.
+	if(!m_MacroPlaybackOwnsDummy)
 	{
-		if(CCharacter *pNewCharacter = m_MacroPracticeWorld.GetCharacterById(RequestedLocalId))
+		// The dummy connection can finish switching after OnDummySwap() ran.
+		// Promote it as soon as its character has appeared in the active snapshot,
+		// while keeping the previous tee alive in this private world.
+		const int RequestedLocalId = GameClient()->m_aLocalIds[g_Config.m_ClDummy];
+		if(RequestedLocalId >= 0 && RequestedLocalId < MAX_CLIENTS && RequestedLocalId != m_MacroPracticeLocalId)
 		{
-			CNetObj_PlayerInput IdleInput{};
-			IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
-			IdleInput.m_TargetX = 1;
-			if(CCharacter *pOldCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId))
+			if(CCharacter *pNewCharacter = m_MacroPracticeWorld.GetCharacterById(RequestedLocalId))
 			{
-				pOldCharacter->SetInput(&IdleInput);
-				pOldCharacter->m_IsLocal = false;
-				pOldCharacter->m_IsMacroPracticeStatic = true;
+				CNetObj_PlayerInput IdleInput{};
+				IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+				IdleInput.m_TargetX = 1;
+				if(CCharacter *pOldCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId))
+				{
+					pOldCharacter->SetInput(&IdleInput);
+					pOldCharacter->m_IsLocal = false;
+					pOldCharacter->m_IsMacroPracticeStatic = true;
+				}
+				pNewCharacter->m_IsLocal = true;
+				pNewCharacter->m_IsMacroPracticeStatic = false;
+				m_MacroPracticeLocalId = RequestedLocalId;
+				m_MacroPracticeWorld.m_LocalClientId = RequestedLocalId;
+				m_MacroPracticePendingFireTransitions = 0;
+				m_MacroPracticePendingJump = false;
+				m_MacroPracticePendingHook = false;
+				m_MacroPracticeFireCounter = m_aInputData[g_Config.m_ClDummy].m_Fire & INPUT_STATE_MASK;
+				m_MacroPracticeAccumulator = 0.0f;
+				m_MacroPracticeLastTime = time_get();
 			}
-			pNewCharacter->m_IsLocal = true;
-			pNewCharacter->m_IsMacroPracticeStatic = false;
-			m_MacroPracticeLocalId = RequestedLocalId;
-			m_MacroPracticeWorld.m_LocalClientId = RequestedLocalId;
-			m_MacroPracticePendingFireTransitions = 0;
-			m_MacroPracticePendingJump = false;
-			m_MacroPracticePendingHook = false;
-			m_MacroPracticeFireCounter = m_aInputData[g_Config.m_ClDummy].m_Fire & INPUT_STATE_MASK;
-			m_MacroPracticeAccumulator = 0.0f;
-			m_MacroPracticeLastTime = time_get();
 		}
+	
 	}
 
 	UpdateMacroPracticeGhost(m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId));
+}
+
+bool CControls::SwitchMacroPracticeCharacter(int ClientId)
+{
+	if(!m_MacroPracticeActive || ClientId < 0 || ClientId >= MAX_CLIENTS)
+		return false;
+	if(ClientId == m_MacroPracticeLocalId)
+		return true;
+
+	CCharacter *pNewCharacter = m_MacroPracticeWorld.GetCharacterById(ClientId);
+	if(!pNewCharacter)
+	{
+		PopulateMacroPracticeWorld();
+		pNewCharacter = m_MacroPracticeWorld.GetCharacterById(ClientId);
+	}
+	if(!pNewCharacter)
+		return false;
+
+	CNetObj_PlayerInput IdleInput{};
+	IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+	IdleInput.m_TargetX = 1;
+	if(CCharacter *pOldCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId))
+	{
+		pOldCharacter->SetInput(&IdleInput);
+		pOldCharacter->m_IsLocal = false;
+		pOldCharacter->m_IsMacroPracticeStatic = true;
+	}
+
+	pNewCharacter->m_IsLocal = true;
+	pNewCharacter->m_IsMacroPracticeStatic = false;
+	m_MacroPracticeLocalId = ClientId;
+	m_MacroPracticeWorld.m_LocalClientId = ClientId;
+	m_MacroPracticePendingFireTransitions = 0;
+	m_MacroPracticePendingJump = false;
+	m_MacroPracticePendingHook = false;
+	m_MacroPracticeFireCounter = m_aInputData[g_Config.m_ClDummy].m_Fire & INPUT_STATE_MASK;
+	UpdateMacroPracticeGhost(pNewCharacter);
+	return true;
 }
 
 bool CControls::RestoreMacroPracticeFrame(int Index)
@@ -588,11 +632,13 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 	if(!m_MacroPracticeActive || Index < 0 || Index >= (int)m_vMacroFrames.size())
 		return false;
 
+	const SMacroFrame &Frame = m_vMacroFrames[Index];
+	if(Frame.m_ClientId >= 0 && !SwitchMacroPracticeCharacter(Frame.m_ClientId))
+		return false;
+
 	CCharacter *pCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId);
 	if(!pCharacter)
 		return false;
-
-	const SMacroFrame &Frame = m_vMacroFrames[Index];
 	if(Frame.m_HasCoordinates)
 	{
 		CCharacterCore Core = pCharacter->GetCore();
@@ -614,6 +660,18 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput)
 {
 	if(!m_MacroPracticeActive)
 		return;
+
+	if(m_MacroPlaying && m_MacroPlaybackIndex < m_vMacroFrames.size())
+	{
+		const int RecordedClientId = m_vMacroFrames[m_MacroPlaybackIndex].m_ClientId;
+		if(RecordedClientId >= 0 && RecordedClientId != m_MacroPracticeLocalId &&
+			!SwitchMacroPracticeCharacter(RecordedClientId))
+		{
+			GameClient()->Echo("Не удалось переключить тренировочного тии по записи макроса.");
+			StopMacroRecording();
+			return;
+		}
+	}
 
 	CCharacter *pCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId);
 	if(!pCharacter)
@@ -698,6 +756,7 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput)
 		pCharacter->Core()->Write(&NewFrame.m_PreCore);
 		NewFrame.m_PreWeapon = pCharacter->GetActiveWeapon();
 		NewFrame.m_HasCoordinates = 1;
+		NewFrame.m_ClientId = m_MacroPracticeLocalId;
 	}
 
 	// Match DDNet's normal prediction order: direct input handles weapon
@@ -779,6 +838,7 @@ void CControls::StartMacroRecording()
 	}
 
 	m_MacroPlaying = false;
+	m_MacroPlaybackOwnsDummy = false;
 	m_MacroPlaybackIndex = 0;
 	m_MacroCurrentFrame = {};
 	m_MacroHasCurrentFrame = false;
@@ -883,14 +943,38 @@ bool CControls::PlayMacro(const char *pName)
 		Valid = io_read(File, aRecordedMapName, sizeof(aRecordedMapName)) == sizeof(aRecordedMapName);
 
 	const int64_t RemainingBytes = Valid ? io_length(File) - io_tell(File) : 0;
-	const int64_t ExtendedFrameBytes = (int64_t)Count * sizeof(SMacroFrame);
+	const int64_t CurrentFrameBytes = (int64_t)Count * sizeof(SMacroFrame);
+	const int64_t Version3FrameBytes = (int64_t)Count * sizeof(SMacroFrameV3);
 	const int64_t LegacyFrameBytes = (int64_t)Count * sizeof(SMacroFrameV1);
 	std::vector<SMacroFrame> Frames;
-	if(Valid && (Version >= 2 || (Version == 1 && RemainingBytes == ExtendedFrameBytes)))
+	if(Valid && Version >= 4)
 	{
 		Frames.resize(Count);
-		Valid = RemainingBytes == ExtendedFrameBytes &&
-			io_read(File, Frames.data(), ExtendedFrameBytes) == ExtendedFrameBytes;
+		Valid = RemainingBytes == CurrentFrameBytes &&
+			io_read(File, Frames.data(), CurrentFrameBytes) == CurrentFrameBytes;
+	}
+	else if(Valid && (Version >= 2 || (Version == 1 && RemainingBytes == Version3FrameBytes)))
+	{
+		std::vector<SMacroFrameV3> OldFrames(Count);
+		Valid = RemainingBytes == Version3FrameBytes &&
+			io_read(File, OldFrames.data(), Version3FrameBytes) == Version3FrameBytes;
+		if(Valid)
+		{
+			Frames.resize(Count);
+			for(uint32_t i = 0; i < Count; ++i)
+			{
+				Frames[i].m_Input = OldFrames[i].m_Input;
+				Frames[i].m_PreCore = OldFrames[i].m_PreCore;
+				Frames[i].m_Core = OldFrames[i].m_Core;
+				Frames[i].m_Character = OldFrames[i].m_Character;
+				Frames[i].m_PreWeapon = OldFrames[i].m_PreWeapon;
+				Frames[i].m_Weapon = OldFrames[i].m_Weapon;
+				Frames[i].m_AttackTick = OldFrames[i].m_AttackTick;
+				Frames[i].m_Tick = OldFrames[i].m_Tick;
+				Frames[i].m_HasCoordinates = OldFrames[i].m_HasCoordinates;
+				Frames[i].m_ClientId = -1;
+			}
+		}
 	}
 	else if(Valid && Version == 1 && RemainingBytes == LegacyFrameBytes)
 	{
@@ -912,12 +996,12 @@ bool CControls::PlayMacro(const char *pName)
 				Frames[i].m_Input.m_TargetY = OldFrames[i].m_TargetY;
 				Frames[i].m_Tick = (int)i + 1;
 				Frames[i].m_HasCoordinates = 0;
+				Frames[i].m_ClientId = -1;
 			}
 		}
 	}
 	else
 		Valid = false;
-
 	io_close(File);
 	if(!Valid || Client()->State() != IClient::STATE_ONLINE ||
 		GameClient()->m_Snap.m_LocalClientId < 0 || !GameClient()->m_Snap.m_pLocalCharacter)
@@ -935,6 +1019,11 @@ bool CControls::PlayMacro(const char *pName)
 	if(!m_MacroPracticeActive && !StartMacroPractice())
 		return false;
 
+	if(Frames[0].m_ClientId >= 0 && !SwitchMacroPracticeCharacter(Frames[0].m_ClientId))
+	{
+		GameClient()->Echo("Не удалось выбрать начального тии из записи.");
+		return false;
+	}
 	CCharacter *pPracticeCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId);
 	if(!pPracticeCharacter)
 	{
@@ -943,6 +1032,7 @@ bool CControls::PlayMacro(const char *pName)
 	}
 
 	m_vMacroFrames = std::move(Frames);
+	m_MacroPlaybackOwnsDummy = std::any_of(m_vMacroFrames.begin(), m_vMacroFrames.end(), [](const SMacroFrame &Frame) { return Frame.m_ClientId >= 0; });
 	m_MacroRecording = false;
 	m_MacroPlaybackLive = false;
 	m_MacroPlaying = true;
@@ -1147,7 +1237,7 @@ bool CControls::IsMacroPracticeBindSafe(const char *pBind) const
 			const char *pVariable = p;
 			while(*p && !std::isspace((unsigned char)*p) && *p != ';')
 				++p;
-			IsDummyToggle = (size_t)(p - pVariable) == str_length("cl_dummy") &&
+			IsDummyToggle = (size_t)(p - pVariable) == (size_t)str_length("cl_dummy") &&
 				str_comp_num(pVariable, "cl_dummy", str_length("cl_dummy")) == 0;
 		}
 
@@ -1166,7 +1256,11 @@ bool CControls::IsMacroPracticeBindSafe(const char *pBind) const
 void CControls::OnMacroPracticeDummySwap()
 {
 	if(m_MacroPracticeActive)
+	{
+		if(!m_MacroPlaying)
+			m_MacroPlaybackOwnsDummy = false;
 		PopulateMacroPracticeWorld();
+	}
 }
 
 vec2 CControls::MacroPracticePosition()

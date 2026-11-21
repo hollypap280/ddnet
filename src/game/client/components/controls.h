@@ -114,6 +114,20 @@ private:
 		int m_AttackTick = 0;
 		int m_Tick = 0;
 		int m_HasCoordinates = 1;
+		// Tee controlled in this private-world frame, or -1 in older macros.
+		int m_ClientId = -1;
+	};
+	struct SMacroFrameV3
+	{
+		CNetObj_PlayerInput m_Input{};
+		CNetObj_CharacterCore m_PreCore{};
+		CNetObj_CharacterCore m_Core{};
+		CNetObj_Character m_Character{};
+		int m_PreWeapon = WEAPON_HAMMER;
+		int m_Weapon = WEAPON_HAMMER;
+		int m_AttackTick = 0;
+		int m_Tick = 0;
+		int m_HasCoordinates = 1;
 	};
 	struct SMacroFrameV1
 	{
@@ -135,6 +149,7 @@ private:
 	bool m_MacroRecording = false;
 	bool m_MacroPlaying = false;
 	bool m_MacroPlaybackLive = false;
+	bool m_MacroPlaybackOwnsDummy = false;
 	int m_MacroPlaybackLastTick = -1;
 	bool m_MacroRewindHeld = false;
 	int64_t m_MacroRewindHeldSince = 0;
@@ -174,6 +189,7 @@ private:
 	bool RestoreMacroPracticeFrame(int Index);
 	void UpdateMacroPracticeGhost(CCharacter *pCharacter);
 	void PopulateMacroPracticeWorld();
+	bool SwitchMacroPracticeCharacter(int ClientId);
 	static void ConMacroRecord(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroStop(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroSave(IConsole::IResult *pResult, void *pUserData);
