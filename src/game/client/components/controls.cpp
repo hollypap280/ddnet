@@ -51,6 +51,8 @@ void CControls::OnReset()
 	m_LastSendTime = 0;
 	m_MacroRecording = false;
 	m_MacroPlaying = false;
+	m_MacroPlaybackLive = false;
+	m_MacroPlaybackLastTick = -1;
 	m_MacroPlaybackIndex = 0;
 	m_MacroCurrentFrame = {};
 	m_MacroHasCurrentFrame = false;
@@ -716,6 +718,15 @@ void CControls::StopMacroRecording()
 	}
 	if(m_MacroPlaying)
 		GameClient()->Echo("Воспроизведение макроса остановлено");
+	if(m_MacroPlaybackLive)
+	{
+		const int Dummy = g_Config.m_ClDummy;
+		m_aInputData[Dummy].m_Direction = 0;
+		m_aInputData[Dummy].m_Jump = 0;
+		m_aInputData[Dummy].m_Hook = 0;
+		if(m_aInputData[Dummy].m_Fire & 1)
+			m_aInputData[Dummy].m_Fire++;
+	}
 	m_MacroPlaying = false;
 	m_MacroPlaybackLive = false;
 	m_MacroPlaybackLastTick = -1;
@@ -770,16 +781,20 @@ bool CControls::PlayMacro(const char *pName)
 	if(Valid && Version >= 3)
 		Valid = io_read(File, aRecordedMapName, sizeof(aRecordedMapName)) == sizeof(aRecordedMapName);
 
+	const int64_t RemainingBytes = Valid ? io_length(File) - io_tell(File) : 0;
+	const int64_t ExtendedFrameBytes = (int64_t)Count * sizeof(SMacroFrame);
+	const int64_t LegacyFrameBytes = (int64_t)Count * sizeof(SMacroFrameV1);
 	std::vector<SMacroFrame> Frames;
-	if(Valid && Version >= 2)
+	if(Valid && (Version >= 2 || (Version == 1 && RemainingBytes == ExtendedFrameBytes)))
 	{
 		Frames.resize(Count);
-		Valid = io_read(File, Frames.data(), Count * sizeof(SMacroFrame)) == Count * sizeof(SMacroFrame);
+		Valid = RemainingBytes == ExtendedFrameBytes &&
+			io_read(File, Frames.data(), ExtendedFrameBytes) == ExtendedFrameBytes;
 	}
-	else if(Valid && Version == 1)
+	else if(Valid && Version == 1 && RemainingBytes == LegacyFrameBytes)
 	{
 		std::vector<SMacroFrameV1> OldFrames(Count);
-		Valid = io_read(File, OldFrames.data(), Count * sizeof(SMacroFrameV1)) == Count * sizeof(SMacroFrameV1);
+		Valid = io_read(File, OldFrames.data(), LegacyFrameBytes) == LegacyFrameBytes;
 		if(Valid)
 		{
 			Frames.resize(Count);
@@ -799,27 +814,20 @@ bool CControls::PlayMacro(const char *pName)
 			}
 		}
 	}
-	io_close(File);
-	if(!Valid || !StartMacroPractice())
-		return false;
+	else
+		Valid = false;
 
-	// Reset only the local practice tee. The server tee remains idle.
-	m_MacroPracticeWorld.CopyWorld(&GameClient()->m_PredictedWorld);
-	PopulateMacroPracticeWorld();
-	CCharacter *pCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId);
-	if(!pCharacter)
-		return false;
-	if(Frames[0].m_HasCoordinates)
+	io_close(File);
+	if(!Valid || m_MacroRecording || Client()->State() != IClient::STATE_ONLINE ||
+		GameClient()->m_Snap.m_LocalClientId < 0 || !GameClient()->m_Snap.m_pLocalCharacter)
 	{
-		CCharacterCore Core = pCharacter->GetCore();
-		Core.Read(&Frames[0].m_PreCore);
-		pCharacter->SetCore(Core);
-		pCharacter->m_Pos = Core.m_Pos;
-		pCharacter->SetActiveWeapon(Frames[0].m_PreWeapon);
-		m_MacroPracticeWorld.m_GameTick = Frames[0].m_Tick - 1;
-		m_MacroPracticeTick = Frames[0].m_Tick - 1;
+		GameClient()->Echo("Не удалось запустить макрос: останови запись и подключись к серверу.");
+		return false;
 	}
 
+	// Stop the private practice copy. Playback now sends recorded input through
+	// the normal client path to the real, server-controlled local tee.
+	StopMacroPractice();
 	m_vMacroFrames = std::move(Frames);
 	m_MacroRecording = false;
 	m_MacroPlaybackIndex = 0;
@@ -828,18 +836,51 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroHoldCurrentFrame = false;
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeAccumulator = 0.0f;
-	m_MacroPracticeLastTime = time_get();
+	m_MacroPracticeLastTime = 0;
+	m_MacroPlaybackLive = true;
+	m_MacroPlaybackLastTick = -1;
 	m_MacroPlaying = true;
-	UpdateMacroPracticeGhost(pCharacter);
-	if(aRecordedMapName[0] && str_comp_nocase(aRecordedMapName, m_aMacroMapName) != 0)
+
+	const int Dummy = g_Config.m_ClDummy;
+	m_MacroLiveFireOffset = (m_aLastData[Dummy].m_Fire - m_vMacroFrames[0].m_Input.m_Fire) & INPUT_STATE_MASK;
+	m_MacroLiveNextWeaponOffset = (m_aLastData[Dummy].m_NextWeapon - m_vMacroFrames[0].m_Input.m_NextWeapon) & INPUT_STATE_MASK;
+	m_MacroLivePrevWeaponOffset = (m_aLastData[Dummy].m_PrevWeapon - m_vMacroFrames[0].m_Input.m_PrevWeapon) & INPUT_STATE_MASK;
+
+	char aCurrentMapName[64] = "Неизвестная карта";
+	const char *pMapName = Client()->MapDownloadName();
+	if(pMapName && pMapName[0])
 	{
-		char aMessage[160];
-		str_format(aMessage, sizeof(aMessage), "Внимание: макрос записан на карте «%s», текущая карта — «%s».", aRecordedMapName, m_aMacroMapName);
+		const char *pBaseName = pMapName;
+		for(const char *p = pMapName; *p; ++p)
+			if(*p == '/' || *p == '\\')
+				pBaseName = p + 1;
+		str_copy(aCurrentMapName, pBaseName);
+		for(char *p = aCurrentMapName; *p; ++p)
+			if(*p == '.') { *p = '\0'; break; }
+	}
+
+	if(aRecordedMapName[0] && str_comp_nocase(aRecordedMapName, aCurrentMapName) != 0)
+	{
+		char aMessage[180];
+		str_format(aMessage, sizeof(aMessage), "Внимание: макрос записан на карте «%s», текущая карта — «%s».",
+			aRecordedMapName, aCurrentMapName);
 		GameClient()->Echo(aMessage);
 	}
-	GameClient()->Echo("Макрос запущен в тренировочном мире");
+
+	if(m_vMacroFrames[0].m_HasCoordinates)
+	{
+		const vec2 CurrentPos = GameClient()->m_PredictedChar.m_Pos;
+		const vec2 StartPos((float)m_vMacroFrames[0].m_PreCore.m_X, (float)m_vMacroFrames[0].m_PreCore.m_Y);
+		m_MacroPracticeWaiting = distance(CurrentPos, StartPos) > 24.0f;
+	}
+
+	if(m_MacroPracticeWaiting)
+		GameClient()->Echo("Макрос выбран. Подведи настоящего тии к начальной точке записи.");
+	else
+		GameClient()->Echo("Макрос запущен в основном игровом мире.");
 	return true;
 }
+
 bool CControls::DeleteMacro(const char *pName)
 {
 	char aPath[128];
@@ -914,12 +955,20 @@ void CControls::SetMacroPracticeRate(int Rate)
 
 bool CControls::SeekMacro(int Offset)
 {
-	if(!m_MacroPracticeActive || m_MacroRecording || m_vMacroFrames.empty())
+	if((!m_MacroPracticeActive && !m_MacroPlaybackLive) || m_MacroRecording || m_vMacroFrames.empty())
 		return false;
 
-	const int Current = std::clamp((int)m_MacroPlaybackIndex - 1, 0, (int)m_vMacroFrames.size() - 1);
+	const int Current = std::clamp(m_MacroHasCurrentFrame ? (int)m_MacroPlaybackIndex - 1 : (int)m_MacroPlaybackIndex,
+		0, (int)m_vMacroFrames.size() - 1);
 	const int Target = std::clamp(Current + Offset, 0, (int)m_vMacroFrames.size() - 1);
-	if(!RestoreMacroPracticeFrame(Target))
+	if(m_MacroPlaybackLive)
+	{
+		m_MacroPlaybackIndex = (std::size_t)Target;
+		m_MacroHasCurrentFrame = false;
+		m_MacroPlaybackLastTick = -1;
+		m_MacroPracticeWaiting = false;
+	}
+	else if(!RestoreMacroPracticeFrame(Target))
 		return false;
 
 	char aMessage[128];
@@ -931,7 +980,7 @@ bool CControls::SeekMacro(int Offset)
 
 bool CControls::OnInput(const IInput::CEvent &Event)
 {
-	if(!m_MacroPracticeActive || m_MacroRecording || m_vMacroFrames.empty() ||
+	if((!m_MacroPracticeActive && !m_MacroPlaybackLive) || m_MacroRecording || m_vMacroFrames.empty() ||
 		GameClient()->m_Chat.IsActive() || GameClient()->m_Menus.IsActive() ||
 		!(Event.m_Flags & IInput::FLAG_PRESS))
 		return false;
