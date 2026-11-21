@@ -482,7 +482,11 @@ void CControls::PopulateMacroPracticeWorld()
 			continue;
 		}
 
-		const int GameTeam = GameClient()->IsTeamPlay() ? GameClient()->m_aClients[ClientId].m_Team : ClientId;
+		// In team mode preserve the server's team assignment. In normal
+		// free-for-all mode all local tees belong to the same FLOCK team and
+		// must remain hookable/collidable in the practice copy.
+		const int LocalGameTeam = m_MacroPracticeWorld.Teams()->Team(m_MacroPracticeLocalId);
+		const int GameTeam = GameClient()->IsTeamPlay() ? GameClient()->m_aClients[ClientId].m_Team : LocalGameTeam;
 		// CCharacter::Team()/SameTeam() read CTeamsCore, not m_GameTeam.
 		m_MacroPracticeWorld.Teams()->Team(ClientId, GameTeam);
 
