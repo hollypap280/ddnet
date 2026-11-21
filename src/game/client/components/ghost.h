@@ -121,6 +121,7 @@ private:
 	bool m_aMacroPracticeVisible[MAX_CLIENTS]{};
 	CNetObj_Character m_aMacroPracticePrev[MAX_CLIENTS]{};
 	CNetObj_Character m_aMacroPracticeCurrent[MAX_CLIENTS]{};
+	std::shared_ptr<CManagedTeeRenderInfo> m_apMacroPracticeRenderInfo[MAX_CLIENTS];
 
 	static void SetGhostSkinData(CGhostSkin *pSkin, const char *pSkinName, int UseCustomColor, int ColorBody, int ColorFeet);
 	static void GetGhostCharacter(CGhostCharacter *pGhostChar, const CNetObj_Character *pChar, const CNetObj_DDNetCharacter *pDDnetChar);
