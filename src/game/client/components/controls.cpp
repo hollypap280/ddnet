@@ -952,7 +952,7 @@ bool CControls::PlayMacro(const char *pName)
 				pBaseName = p + 1;
 		str_copy(aCurrentMapName, pBaseName);
 		for(char *p = aCurrentMapName; *p; ++p)
-			if(*p == '.') { *p = '\\0'; break; }
+			if(*p == '.') { *p = '\0'; break; }
 	}
 
 	if(aRecordedMapName[0] && str_comp_nocase(aRecordedMapName, aCurrentMapName) != 0)
@@ -1159,9 +1159,11 @@ void CControls::OnMacroPracticeDummySwap()
 	{
 		pOldCharacter->SetInput(&IdleInput);
 		pOldCharacter->m_IsLocal = false;
+		pOldCharacter->m_IsMacroPracticeStatic = true;
 	}
 
 	pNewCharacter->m_IsLocal = true;
+	pNewCharacter->m_IsMacroPracticeStatic = false;
 	m_MacroPracticeLocalId = NewClientId;
 	m_MacroPracticeWorld.m_LocalClientId = NewClientId;
 	m_MacroPracticePendingFireTransitions = 0;
