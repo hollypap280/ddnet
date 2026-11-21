@@ -519,6 +519,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	static std::vector<CButtonContainer> s_vMacroButtons;
 	static bool s_MacroListLoaded = false;
 	static char s_aSelectedMacro[64]{};
+	static char s_aRecordingMacroName[64]{};
 	static CButtonContainer s_PracticeToggle, s_ShowOthers;
 	static CButtonContainer s_RecordToggle, s_Save;
 	static CButtonContainer s_Refresh, s_Play, s_Stop, s_Delete;
@@ -601,34 +602,58 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	CUIRect NameRow;
 	if(AddRow(28.0f, NameRow))
 	{
-		NameRow.VSplitLeft(105.0f, &Label, &NameRect);
-		Ui()->DoLabel(&Label, Localize("Название"), 13.0f, TEXTALIGN_ML);
+		NameRow.VSplitLeft(155.0f, &Label, &NameRect);
+		Ui()->DoLabel(&Label, Localize("Название перед записью"), 13.0f, TEXTALIGN_ML);
 		Ui()->DoEditBox(&s_MacroName, &NameRect, 14.0f);
 	}
 
 	CUIRect RecordingRow;
 	if(AddRow(30.0f, RecordingRow))
 	{
-		RecordingRow.VSplitLeft(154.0f, &Button, &Row);
+		const bool Recording = GameClient()->m_Controls.MacroRecording();
+		RecordingRow.VSplitLeft(178.0f, &Button, &Row);
 		if(DoButton_Menu(&s_RecordToggle,
-			GameClient()->m_Controls.MacroRecording() ? Localize("Остановить запись") : Localize("Начать запись"),
-			GameClient()->m_Controls.MacroRecording() ? 1 : 0, &Button))
+			Recording ? Localize("Остановить и сохранить") : Localize("Начать запись"),
+			Recording ? 1 : 0, &Button))
 		{
-			if(GameClient()->m_Controls.MacroRecording())
+			if(Recording)
+			{
 				GameClient()->m_Controls.StopMacroRecording();
+				if(s_aRecordingMacroName[0] && GameClient()->m_Controls.SaveMacro(s_aRecordingMacroName))
+				{
+					GameClient()->Echo(Localize("Макрос записан и сохранён"));
+					str_copy(s_aSelectedMacro, s_aRecordingMacroName);
+					RefreshMacroList();
+				}
+				else
+				{
+					GameClient()->Echo(Localize("Запись остановлена, но сохранить не удалось. Проверь название и нажми «Сохранить вручную»."));
+				}
+				s_aRecordingMacroName[0] = '\\0';
+			}
+			else if(s_MacroName.IsEmpty())
+			{
+				GameClient()->Echo(Localize("Сначала введи название макроса"));
+			}
 			else
+			{
+				str_copy(s_aRecordingMacroName, s_MacroName.GetString());
 				GameClient()->m_Controls.StartMacroRecording();
+				if(!GameClient()->m_Controls.MacroRecording())
+					s_aRecordingMacroName[0] = '\\0';
+			}
 		}
 		Row.VSplitLeft(8.0f, nullptr, &Row);
 		Row.VSplitLeft(112.0f, &Button, nullptr);
-		if(DoButton_Menu(&s_Save, Localize("Сохранить"), 0, &Button))
+		if(DoButton_Menu(&s_Save, Localize("Сохранить вручную"), 0, &Button))
 		{
 			if(s_MacroName.IsEmpty() || !GameClient()->m_Controls.SaveMacro(s_MacroName.GetString()))
 				GameClient()->Echo(Localize("Не удалось сохранить. Введи название и останови запись."));
 			else
 			{
 				GameClient()->Echo(Localize("Макрос сохранён"));
-				s_MacroListLoaded = false;
+				str_copy(s_aSelectedMacro, s_MacroName.GetString());
+				RefreshMacroList();
 			}
 		}
 	}
