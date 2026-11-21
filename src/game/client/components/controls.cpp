@@ -1538,12 +1538,69 @@ int CControls::SnapInput(int *pData)
 		if(!m_aInputDirectionLeft[g_Config.m_ClDummy] && m_aInputDirectionRight[g_Config.m_ClDummy])
 			m_aInputData[g_Config.m_ClDummy].m_Direction = 1;
 
-		ApplyHookAutomation(g_Config.m_ClDummy);
-		ApplyEdgeAssist(g_Config.m_ClDummy);
-		ApplyEdgeHook(g_Config.m_ClDummy);
+		// Saved macros run on the real server-controlled tee. The first frame
+		// waits for the recorded starting position; after that, one frame is
+		// selected per predicted game tick and sent through the regular input path.
+		bool MacroLiveInput = false;
+		if(m_MacroPlaybackLive && m_MacroPlaying &&
+			(m_aInputData[g_Config.m_ClDummy].m_PlayerFlags & PLAYERFLAG_PLAYING))
+		{
+			const int PredTick = Client()->PredGameTick(g_Config.m_ClDummy);
+			if(!GameClient()->m_Snap.m_pLocalCharacter)
+			{
+				StopMacroRecording();
+			}
+			else if(!m_MacroHasCurrentFrame || PredTick != m_MacroPlaybackLastTick)
+			{
+				if(m_MacroPlaybackIndex >= m_vMacroFrames.size())
+				{
+					StopMacroRecording();
+				}
+				else
+				{
+					const SMacroFrame &Frame = m_vMacroFrames[m_MacroPlaybackIndex];
+					bool AtStartPosition = true;
+					if(!m_MacroHasCurrentFrame && m_MacroPlaybackIndex == 0 && Frame.m_HasCoordinates)
+					{
+						const vec2 CurrentPos = GameClient()->m_PredictedChar.m_Pos;
+						const vec2 RequiredPos((float)Frame.m_PreCore.m_X, (float)Frame.m_PreCore.m_Y);
+						AtStartPosition = distance(CurrentPos, RequiredPos) <= 24.0f;
+					}
+					m_MacroPracticeWaiting = !AtStartPosition;
+					m_MacroPlaybackLastTick = PredTick;
+					if(AtStartPosition)
+					{
+						m_MacroCurrentFrame = Frame;
+						m_MacroHasCurrentFrame = true;
+						++m_MacroPlaybackIndex;
+					}
+				}
+			}
+
+			if(m_MacroPlaybackLive && m_MacroPlaying && m_MacroHasCurrentFrame && !m_MacroPracticeWaiting)
+			{
+				const int PlayerFlags = m_aInputData[g_Config.m_ClDummy].m_PlayerFlags;
+				m_aInputData[g_Config.m_ClDummy] = m_MacroCurrentFrame.m_Input;
+				m_aInputData[g_Config.m_ClDummy].m_PlayerFlags = PlayerFlags;
+				m_aInputData[g_Config.m_ClDummy].m_Fire = (m_aInputData[g_Config.m_ClDummy].m_Fire + m_MacroLiveFireOffset) & INPUT_STATE_MASK;
+				m_aInputData[g_Config.m_ClDummy].m_NextWeapon = (m_aInputData[g_Config.m_ClDummy].m_NextWeapon + m_MacroLiveNextWeaponOffset) & INPUT_STATE_MASK;
+				m_aInputData[g_Config.m_ClDummy].m_PrevWeapon = (m_aInputData[g_Config.m_ClDummy].m_PrevWeapon + m_MacroLivePrevWeaponOffset) & INPUT_STATE_MASK;
+				m_aMousePos[g_Config.m_ClDummy] = vec2(
+					(float)m_aInputData[g_Config.m_ClDummy].m_TargetX,
+					(float)m_aInputData[g_Config.m_ClDummy].m_TargetY);
+				MacroLiveInput = true;
+			}
+		}
+
+		if(!MacroLiveInput)
+		{
+			ApplyHookAutomation(g_Config.m_ClDummy);
+			ApplyEdgeAssist(g_Config.m_ClDummy);
+			ApplyEdgeHook(g_Config.m_ClDummy);
+		}
 
 		// dummy copy moves
-		if(g_Config.m_ClDummyCopyMoves)
+		if(g_Config.m_ClDummyCopyMoves && !m_MacroPlaybackLive)
 		{
 			CNetObj_PlayerInput *pDummyInput = &GameClient()->m_DummyInput;
 
@@ -1568,7 +1625,7 @@ int CControls::SnapInput(int *pData)
 			m_aInputData[!g_Config.m_ClDummy] = *pDummyInput;
 		}
 
-		if(g_Config.m_ClDummyControl)
+		if(g_Config.m_ClDummyControl && !m_MacroPlaybackLive)
 		{
 			CNetObj_PlayerInput *pDummyInput = &GameClient()->m_DummyInput;
 			pDummyInput->m_Jump = g_Config.m_ClDummyJump;
