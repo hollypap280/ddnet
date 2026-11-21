@@ -88,6 +88,8 @@ struct CInputState
 	int *m_apVariables[NUM_DUMMIES];
 	bool m_IsMouseAction;
 	bool m_IsHookAction = false;
+	bool m_IsJumpAction = false;
+	bool m_IsFireAction = false;
 };
 
 void CControls::ConKeyInputState(IConsole::IResult *pResult, void *pUserData)
@@ -100,7 +102,13 @@ void CControls::ConKeyInputState(IConsole::IResult *pResult, void *pUserData)
 	const int Stroke = pResult->GetInteger(0);
 	*pState->m_apVariables[g_Config.m_ClDummy] = Stroke;
 	if(pState->m_IsHookAction)
+	{
 		pState->m_pControls->m_aManualHook[g_Config.m_ClDummy] = Stroke != 0;
+		if(Stroke != 0 && pState->m_pControls->m_MacroPracticeActive)
+			pState->m_pControls->m_MacroPracticePendingHook = true;
+	}
+	if(pState->m_IsJumpAction && Stroke != 0 && pState->m_pControls->m_MacroPracticeActive)
+		pState->m_pControls->m_MacroPracticePendingJump = true;
 
 	if(Stroke != 0 && pState->m_IsMouseAction && g_Config.m_ClSubTickAiming && pState->m_pControls->GameClient()->m_Binds.m_HandlingNewBind)
 		pState->m_pControls->m_aMouseOnAction[g_Config.m_ClDummy] = true;
@@ -118,6 +126,8 @@ void CControls::ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData)
 	if(((*pVariable) & 1) != Stroke)
 	{
 		(*pVariable)++;
+		if(pState->m_IsFireAction && pState->m_pControls->m_MacroPracticeActive)
+			pState->m_pControls->m_MacroPracticePendingFireTransitions = std::min(pState->m_pControls->m_MacroPracticePendingFireTransitions + 1, 64);
 		if(Stroke != 0 && pState->m_IsMouseAction && g_Config.m_ClSubTickAiming && pState->m_pControls->GameClient()->m_Binds.m_HandlingNewBind)
 			pState->m_pControls->m_aMouseOnAction[g_Config.m_ClDummy] = true;
 	}
@@ -160,6 +170,7 @@ void CControls::OnConsoleInit()
 	}
 	{
 		static CInputState s_State = {this, {&m_aInputData[0].m_Jump, &m_aInputData[1].m_Jump}, false};
+		s_State.m_IsJumpAction = true;
 		Console()->Register("+jump", "", CFGFLAG_CLIENT, ConKeyInputState, &s_State, "Jump");
 	}
 	{
@@ -169,6 +180,7 @@ void CControls::OnConsoleInit()
 	}
 	{
 		static CInputState s_State = {this, {&m_aInputData[0].m_Fire, &m_aInputData[1].m_Fire}, true};
+		s_State.m_IsFireAction = true;
 		Console()->Register("+fire", "", CFGFLAG_CLIENT, ConKeyInputCounter, &s_State, "Fire");
 	}
 	{
@@ -402,6 +414,10 @@ bool CControls::StartMacroPractice()
 	m_MacroPracticeLastTime = time_get();
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeActive = true;
+	m_MacroPracticePendingFireTransitions = 0;
+	m_MacroPracticeFireCounter = m_aInputData[g_Config.m_ClDummy].m_Fire & INPUT_STATE_MASK;
+	m_MacroPracticePendingJump = false;
+	m_MacroPracticePendingHook = false;
 	m_MacroPracticeHasRenderChar = false;
 
 	CCharacter *pPracticeChar = m_MacroPracticeWorld.GetCharacterById(LocalId);
@@ -419,6 +435,11 @@ void CControls::StopMacroPractice()
 	m_MacroPracticeAccumulator = 0.0f;
 	m_MacroPracticeLastTime = 0;
 	m_MacroPracticeLocalId = -1;
+	m_MacroPlaybackLive = false;
+	m_MacroPlaybackLastTick = -1;
+	m_MacroPracticePendingFireTransitions = 0;
+	m_MacroPracticePendingJump = false;
+	m_MacroPracticePendingHook = false;
 	m_MacroPracticeHasRenderChar = false;
 	m_MacroPlaybackIndex = 0;
 	m_MacroPracticeWorld.Clear();
@@ -450,7 +471,7 @@ void CControls::PopulateMacroPracticeWorld()
 		if(ClientId == m_MacroPracticeLocalId)
 			continue;
 
-		if(!Info.m_Active)
+		if(!g_Config.m_ClMacroPracticeShowOthers || !Info.m_Active)
 		{
 			if(pPracticeCharacter)
 				pPracticeCharacter->Destroy();
@@ -461,22 +482,32 @@ void CControls::PopulateMacroPracticeWorld()
 		// CCharacter::Team()/SameTeam() read CTeamsCore, not m_GameTeam.
 		m_MacroPracticeWorld.Teams()->Team(ClientId, GameTeam);
 
-		CNetObj_Character Character = Info.m_Cur;
-		CNetObj_DDNetCharacter *pExtended = Info.m_HasExtendedData ? &GameClient()->m_Snap.m_aCharacters[ClientId].m_ExtendedData : nullptr;
-		if(pPracticeCharacter)
+		// Copy each remote tee once. They remain AFK and fixed in place while
+		// the local practice tee can hook, bump and shoot them as targets.
+		if(!pPracticeCharacter)
 		{
-			pPracticeCharacter->Read(&Character, pExtended, false);
-			pPracticeCharacter->m_GameTeam = GameTeam;
-		}
-		else
-		{
+			CNetObj_Character Character = Info.m_Cur;
+			CNetObj_DDNetCharacter *pExtended = Info.m_HasExtendedData ? &GameClient()->m_Snap.m_aCharacters[ClientId].m_ExtendedData : nullptr;
 			pPracticeCharacter = new CCharacter(&m_MacroPracticeWorld, ClientId, &Character, pExtended);
-			pPracticeCharacter->m_GameTeam = GameTeam;
 			pPracticeCharacter->m_IsLocal = false;
 			m_MacroPracticeWorld.InsertEntity(pPracticeCharacter);
 		}
+		if(!pPracticeCharacter->m_IsMacroPracticeStatic)
+		{
+			pPracticeCharacter->Read(&GameClient()->m_Snap.m_aCharacters[ClientId].m_Cur,
+				Info.m_HasExtendedData ? &GameClient()->m_Snap.m_aCharacters[ClientId].m_ExtendedData : nullptr, false);
+			pPracticeCharacter->m_Core.m_Vel = vec2(0.0f, 0.0f);
+			pPracticeCharacter->ReleaseHook();
+			CNetObj_PlayerInput IdleInput{};
+			IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+			IdleInput.m_TargetX = 1;
+			pPracticeCharacter->SetInput(&IdleInput);
+			pPracticeCharacter->m_IsMacroPracticeStatic = true;
+		}
+		pPracticeCharacter->m_GameTeam = GameTeam;
 	}
 
+	m_MacroPracticeWorld.RemoveEntities();
 	m_MacroPracticeWorld.m_GameTick = PracticeTick;
 	UpdateMacroPracticeGhost(m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId));
 }
@@ -563,6 +594,26 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput)
 			TickInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
 			ReplayRecordedFrame = true;
 		}
+	}
+
+	if(!ReplayRecordedFrame)
+	{
+		if(m_MacroPracticePendingJump)
+		{
+			TickInput.m_Jump = 1;
+			m_MacroPracticePendingJump = false;
+		}
+		if(m_MacroPracticePendingHook)
+		{
+			TickInput.m_Hook = 1;
+			m_MacroPracticePendingHook = false;
+		}
+		if(m_MacroPracticePendingFireTransitions > 0)
+		{
+			m_MacroPracticeFireCounter = (m_MacroPracticeFireCounter + 1) & INPUT_STATE_MASK;
+			--m_MacroPracticePendingFireTransitions;
+		}
+		TickInput.m_Fire = m_MacroPracticeFireCounter;
 	}
 
 	SMacroFrame NewFrame;
@@ -666,6 +717,8 @@ void CControls::StopMacroRecording()
 	if(m_MacroPlaying)
 		GameClient()->Echo("Воспроизведение макроса остановлено");
 	m_MacroPlaying = false;
+	m_MacroPlaybackLive = false;
+	m_MacroPlaybackLastTick = -1;
 	if(WasRecording)
 		m_MacroPlaybackIndex = m_vMacroFrames.size();
 	m_MacroCurrentFrame = {};
