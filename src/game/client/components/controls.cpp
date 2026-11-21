@@ -377,6 +377,8 @@ void CControls::GetMacroList(std::vector<SMacroInfo> &vMacros)
 
 bool CControls::StartMacroPractice()
 {
+	if(m_MacroPlaybackLive)
+		StopMacroRecording();
 	if(m_MacroPracticeActive)
 		return true;
 
@@ -498,7 +500,9 @@ void CControls::PopulateMacroPracticeWorld()
 		{
 			pPracticeCharacter->Read(&GameClient()->m_Snap.m_aCharacters[ClientId].m_Cur,
 				Info.m_HasExtendedData ? &GameClient()->m_Snap.m_aCharacters[ClientId].m_ExtendedData : nullptr, false);
-			pPracticeCharacter->m_Core.m_Vel = vec2(0.0f, 0.0f);
+			CCharacterCore StaticCore = pPracticeCharacter->GetCore();
+			StaticCore.m_Vel = vec2(0.0f, 0.0f);
+			pPracticeCharacter->SetCore(StaticCore);
 			pPracticeCharacter->ReleaseHook();
 			CNetObj_PlayerInput IdleInput{};
 			IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
@@ -670,6 +674,8 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput)
 
 void CControls::StartMacroRecording()
 {
+	if(m_MacroPlaybackLive)
+		StopMacroRecording();
 	if(!StartMacroPractice())
 		return;
 
@@ -825,8 +831,10 @@ bool CControls::PlayMacro(const char *pName)
 		return false;
 	}
 
-	// Stop the private practice copy. Playback now sends recorded input through
-	// the normal client path to the real, server-controlled local tee.
+	// Stop any previous live stream and the private practice copy before
+	// sending a new macro through the normal server input path.
+	if(m_MacroPlaybackLive)
+		StopMacroRecording();
 	StopMacroPractice();
 	m_vMacroFrames = std::move(Frames);
 	m_MacroRecording = false;
