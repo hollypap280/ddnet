@@ -681,6 +681,10 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			s_RewindStep.SetInteger(g_Config.m_ClMacroRewindStep);
 	}
 
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	Ui()->DoScrollbarOption(&g_Config.m_ClMacroSlowFactor, &g_Config.m_ClMacroSlowFactor,
+		&Row, Localize("Замедление при удержании (во сколько раз)"), 2, 10);
+
 	char aStatus[220];
 	const char *pMode = GameClient()->m_Controls.MacroRecording() ? Localize("ИДЁТ ЗАПИСЬ") :
 		GameClient()->m_Controls.MacroPlaybackLive() ? Localize("ПРОИГРЫВАНИЕ В ОСНОВНОМ МИРЕ") :
@@ -695,10 +699,12 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	const char *pHint = GameClient()->m_Controls.MacroPlaybackLive() ?
 		(GameClient()->m_Controls.MacroPracticeWaiting() ?
 			Localize("Ожидание: подведи реального тии к точке, где начиналась запись.") :
-			Localize("Макрос управляет настоящим персонажем на сервере. ← / → — перемотка.")) :
+			Localize("Макрос управляет настоящим персонажем на сервере. Стрелки ← / → перематывают на один шаг.")) :
 		Localize("Запись идёт в отдельной копии. Другие тии стоят AFK и могут быть скрыты переключателем выше.");
-	MainView.HSplitTop(28.0f, &Label, &MainView);
+	MainView.HSplitTop(24.0f, &Label, &MainView);
 	Ui()->DoLabel(&Label, pHint, 12.0f, TEXTALIGN_ML);
+	MainView.HSplitTop(24.0f, &Label, &MainView);
+	Ui()->DoLabel(&Label, Localize("Клавиши: во вкладке «Кнопки» назначь «Перемотка макроса назад» или «Замедлить макрос». Удержание перемотки ускоряет повтор; удержание замедления растягивает каждый тик."), 12.0f, TEXTALIGN_ML);
 }
 
 
@@ -722,6 +728,8 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 		{ "Точная наводка на край", "toggle cl_auto_edge 0 1" },
 		{ "Подхват крюком у края", "toggle cl_auto_edge_hook 0 1" },
 		{ "Полёт дамми (хаммерфлай)", "toggle cl_dummy_hammer 0 1" },
+		{ "Перемотка макроса назад (удерживать)", "+macro_rewind" },
+		{ "Замедлить макрос (удерживать)", "+macro_slow" },
 	};
 	static CButtonContainer s_aKeyReaders[std::size(s_aHotkeys)];
 	static CButtonContainer s_aKeyClearButtons[std::size(s_aHotkeys)];
@@ -760,5 +768,5 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 	}
 
 	MainView.HSplitTop(12.0f, nullptr, &MainView);
-	Ui()->DoLabel(&MainView, Localize("Нажмите на поле клавиши и выберите кнопку. Значок корзины очищает назначение. Нажатая клавиша включает или выключает соответствующую функцию."), 12.0f, TEXTALIGN_ML);
+	Ui()->DoLabel(&MainView, Localize("Нажмите на поле клавиши и выберите кнопку. Значок корзины очищает назначение. Для макроса удерживайте кнопку: перемотка будет повторяться быстрее, а замедление действует только пока клавиша зажата."), 12.0f, TEXTALIGN_ML);
 }
