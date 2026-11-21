@@ -65,6 +65,7 @@ public:
 	bool MacroRecording() const { return m_MacroRecording; }
 	bool MacroPlaying() const { return m_MacroPlaying; }
 	bool MacroPlaybackLive() const { return m_MacroPlaybackLive; }
+	bool MacroSlowHeld() const { return m_MacroSlowHeld; }
 	int MacroPosition() const { return m_MacroRecording ? (int)m_vMacroFrames.size() : (int)m_MacroPlaybackIndex; }
 	int MacroFrameCount() const { return (int)m_vMacroFrames.size(); }
 	struct SMacroInfo
@@ -132,6 +133,11 @@ private:
 	bool m_MacroPlaying = false;
 	bool m_MacroPlaybackLive = false;
 	int m_MacroPlaybackLastTick = -1;
+	bool m_MacroRewindHeld = false;
+	int64_t m_MacroRewindHeldSince = 0;
+	int64_t m_MacroRewindNextRepeat = 0;
+	bool m_MacroSlowHeld = false;
+	int m_MacroPlaybackSlowTickCounter = 0;
 	int m_MacroLiveFireOffset = 0;
 	int m_MacroLiveNextWeaponOffset = 0;
 	int m_MacroLivePrevWeaponOffset = 0;
@@ -170,6 +176,8 @@ private:
 	static void ConMacroSave(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroPlay(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroDelete(IConsole::IResult *pResult, void *pUserData);
+	static void ConMacroRewind(IConsole::IResult *pResult, void *pUserData);
+	static void ConMacroSlow(IConsole::IResult *pResult, void *pUserData);
 	void SendPracticeTeleportToCursor(int Conn);
 };
 #endif
