@@ -265,13 +265,17 @@ vec2 CControls::CursorWorldPos() const
 	return Center + (TargetPos - Center) * GameClient()->m_Camera.m_Zoom;
 }
 
+void CControls::SendPracticeTeleport(vec2 Pos, int Conn)
+{
+	CNetMsg_Cl_PracticeTeleport Msg;
+	Msg.m_X = round_to_int(Pos.x);
+	Msg.m_Y = round_to_int(Pos.y);
+	Client()->SendPackMsg(Conn, &Msg, MSGFLAG_VITAL);
+}
+
 void CControls::SendPracticeTeleportToCursor(int Conn)
 {
-	const vec2 CursorPos = CursorWorldPos();
-	CNetMsg_Cl_PracticeTeleport Msg;
-	Msg.m_X = round_to_int(CursorPos.x);
-	Msg.m_Y = round_to_int(CursorPos.y);
-	Client()->SendPackMsg(Conn, &Msg, MSGFLAG_VITAL);
+	SendPracticeTeleport(CursorWorldPos(), Conn);
 }
 
 namespace
@@ -958,7 +962,7 @@ void CControls::ConMacroRewind(IConsole::IResult *pResult, void *pUserData)
 			pSelf->m_MacroRewindHeld = true;
 			pSelf->m_MacroRewindHeldSince = time_get();
 			pSelf->m_MacroRewindNextRepeat = pSelf->m_MacroRewindHeldSince + time_freq() * 3 / 10;
-			pSelf->SeekMacro(-pSelf->MacroSeekStep());
+			pSelf->SeekMacro(-pSelf->MacroSeekStep(), true, true);
 		}
 	}
 	else
@@ -978,7 +982,7 @@ void CControls::ConMacroSeek(IConsole::IResult *pResult, void *pUserData)
 	if(pSelf->GameClient()->m_Chat.IsActive() || pSelf->GameClient()->m_Menus.IsActive())
 		return;
 
-	pSelf->SeekMacro(pSelf->MacroSeekStep());
+	pSelf->SeekMacro(pSelf->MacroSeekStep(), true, true);
 }
 
 void CControls::ConMacroSlow(IConsole::IResult *pResult, void *pUserData)
@@ -1020,7 +1024,7 @@ void CControls::SetMacroPracticeRate(int Rate)
 	g_Config.m_ClMacroPracticeRate = std::clamp(Rate, 1, (int)SERVER_TICK_SPEED);
 }
 
-bool CControls::SeekMacro(int Offset, bool ShowMessage)
+bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 {
 	if((!m_MacroPracticeActive && !m_MacroPlaybackLive) || m_MacroRecording || m_vMacroFrames.empty())
 		return false;
@@ -1030,6 +1034,17 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage)
 	const int Target = std::clamp(Current + Offset, 0, (int)m_vMacroFrames.size() - 1);
 	if(m_MacroPlaybackLive)
 	{
+		if(TeleportLive)
+		{
+			const SMacroFrame &Frame = m_vMacroFrames[Target];
+			if(Frame.m_HasCoordinates)
+			{
+				const int Conn = g_Config.m_ClDummy ? IClient::CONN_DUMMY : IClient::CONN_MAIN;
+				SendPracticeTeleport(vec2((float)Frame.m_PreCore.m_X, (float)Frame.m_PreCore.m_Y), Conn);
+			}
+			else if(ShowMessage)
+				GameClient()->Echo("Эта старая запись не содержит координат для телепортации.");
+		}
 		m_MacroPlaybackIndex = (std::size_t)Target;
 		m_MacroHasCurrentFrame = false;
 		m_MacroPlaybackLastTick = -1;
@@ -1778,7 +1793,7 @@ void CControls::OnRender()
 		const int64_t Now = time_get();
 		if(Now >= m_MacroRewindNextRepeat)
 		{
-			SeekMacro(-MacroSeekStep(), false);
+			SeekMacro(-MacroSeekStep(), false, true);
 			const int64_t HeldFor = Now - m_MacroRewindHeldSince;
 			const int64_t RepeatDelay = HeldFor >= time_freq() ? time_freq() / 16 :
 				HeldFor >= time_freq() / 2 ? time_freq() / 8 : time_freq() / 4;

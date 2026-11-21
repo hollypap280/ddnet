@@ -166,7 +166,7 @@ private:
 	void ApplyEdgeHook(int Dummy);
 	bool MacroFilePath(const char *pName, char *pBuffer, unsigned BufferSize) const;
 	static int MacroListCallback(const char *pName, int IsDir, int DirType, void *pUser);
-	bool SeekMacro(int Offset, bool ShowMessage = true);
+	bool SeekMacro(int Offset, bool ShowMessage = true, bool TeleportLive = false);
 	void SimulateMacroPracticeTick(const CNetObj_PlayerInput &Input);
 	bool RestoreMacroPracticeFrame(int Index);
 	void UpdateMacroPracticeGhost(CCharacter *pCharacter);
@@ -179,6 +179,7 @@ private:
 	static void ConMacroRewind(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroSeek(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroSlow(IConsole::IResult *pResult, void *pUserData);
+	void SendPracticeTeleport(vec2 Pos, int Conn);
 	void SendPracticeTeleportToCursor(int Conn);
 };
 #endif
