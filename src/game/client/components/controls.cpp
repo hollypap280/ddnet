@@ -1007,7 +1007,7 @@ void CControls::SetMacroPracticeRate(int Rate)
 	g_Config.m_ClMacroPracticeRate = std::clamp(Rate, 1, (int)SERVER_TICK_SPEED);
 }
 
-bool CControls::SeekMacro(int Offset)
+bool CControls::SeekMacro(int Offset, bool ShowMessage)
 {
 	if((!m_MacroPracticeActive && !m_MacroPlaybackLive) || m_MacroRecording || m_vMacroFrames.empty())
 		return false;
@@ -1020,15 +1020,19 @@ bool CControls::SeekMacro(int Offset)
 		m_MacroPlaybackIndex = (std::size_t)Target;
 		m_MacroHasCurrentFrame = false;
 		m_MacroPlaybackLastTick = -1;
+		m_MacroPlaybackSlowTickCounter = 0;
 		m_MacroPracticeWaiting = false;
 	}
 	else if(!RestoreMacroPracticeFrame(Target))
 		return false;
 
-	char aMessage[128];
-	str_format(aMessage, sizeof(aMessage), "Позиция макроса: тик %d / %d (шаг %d тиков)",
-		Target + 1, (int)m_vMacroFrames.size(), MacroSeekStep());
-	GameClient()->Echo(aMessage);
+	if(ShowMessage)
+	{
+		char aMessage[128];
+		str_format(aMessage, sizeof(aMessage), "Позиция макроса: тик %d / %d (шаг %d тиков)",
+			Target + 1, (int)m_vMacroFrames.size(), MacroSeekStep());
+		GameClient()->Echo(aMessage);
+	}
 	return true;
 }
 
@@ -1761,7 +1765,7 @@ void CControls::OnRender()
 		const int64_t Now = time_get();
 		if(Now >= m_MacroRewindNextRepeat)
 		{
-			SeekMacro(-MacroSeekStep());
+			SeekMacro(-MacroSeekStep(), false);
 			const int64_t HeldFor = Now - m_MacroRewindHeldSince;
 			const int64_t RepeatDelay = HeldFor >= time_freq() ? time_freq() / 16 :
 				HeldFor >= time_freq() / 2 ? time_freq() / 8 : time_freq() / 4;
