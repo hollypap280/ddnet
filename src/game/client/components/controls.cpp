@@ -228,6 +228,8 @@ void CControls::OnConsoleInit()
 	Console()->Register("macro_save", "s[name]", CFGFLAG_CLIENT, ConMacroSave, this, "Save the recorded player input macro");
 	Console()->Register("macro_play", "s[name]", CFGFLAG_CLIENT, ConMacroPlay, this, "Play a saved player input macro");
 	Console()->Register("macro_delete", "s[name]", CFGFLAG_CLIENT, ConMacroDelete, this, "Delete a saved player input macro");
+	Console()->Register("+macro_rewind", "", CFGFLAG_CLIENT, ConMacroRewind, this, "Hold to rewind a macro; repeat speed increases while held");
+	Console()->Register("+macro_slow", "", CFGFLAG_CLIENT, ConMacroSlow, this, "Hold to slow down macro playback");
 }
 
 void CControls::ConTpToCursor(IConsole::IResult *pResult, void *pUserData)
@@ -441,6 +443,11 @@ void CControls::StopMacroPractice()
 	m_MacroPracticeLocalId = -1;
 	m_MacroPlaybackLive = false;
 	m_MacroPlaybackLastTick = -1;
+	m_MacroRewindHeld = false;
+	m_MacroRewindHeldSince = 0;
+	m_MacroRewindNextRepeat = 0;
+	m_MacroSlowHeld = false;
+	m_MacroPlaybackSlowTickCounter = 0;
 	m_MacroPracticePendingFireTransitions = 0;
 	m_MacroPracticePendingJump = false;
 	m_MacroPracticePendingHook = false;
@@ -740,6 +747,11 @@ void CControls::StopMacroRecording()
 	m_MacroPlaying = false;
 	m_MacroPlaybackLive = false;
 	m_MacroPlaybackLastTick = -1;
+	m_MacroRewindHeld = false;
+	m_MacroRewindHeldSince = 0;
+	m_MacroRewindNextRepeat = 0;
+	m_MacroSlowHeld = false;
+	m_MacroPlaybackSlowTickCounter = 0;
 	if(WasRecording)
 		m_MacroPlaybackIndex = m_vMacroFrames.size();
 	m_MacroCurrentFrame = {};
@@ -932,6 +944,36 @@ void CControls::ConMacroDelete(IConsole::IResult *pResult, void *pUserData)
 		pSelf->GameClient()->Echo("Не удалось удалить макрос. Проверьте название.");
 	else
 		pSelf->GameClient()->Echo("Макрос удалён");
+}
+
+void CControls::ConMacroRewind(IConsole::IResult *pResult, void *pUserData)
+{
+	CControls *pSelf = (CControls *)pUserData;
+	const bool Pressed = pResult->GetInteger(0) != 0;
+	if(Pressed)
+	{
+		if(!pSelf->m_MacroRewindHeld)
+		{
+			pSelf->m_MacroRewindHeld = true;
+			pSelf->m_MacroRewindHeldSince = time_get();
+			pSelf->m_MacroRewindNextRepeat = pSelf->m_MacroRewindHeldSince + time_freq() * 3 / 10;
+			pSelf->SeekMacro(-pSelf->MacroSeekStep());
+		}
+	}
+	else
+	{
+		pSelf->m_MacroRewindHeld = false;
+		pSelf->m_MacroRewindHeldSince = 0;
+		pSelf->m_MacroRewindNextRepeat = 0;
+	}
+}
+
+void CControls::ConMacroSlow(IConsole::IResult *pResult, void *pUserData)
+{
+	CControls *pSelf = (CControls *)pUserData;
+	pSelf->m_MacroSlowHeld = pResult->GetInteger(0) != 0;
+	if(!pSelf->m_MacroSlowHeld)
+		pSelf->m_MacroPlaybackSlowTickCounter = 0;
 }
 
 int CControls::MacroSeekStep() const
@@ -1564,27 +1606,44 @@ int CControls::SnapInput(int *pData)
 			}
 			else if(!m_MacroHasCurrentFrame || PredTick != m_MacroPlaybackLastTick)
 			{
-				if(m_MacroPlaybackIndex >= m_vMacroFrames.size())
+				bool AdvanceFrame = !m_MacroHasCurrentFrame;
+				if(m_MacroHasCurrentFrame)
 				{
-					StopMacroRecording();
-				}
-				else
-				{
-					const SMacroFrame &Frame = m_vMacroFrames[m_MacroPlaybackIndex];
-					bool AtStartPosition = true;
-					if(!m_MacroHasCurrentFrame && m_MacroPlaybackIndex == 0 && Frame.m_HasCoordinates)
+					if(m_MacroSlowHeld)
 					{
-						const vec2 CurrentPos = GameClient()->m_PredictedChar.m_Pos;
-						const vec2 RequiredPos((float)Frame.m_PreCore.m_X, (float)Frame.m_PreCore.m_Y);
-						AtStartPosition = distance(CurrentPos, RequiredPos) <= 24.0f;
+						++m_MacroPlaybackSlowTickCounter;
+					if(m_MacroPlaybackSlowTickCounter >= std::clamp(g_Config.m_ClMacroSlowFactor, 2, 10))
+						AdvanceFrame = true;
 					}
-					m_MacroPracticeWaiting = !AtStartPosition;
-					m_MacroPlaybackLastTick = PredTick;
-					if(AtStartPosition)
+					else
+						AdvanceFrame = true;
+				}
+				m_MacroPlaybackLastTick = PredTick;
+
+				if(AdvanceFrame)
+				{
+					m_MacroPlaybackSlowTickCounter = 0;
+					if(m_MacroPlaybackIndex >= m_vMacroFrames.size())
 					{
-						m_MacroCurrentFrame = Frame;
-						m_MacroHasCurrentFrame = true;
-						++m_MacroPlaybackIndex;
+						StopMacroRecording();
+					}
+					else
+					{
+						const SMacroFrame &Frame = m_vMacroFrames[m_MacroPlaybackIndex];
+						bool AtStartPosition = true;
+						if(!m_MacroHasCurrentFrame && m_MacroPlaybackIndex == 0 && Frame.m_HasCoordinates)
+						{
+							const vec2 CurrentPos = GameClient()->m_PredictedChar.m_Pos;
+							const vec2 RequiredPos((float)Frame.m_PreCore.m_X, (float)Frame.m_PreCore.m_Y);
+						AtStartPosition = distance(CurrentPos, RequiredPos) <= 24.0f;
+						}
+						m_MacroPracticeWaiting = !AtStartPosition;
+						if(AtStartPosition)
+						{
+							m_MacroCurrentFrame = Frame;
+							m_MacroHasCurrentFrame = true;
+							++m_MacroPlaybackIndex;
+						}
 					}
 				}
 			}
@@ -1694,6 +1753,21 @@ void CControls::OnRender()
 {
 	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
 		return;
+
+	if(m_MacroRewindHeld && !m_MacroRecording && !m_vMacroFrames.empty() &&
+		(m_MacroPracticeActive || m_MacroPlaybackLive) &&
+		!GameClient()->m_Chat.IsActive() && !GameClient()->m_Menus.IsActive())
+	{
+		const int64_t Now = time_get();
+		if(Now >= m_MacroRewindNextRepeat)
+		{
+			SeekMacro(-MacroSeekStep());
+			const int64_t HeldFor = Now - m_MacroRewindHeldSince;
+			const int64_t RepeatDelay = HeldFor >= time_freq() ? time_freq() / 16 :
+				HeldFor >= time_freq() / 2 ? time_freq() / 8 : time_freq() / 4;
+			m_MacroRewindNextRepeat = Now + RepeatDelay;
+		}
+	}
 
 	if(g_Config.m_ClAutoswitchWeaponsOutOfAmmo && !GameClient()->m_GameInfo.m_UnlimitedAmmo && GameClient()->m_Snap.m_pLocalCharacter)
 	{
