@@ -629,7 +629,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 				{
 					GameClient()->Echo(Localize("Запись остановлена, но сохранить не удалось. Проверь название и нажми «Сохранить вручную»."));
 				}
-				s_aRecordingMacroName[0] = '\\0';
+				s_aRecordingMacroName[0] = '\0';
 			}
 			else if(s_MacroName.IsEmpty())
 			{
@@ -640,7 +640,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 				str_copy(s_aRecordingMacroName, s_MacroName.GetString());
 				GameClient()->m_Controls.StartMacroRecording();
 				if(!GameClient()->m_Controls.MacroRecording())
-					s_aRecordingMacroName[0] = '\\0';
+					s_aRecordingMacroName[0] = '\0';
 			}
 		}
 		Row.VSplitLeft(8.0f, nullptr, &Row);
