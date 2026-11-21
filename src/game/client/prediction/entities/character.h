@@ -63,6 +63,8 @@ public:
 	void ApplyMoveRestrictions();
 
 	bool m_IsLocal;
+	// Used only by the isolated macro practice world for stationary player targets.
+	bool m_IsMacroPracticeStatic = false;
 
 	CTeamsCore *TeamsCore();
 	bool Freeze(int Seconds);
