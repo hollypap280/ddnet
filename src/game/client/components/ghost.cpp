@@ -415,12 +415,47 @@ void CGhost::SetMacroPracticeWorld(CGameWorld *pWorld)
 		Current.m_Tick = pWorld->GameTick();
 
 		auto &ClientData = GameClient()->m_aClients[ClientId];
-		if(ClientData.m_pSkinInfo)
-			m_apMacroPracticeRenderInfo[ClientId] = ClientData.m_pSkinInfo;
-		else if(!m_apMacroPracticeRenderInfo[ClientId])
+		// Use a private copy of the skin render info so frozen/weapon flags
+		// never mutate the live player's shared tee appearance.
+		if(!m_apMacroPracticeRenderInfo[ClientId])
 			m_apMacroPracticeRenderInfo[ClientId] = GameClient()->CreateManagedTeeRenderInfo(ClientData);
 		if(!m_apMacroPracticeRenderInfo[ClientId])
 			continue;
+
+		// Apply the same frozen appearance used for normal server characters
+		// to characters rendered from this isolated practice world.
+		CTeeRenderInfo RenderInfo = m_apMacroPracticeRenderInfo[ClientId]->TeeRenderInfo();
+		RenderInfo.m_TeeRenderFlags = 0;
+		const CCharacterCore &Core = *pCharacter->Core();
+		const bool Frozen = pCharacter->m_FreezeTime > 0 || Core.m_DeepFrozen || Core.m_LiveFrozen;
+		if(Frozen)
+		{
+			RenderInfo.m_TeeRenderFlags |= TEE_EFFECT_FROZEN;
+			if(pCharacter->m_FreezeTime > 0 || Core.m_DeepFrozen)
+				RenderInfo.m_TeeRenderFlags |= TEE_NO_WEAPON;
+			if(g_Config.m_ClShowNinja && !GameClient()->m_GameInfo.m_NoSkinChangeForFrozen)
+			{
+				RenderInfo.m_aSixup[g_Config.m_ClDummy].Reset();
+				RenderInfo.ApplySkin(GameClient()->m_Players.NinjaTeeRenderInfo()->TeeRenderInfo());
+				RenderInfo.m_CustomColoredSkin = GameClient()->IsTeamPlay();
+				if(!RenderInfo.m_CustomColoredSkin)
+				{
+					RenderInfo.m_ColorBody = ColorRGBA(1, 1, 1);
+					RenderInfo.m_ColorFeet = ColorRGBA(1, 1, 1);
+				}
+			}
+		}
+		else if(Current.m_Weapon == WEAPON_NINJA && g_Config.m_ClShowNinja)
+		{
+			RenderInfo.ApplySkin(GameClient()->m_Players.NinjaTeeRenderInfo()->TeeRenderInfo());
+			RenderInfo.m_CustomColoredSkin = GameClient()->IsTeamPlay();
+			if(!RenderInfo.m_CustomColoredSkin)
+			{
+				RenderInfo.m_ColorBody = ColorRGBA(1, 1, 1);
+				RenderInfo.m_ColorFeet = ColorRGBA(1, 1, 1);
+			}
+		}
+		m_apMacroPracticeRenderInfo[ClientId]->TeeRenderInfo() = RenderInfo;
 
 		m_aMacroPracticePrev[ClientId] = aWasVisible[ClientId] ? m_aMacroPracticeCurrent[ClientId] : Current;
 		m_aMacroPracticeCurrent[ClientId] = Current;

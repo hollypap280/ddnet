@@ -530,6 +530,16 @@ int CGameClient::OnSnapInput(int *pData, bool Dummy, bool Force)
 	{
 		return m_Controls.SnapInput(pData);
 	}
+	if(m_Controls.MacroPracticeActive())
+	{
+		// Both real server connections are observers while macro practice is
+		// active. Keep the inactive tee neutral too, including dummy-hammer mode.
+		CNetObj_PlayerInput ObserverInput{};
+		ObserverInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+		ObserverInput.m_TargetX = 1;
+		mem_copy(pData, &ObserverInput, sizeof(ObserverInput));
+		return sizeof(ObserverInput);
+	}
 	if(m_aLocalIds[!g_Config.m_ClDummy] < 0)
 	{
 		return 0;

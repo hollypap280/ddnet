@@ -525,6 +525,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	static CButtonContainer s_PracticeToggle, s_ShowOthers;
 	static CButtonContainer s_RecordToggle, s_Save;
 	static CButtonContainer s_PlayToggle, s_Delete, s_Refresh;
+	static CButtonContainer s_MacroLoop, s_AutoUnfreezeTrain, s_AutoUnfreezeAI, s_ClearAutoUnfreeze;
 	static CScrollRegion s_MacroListScrollRegion;
 	static CScrollRegion s_MacroSettingsScrollRegion;
 
@@ -546,7 +547,9 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		for(const CControls::SMacroInfo &Info : s_vMacros)
 			if(str_comp(s_aSelectedMacro, Info.m_aName) == 0)
 				SelectedExists = true;
-		if(!SelectedExists)
+		// Keep the last chosen/saved name when storage temporarily returns an
+		// empty listing; PlayMacro will validate the file before starting it.
+		if(!SelectedExists && !s_vMacros.empty())
 			s_aSelectedMacro[0] = '\0';
 	};
 	if(!s_MacroListLoaded)
@@ -643,13 +646,31 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			{
 				GameClient()->Echo(Localize("Сначала останови и сохрани запись"));
 			}
-			else if(!s_aSelectedMacro[0])
+			else
 			{
-				GameClient()->Echo(Localize("Сначала выбери макрос в списке"));
-			}
-			else if(!GameClient()->m_Controls.PlayMacro(s_aSelectedMacro))
-			{
-				GameClient()->Echo(Localize("Не удалось запустить выбранный макрос."));
+				// Prefer the highlighted item, but also accept the name in the
+				// recording field. This avoids a false "select macro" warning
+				// if the list selection UI lost focus after saving.
+				char aPlaybackName[64]{};
+				if(s_aSelectedMacro[0])
+					str_copy(aPlaybackName, s_aSelectedMacro);
+				else if(!s_MacroName.IsEmpty())
+					str_copy(aPlaybackName, s_MacroName.GetString());
+				else if(s_aRecordingMacroName[0])
+					str_copy(aPlaybackName, s_aRecordingMacroName);
+
+				if(!aPlaybackName[0])
+					GameClient()->Echo(Localize("Введи название макроса или выбери его в библиотеке"));
+				else if(!GameClient()->m_Controls.PlayMacro(aPlaybackName))
+				{
+					// One last fallback: the typed name may refer to the last
+					// recording while a stale highlighted entry still exists.
+					if(s_MacroName.IsEmpty() || str_comp(aPlaybackName, s_MacroName.GetString()) == 0 ||
+						!GameClient()->m_Controls.PlayMacro(s_MacroName.GetString()))
+						GameClient()->Echo(Localize("Не удалось запустить макрос. Проверь название и файл."));
+					else
+						str_copy(s_aSelectedMacro, s_MacroName.GetString());
+				}
 			}
 		}
 		Row.VSplitLeft(6.0f, nullptr, &Row);
@@ -679,6 +700,12 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		else
 			str_format(aStatus, sizeof(aStatus), "ГОТОВО  |  %d тиков", GameClient()->m_Controls.MacroFrameCount());
 		Ui()->DoLabel(&StatusRow, aStatus, 12.0f, TEXTALIGN_ML);
+
+		CUIRect LoopRow;
+		MainView.HSplitTop(24.0f, &LoopRow, &MainView);
+		if(DoButton_CheckBox(&s_MacroLoop, Localize("Повторять макрос по кругу"),
+			g_Config.m_ClMacroLoop, &LoopRow))
+			g_Config.m_ClMacroLoop ^= 1;
 
 		CUIRect SearchRow;
 		MainView.HSplitTop(25.0f, &SearchRow, &MainView);
@@ -830,6 +857,42 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		if(AddSettingRow(27.0f, SlowRow))
 			Ui()->DoScrollbarOption(&g_Config.m_ClMacroSlowFactor, &g_Config.m_ClMacroSlowFactor,
 				&SlowRow, Localize("Замедление при удержании клавиши"), 2, 10);
+
+		AddSection("ОБУЧЕНИЕ АВТОАНФРИЗА");
+		CUIRect TrainRow;
+		if(AddSettingRow(30.0f, TrainRow) &&
+			DoButton_CheckBox(&s_AutoUnfreezeTrain, Localize("Тренировать автоанфриз на моих успешных разморозках"),
+				g_Config.m_ClAutoUnfreezeTraining, &TrainRow))
+			g_Config.m_ClAutoUnfreezeTraining ^= 1;
+
+		CUIRect AIRow;
+		if(AddSettingRow(30.0f, AIRow) &&
+			DoButton_CheckBox(&s_AutoUnfreezeAI, Localize("Включить обученный автоанфриз"),
+				g_Config.m_ClAutoUnfreezeAI, &AIRow))
+			g_Config.m_ClAutoUnfreezeAI ^= 1;
+
+		CUIRect SamplesRow;
+		if(AddSettingRow(22.0f, SamplesRow))
+		{
+			char aSamples[128];
+			str_format(aSamples, sizeof(aSamples), "Сохранено примеров: %d",
+				GameClient()->m_Controls.AutoUnfreezeTrainingSampleCount());
+			Ui()->DoLabel(&SamplesRow, aSamples, 12.0f, TEXTALIGN_ML);
+		}
+
+		CUIRect ClearRow;
+		if(AddSettingRow(28.0f, ClearRow) &&
+			DoButton_Menu(&s_ClearAutoUnfreeze, Localize("Очистить обучение"), 0, &ClearRow))
+		{
+			GameClient()->m_Controls.ClearAutoUnfreezeTraining();
+			GameClient()->Echo(Localize("Примеры обучения автоанфриза очищены"));
+		}
+
+		CUIRect TrainingInfo;
+		if(AddSettingRow(54.0f, TrainingInfo))
+			Ui()->DoLabel(&TrainingInfo,
+				Localize("Включи обучение и вручную размораживайся. Когда заморозка закончится, успешный эпизод сохранится. Автоанфриз подбирает похожие примеры по позиции на карте, скорости и оставшемуся фризу. Это обучаемая база примеров, а не полноценная нейросеть."),
+				12.0f, TEXTALIGN_ML);
 
 		AddSection("КОМАНДЫ В ТРЕНИРОВКЕ");
 		CUIRect InfoRow;

@@ -94,6 +94,8 @@ public:
 	bool SaveMacro(const char *pName);
 	bool PlayMacro(const char *pName);
 	bool DeleteMacro(const char *pName);
+	int AutoUnfreezeTrainingSampleCount();
+	void ClearAutoUnfreezeTraining();
 
 private:
 	static void ConKeyInputState(IConsole::IResult *pResult, void *pUserData);
@@ -103,6 +105,21 @@ private:
 	static void ConTpToCursor(IConsole::IResult *pResult, void *pUserData);
 	static void ConTpDummyToCursor(IConsole::IResult *pResult, void *pUserData);
 	vec2 CursorWorldPos() const;
+	struct SAutoUnfreezeSample
+	{
+		int m_MapIndex = -1;
+		int m_VelX = 0;
+		int m_VelY = 0;
+		int m_FreezeTicks = 0;
+		int m_Weapon = WEAPON_HAMMER;
+		int m_Direction = 0;
+		int m_Jump = 0;
+		int m_Hook = 0;
+		int m_Fire = 0;
+		int m_WantedWeapon = 0;
+		int m_TargetX = 1;
+		int m_TargetY = 0;
+	};
 	struct SMacroFrame
 	{
 		CNetObj_PlayerInput m_Input{};
@@ -142,6 +159,11 @@ private:
 		int m_TargetY;
 	};
 	std::vector<SMacroFrame> m_vMacroFrames;
+	std::vector<SAutoUnfreezeSample> m_vAutoUnfreezeSamples;
+	std::vector<SAutoUnfreezeSample> m_vAutoUnfreezeEpisode;
+	bool m_AutoUnfreezeTrainingLoaded = false;
+	bool m_AutoUnfreezeWasFrozen = false;
+	int m_AutoUnfreezeLastPredTick = -1;
 	std::size_t m_MacroPlaybackIndex = 0;
 	SMacroFrame m_MacroCurrentFrame{};
 	bool m_MacroHasCurrentFrame = false;
@@ -189,6 +211,10 @@ private:
 	bool RestoreMacroPracticeFrame(int Index);
 	void UpdateMacroPracticeGhost(CCharacter *pCharacter);
 	void PopulateMacroPracticeWorld();
+	void LoadAutoUnfreezeTraining();
+	void SaveAutoUnfreezeTraining();
+	void UpdateAutoUnfreezeTraining(int Dummy, const CCharacterCore &Core, vec2 Position, int FreezeTicks, bool Frozen);
+	bool ApplyTrainedAutoUnfreeze(int Dummy, const CCharacterCore &Core, vec2 Position, int FreezeTicks, bool Frozen);
 	bool SwitchMacroPracticeCharacter(int ClientId);
 	static void ConMacroRecord(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroStop(IConsole::IResult *pResult, void *pUserData);
