@@ -627,6 +627,9 @@ void CCharacter::ResetInput()
 
 void CCharacter::PreTick()
 {
+	if(m_IsMacroPracticeStatic)
+		return;
+
 	DDRaceTick();
 
 	m_Core.m_Input = m_Input;
@@ -635,6 +638,9 @@ void CCharacter::PreTick()
 
 void CCharacter::Tick()
 {
+	if(m_IsMacroPracticeStatic)
+		return;
+
 	if(m_pGameWorld->m_WorldConfig.m_NoWeakHookAndBounce)
 	{
 		m_Core.TickDeferred();
@@ -669,6 +675,9 @@ void CCharacter::Tick()
 
 void CCharacter::TickDeferred()
 {
+	if(m_IsMacroPracticeStatic)
+		return;
+
 	m_Core.Move();
 	m_Core.Quantize();
 	m_Pos = m_Core.m_Pos;
