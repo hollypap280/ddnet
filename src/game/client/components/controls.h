@@ -64,6 +64,7 @@ public:
 
 	bool MacroRecording() const { return m_MacroRecording; }
 	bool MacroPlaying() const { return m_MacroPlaying; }
+	bool MacroPlaybackLive() const { return m_MacroPlaybackLive; }
 	int MacroPosition() const { return m_MacroRecording ? (int)m_vMacroFrames.size() : (int)m_MacroPlaybackIndex; }
 	int MacroFrameCount() const { return (int)m_vMacroFrames.size(); }
 	struct SMacroInfo
@@ -129,6 +130,11 @@ private:
 	bool m_MacroHoldCurrentFrame = false;
 	bool m_MacroRecording = false;
 	bool m_MacroPlaying = false;
+	bool m_MacroPlaybackLive = false;
+	int m_MacroPlaybackLastTick = -1;
+	int m_MacroLiveFireOffset = 0;
+	int m_MacroLiveNextWeaponOffset = 0;
+	int m_MacroLivePrevWeaponOffset = 0;
 	bool m_MacroPracticeActive = false;
 	bool m_MacroPracticeWaiting = false;
 	float m_MacroPracticeAccumulator = 0.0f;
@@ -136,6 +142,10 @@ private:
 	int m_MacroPracticeTick = 0;
 	int m_MacroPracticeLocalId = -1;
 	CNetObj_PlayerInput m_MacroPracticeInput{};
+	int m_MacroPracticePendingFireTransitions = 0;
+	int m_MacroPracticeFireCounter = 0;
+	bool m_MacroPracticePendingJump = false;
+	bool m_MacroPracticePendingHook = false;
 	CGameWorld m_MacroPracticeWorld;
 	CNetObj_Character m_MacroPracticeRenderChar{};
 	bool m_MacroPracticeHasRenderChar = false;
