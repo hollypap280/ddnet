@@ -508,10 +508,7 @@ void CMenus::RenderSettingsGame(CUIRect MainView)
 
 void CMenus::RenderSettingsMacros(CUIRect MainView)
 {
-	CUIRect Row, Label, NameRect, Button, SearchRect;
-	MainView.HSplitTop(28.0f, &Label, &MainView);
-	Ui()->DoLabel(&Label, Localize("Макросы с замедленной тренировкой"), 20.0f, TEXTALIGN_ML);
-	MainView.HSplitTop(5.0f, nullptr, &MainView);
+	CUIRect Row, Label, Button, NameRect, SearchRect;
 
 	static CLineInputBuffered<64> s_MacroName;
 	static CLineInputBuffered<64> s_MacroSearch;
@@ -521,56 +518,10 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	static bool s_MacroListLoaded = false;
 	static char s_aSelectedMacro[64]{};
 	static int s_MacroPage = 0;
-	static CButtonContainer s_Record, s_Stop, s_Save, s_Refresh, s_SearchClear, s_Play, s_Delete, s_Previous, s_Next, s_PracticeStart, s_PracticeStop;
+	static CButtonContainer s_PracticeStart, s_PracticeStop, s_ShowOthers;
+	static CButtonContainer s_Record, s_Stop, s_Save;
+	static CButtonContainer s_Refresh, s_Play, s_Delete, s_Previous, s_Next;
 	static CButtonContainer s_aMacroButtons[6];
-
-	MainView.HSplitTop(26.0f, &Row, &MainView);
-	Row.VSplitLeft(145.0f, &Button, &Row);
-	if(DoButton_Menu(&s_PracticeStart, Localize("Начать тренировку"), 0, &Button))
-		GameClient()->m_Controls.StartMacroPractice();
-	Row.VSplitLeft(8.0f, nullptr, &Row);
-	Row.VSplitLeft(145.0f, &Button, &Row);
-	if(DoButton_Menu(&s_PracticeStop, Localize("Остановить тренировку"), 0, &Button))
-		GameClient()->m_Controls.StopMacroPractice();
-
-	MainView.HSplitTop(4.0f, nullptr, &MainView);
-	MainView.HSplitTop(24.0f, &Row, &MainView);
-	Ui()->DoScrollbarOption(&g_Config.m_ClMacroPracticeRate, &g_Config.m_ClMacroPracticeRate, &Row,
-		Localize("Скорость тренировки (тиков в секунду)"), 1, 50);
-
-	MainView.HSplitTop(24.0f, &Row, &MainView);
-	Row.VSplitLeft(155.0f, &Label, &NameRect);
-	Ui()->DoLabel(&Label, Localize("Название новой записи"), 14.0f, TEXTALIGN_ML);
-	Ui()->DoEditBox(&s_MacroName, &NameRect, 14.0f);
-
-	MainView.HSplitTop(6.0f, nullptr, &MainView);
-	MainView.HSplitTop(26.0f, &Row, &MainView);
-	Row.VSplitLeft(145.0f, &Button, &Row);
-	if(DoButton_Menu(&s_Record, Localize("Начать запись"), 0, &Button))
-		GameClient()->m_Controls.StartMacroRecording();
-	Row.VSplitLeft(8.0f, nullptr, &Row);
-	Row.VSplitLeft(110.0f, &Button, &Row);
-	if(DoButton_Menu(&s_Stop, Localize("Остановить запись/проигрывание"), 0, &Button))
-		GameClient()->m_Controls.StopMacroRecording();
-	Row.VSplitLeft(8.0f, nullptr, &Row);
-	Row.VSplitLeft(110.0f, &Button, &Row);
-	if(DoButton_Menu(&s_Save, Localize("Сохранить запись"), 0, &Button))
-	{
-		if(s_MacroName.IsEmpty() || !GameClient()->m_Controls.SaveMacro(s_MacroName.GetString()))
-			GameClient()->Echo(Localize("Не удалось сохранить. Введите имя и остановите запись."));
-		else
-		{
-			GameClient()->Echo(Localize("Макрос сохранён"));
-			s_MacroListLoaded = false;
-		}
-	}
-
-	if(!s_RewindStepInitialized)
-	{
-		s_RewindStep.SetInteger(g_Config.m_ClMacroRewindStep);
-		s_RewindStepInitialized = true;
-	}
-
 
 	auto RefreshMacroList = [&]() {
 		GameClient()->m_Controls.GetMacroList(s_vMacros);
@@ -580,11 +531,64 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	if(!s_MacroListLoaded)
 		RefreshMacroList();
 
+	MainView.HSplitTop(28.0f, &Label, &MainView);
+	Ui()->DoLabel(&Label, Localize("Макросы"), 20.0f, TEXTALIGN_ML);
+
+	// 1. Private practice world and recording.
+	MainView.HSplitTop(22.0f, &Label, &MainView);
+	Ui()->DoLabel(&Label, Localize("1. Тренировка и запись"), 15.0f, TEXTALIGN_ML);
+	MainView.HSplitTop(26.0f, &Row, &MainView);
+	Row.VSplitLeft(150.0f, &Button, &Row);
+	if(DoButton_Menu(&s_PracticeStart, Localize("Включить тренировку"), 0, &Button))
+		GameClient()->m_Controls.StartMacroPractice();
+	Row.VSplitLeft(8.0f, nullptr, &Row);
+	Row.VSplitLeft(150.0f, &Button, &Row);
+	if(DoButton_Menu(&s_PracticeStop, Localize("Выключить тренировку"), 0, &Button))
+		GameClient()->m_Controls.StopMacroPractice();
+
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	if(DoButton_CheckBox(&s_ShowOthers, Localize("Показывать других тии как неподвижные AFK-цели"),
+		g_Config.m_ClMacroPracticeShowOthers, &Row))
+		g_Config.m_ClMacroPracticeShowOthers ^= 1;
+
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	Ui()->DoScrollbarOption(&g_Config.m_ClMacroPracticeRate, &g_Config.m_ClMacroPracticeRate,
+		&Row, Localize("Скорость тренировочной копии (тиков/сек)"), 1, 50);
+
+	MainView.HSplitTop(22.0f, &Label, &MainView);
+	Ui()->DoLabel(&Label, Localize("Имя новой записи"), 13.0f, TEXTALIGN_ML);
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	Ui()->DoEditBox(&s_MacroName, &Row, 14.0f);
+
+	MainView.HSplitTop(26.0f, &Row, &MainView);
+	Row.VSplitLeft(120.0f, &Button, &Row);
+	if(DoButton_Menu(&s_Record, Localize("Начать запись"), 0, &Button))
+		GameClient()->m_Controls.StartMacroRecording();
+	Row.VSplitLeft(8.0f, nullptr, &Row);
+	Row.VSplitLeft(130.0f, &Button, &Row);
+	if(DoButton_Menu(&s_Stop, Localize("Остановить"), 0, &Button))
+		GameClient()->m_Controls.StopMacroRecording();
+	Row.VSplitLeft(8.0f, nullptr, &Row);
+	Row.VSplitLeft(110.0f, &Button, &Row);
+	if(DoButton_Menu(&s_Save, Localize("Сохранить"), 0, &Button))
+	{
+		if(s_MacroName.IsEmpty() || !GameClient()->m_Controls.SaveMacro(s_MacroName.GetString()))
+			GameClient()->Echo(Localize("Не удалось сохранить. Введи имя и сначала останови запись."));
+		else
+		{
+			GameClient()->Echo(Localize("Макрос сохранён"));
+			s_MacroListLoaded = false;
+		}
+	}
+
+	// 2. Searchable macro library.
 	MainView.HSplitTop(8.0f, nullptr, &MainView);
+	MainView.HSplitTop(22.0f, &Label, &MainView);
+	Ui()->DoLabel(&Label, Localize("2. Библиотека макросов"), 15.0f, TEXTALIGN_ML);
 	MainView.HSplitTop(25.0f, &Row, &MainView);
-	Row.VSplitLeft(155.0f, &Label, &SearchRect);
-	Ui()->DoLabel(&Label, Localize("Поиск макроса"), 14.0f, TEXTALIGN_ML);
-	SearchRect.VSplitRight(76.0f, &SearchRect, &Button);
+	Row.VSplitLeft(150.0f, &Label, &SearchRect);
+	Ui()->DoLabel(&Label, Localize("Поиск по имени/карте"), 13.0f, TEXTALIGN_ML);
+	SearchRect.VSplitRight(78.0f, &SearchRect, &Button);
 	Ui()->DoEditBox(&s_MacroSearch, &SearchRect, 14.0f);
 	if(DoButton_Menu(&s_Refresh, Localize("Обновить"), 0, &Button))
 		RefreshMacroList();
@@ -598,21 +602,21 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			vVisibleMacros.push_back(i);
 	}
 
-	MainView.HSplitTop(5.0f, nullptr, &MainView);
 	const int Pages = std::max(1, ((int)vVisibleMacros.size() + 5) / 6);
 	s_MacroPage = std::clamp(s_MacroPage, 0, Pages - 1);
-	char aFound[96];
-	str_format(aFound, sizeof(aFound), "Найдено макросов: %d", (int)vVisibleMacros.size());
-	MainView.HSplitTop(20.0f, &Label, &MainView);
-	Ui()->DoLabel(&Label, aFound, 13.0f, TEXTALIGN_ML);
+	char aInfo[128];
+	str_format(aInfo, sizeof(aInfo), "Найдено: %d    Страница: %d / %d",
+		(int)vVisibleMacros.size(), s_MacroPage + 1, Pages);
+	MainView.HSplitTop(19.0f, &Label, &MainView);
+	Ui()->DoLabel(&Label, aInfo, 12.0f, TEXTALIGN_ML);
 
 	for(int RowIndex = 0; RowIndex < 6; ++RowIndex)
 	{
-		MainView.HSplitTop(25.0f, &Row, &MainView);
+		MainView.HSplitTop(24.0f, &Row, &MainView);
 		const int VisibleIndex = s_MacroPage * 6 + RowIndex;
 		if(VisibleIndex >= (int)vVisibleMacros.size())
 		{
-			Ui()->DoLabel(&Row, "", 13.0f, TEXTALIGN_ML);
+			Ui()->DoLabel(&Row, "", 12.0f, TEXTALIGN_ML);
 			continue;
 		}
 
@@ -620,34 +624,33 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		char aEntry[196];
 		str_format(aEntry, sizeof(aEntry), "%s   |   %s   |   %d тиков",
 			Info.m_aName, Info.m_aMapName, Info.m_TickCount);
-		const bool Selected = str_comp(s_aSelectedMacro, Info.m_aName) == 0;
-		if(DoButton_Menu(&s_aMacroButtons[RowIndex], aEntry, Selected, &Row))
+		if(DoButton_Menu(&s_aMacroButtons[RowIndex], aEntry,
+			str_comp(s_aSelectedMacro, Info.m_aName) == 0, &Row))
 			str_copy(s_aSelectedMacro, Info.m_aName);
 	}
 
-	MainView.HSplitTop(4.0f, nullptr, &MainView);
-	MainView.HSplitTop(24.0f, &Row, &MainView);
+	MainView.HSplitTop(22.0f, &Row, &MainView);
 	Row.VSplitLeft(80.0f, &Button, &Row);
 	if(DoButton_Menu(&s_Previous, Localize("Назад"), s_MacroPage > 0, &Button) && s_MacroPage > 0)
 		--s_MacroPage;
 	Row.VSplitLeft(8.0f, nullptr, &Row);
 	Row.VSplitLeft(80.0f, &Button, &Row);
-	if(DoButton_Menu(&s_Next, Localize("Далее"), s_MacroPage + 1 < Pages, &Button) && s_MacroPage + 1 < Pages)
+	if(DoButton_Menu(&s_Next, Localize("Вперёд"), s_MacroPage + 1 < Pages, &Button) && s_MacroPage + 1 < Pages)
 		++s_MacroPage;
-	Row.VSplitLeft(16.0f, nullptr, &Row);
-	str_format(aFound, sizeof(aFound), "%d / %d", s_MacroPage + 1, Pages);
-	Ui()->DoLabel(&Row, aFound, 13.0f, TEXTALIGN_ML);
 
-	MainView.HSplitTop(6.0f, nullptr, &MainView);
+	// 3. Live playback controls.
+	MainView.HSplitTop(8.0f, nullptr, &MainView);
+	MainView.HSplitTop(22.0f, &Label, &MainView);
+	Ui()->DoLabel(&Label, Localize("3. Запуск в основном игровом мире"), 15.0f, TEXTALIGN_ML);
 	MainView.HSplitTop(26.0f, &Row, &MainView);
-	Row.VSplitLeft(120.0f, &Button, &Row);
-	if(DoButton_Menu(&s_Play, Localize("Проиграть выбранный"), 0, &Button))
+	Row.VSplitLeft(150.0f, &Button, &Row);
+	if(DoButton_Menu(&s_Play, Localize("Запустить выбранный"), 0, &Button))
 	{
 		if(!s_aSelectedMacro[0] || !GameClient()->m_Controls.PlayMacro(s_aSelectedMacro))
-			GameClient()->Echo(Localize("Выбери макрос и проверь карту записи."));
+			GameClient()->Echo(Localize("Выбери макрос. Для запуска нужен подключённый локальный тии."));
 	}
 	Row.VSplitLeft(8.0f, nullptr, &Row);
-	Row.VSplitLeft(110.0f, &Button, &Row);
+	Row.VSplitLeft(120.0f, &Button, &Row);
 	if(DoButton_Menu(&s_Delete, Localize("Удалить выбранный"), 0, &Button) && s_aSelectedMacro[0])
 	{
 		if(GameClient()->m_Controls.DeleteMacro(s_aSelectedMacro))
@@ -660,10 +663,14 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			GameClient()->Echo(Localize("Не удалось удалить макрос."));
 	}
 
-	MainView.HSplitTop(7.0f, nullptr, &MainView);
-	MainView.HSplitTop(26.0f, &Row, &MainView);
-	Row.VSplitLeft(155.0f, &Label, &NameRect);
-	Ui()->DoLabel(&Label, Localize("Шаг перемотки (тики)"), 14.0f, TEXTALIGN_ML);
+	if(!s_RewindStepInitialized)
+	{
+		s_RewindStep.SetInteger(g_Config.m_ClMacroRewindStep);
+		s_RewindStepInitialized = true;
+	}
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	Row.VSplitLeft(150.0f, &Label, &NameRect);
+	Ui()->DoLabel(&Label, Localize("Шаг перемотки в тиках"), 13.0f, TEXTALIGN_ML);
 	Ui()->DoEditBox(&s_RewindStep, &NameRect, 14.0f);
 	if(s_RewindStep.WasChanged())
 	{
@@ -674,26 +681,24 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			s_RewindStep.SetInteger(g_Config.m_ClMacroRewindStep);
 	}
 
-	char aStatus[224];
-	str_format(aStatus, sizeof(aStatus), "%s | %s | %s | тик %d / %d | шаг %d | скорость %d тик/с",
-		GameClient()->m_Controls.MacroPracticeActive() ? Localize("Тренировка включена") : Localize("Тренировка выключена"),
-		GameClient()->m_Controls.MacroRecording() ? Localize("Запись") : Localize("Нет записи"),
-		GameClient()->m_Controls.MacroPlaying() ? (GameClient()->m_Controls.MacroPracticeWaiting() ? Localize("Ожидание координаты") : Localize("Воспроизведение")) : Localize("Не воспроизводится"),
-		GameClient()->m_Controls.MacroPosition(),
-		GameClient()->m_Controls.MacroFrameCount(),
-		g_Config.m_ClMacroRewindStep,
-		g_Config.m_ClMacroPracticeRate);
-	MainView.HSplitTop(8.0f, nullptr, &MainView);
-	Ui()->DoLabel(&MainView, aStatus, 14.0f, TEXTALIGN_ML);
-	MainView.HSplitTop(18.0f, nullptr, &MainView);
-	Ui()->DoLabel(&MainView, GameClient()->m_Controls.MacroPracticeWaiting() ?
-		Localize("Проигрывание ждёт, пока тренировочный тии дойдёт до записанных координат.") :
-		Localize("Тренировка использует копию текущей игровой сцены и не двигает серверного тии."), 12.0f, TEXTALIGN_ML);
-	MainView.HSplitTop(18.0f, nullptr, &MainView);
-	Ui()->DoLabel(&MainView, Localize("Стрелка влево — назад на выбранное число тиков. Стрелка вправо — вперёд. 50 тиков = 1 секунда. Серверный тии полупрозрачный, тренировочный тии управляется отдельно."), 12.0f, TEXTALIGN_ML);
-	MainView.HSplitTop(18.0f, nullptr, &MainView);
-	Ui()->DoLabel(&MainView, Localize("Для поиска можно вводить название макроса или карты. В списке указаны карта записи и количество тиков."), 12.0f, TEXTALIGN_ML);
-	(void)s_SearchClear;
+	char aStatus[220];
+	const char *pMode = GameClient()->m_Controls.MacroRecording() ? Localize("ИДЁТ ЗАПИСЬ") :
+		GameClient()->m_Controls.MacroPlaybackLive() ? Localize("ПРОИГРЫВАНИЕ В ОСНОВНОМ МИРЕ") :
+		GameClient()->m_Controls.MacroPlaying() ? Localize("ПРОИГРЫВАНИЕ В ТРЕНИРОВКЕ") :
+		GameClient()->m_Controls.MacroPracticeActive() ? Localize("ТРЕНИРОВКА ВКЛЮЧЕНА") : Localize("ОСТАНОВЛЕНО");
+	str_format(aStatus, sizeof(aStatus), "%s | тик %d / %d | шаг %d | скорость тренировки %d тик/с",
+		pMode, GameClient()->m_Controls.MacroPosition(), GameClient()->m_Controls.MacroFrameCount(),
+		g_Config.m_ClMacroRewindStep, g_Config.m_ClMacroPracticeRate);
+	MainView.HSplitTop(20.0f, &Label, &MainView);
+	Ui()->DoLabel(&Label, aStatus, 12.0f, TEXTALIGN_ML);
+
+	const char *pHint = GameClient()->m_Controls.MacroPlaybackLive() ?
+		(GameClient()->m_Controls.MacroPracticeWaiting() ?
+			Localize("Ожидание: подведи реального тии к точке, где начиналась запись.") :
+			Localize("Макрос управляет настоящим персонажем на сервере. ← / → — перемотка.")) :
+		Localize("Запись идёт в отдельной копии. Другие тии стоят AFK и могут быть скрыты переключателем выше.");
+	MainView.HSplitTop(28.0f, &Label, &MainView);
+	Ui()->DoLabel(&Label, pHint, 12.0f, TEXTALIGN_ML);
 }
 
 
