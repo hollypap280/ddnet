@@ -1735,6 +1735,9 @@ void CHud::OnRender()
 			RenderRecord();
 	}
 	RenderCursor();
+	// Draw macro status after map foreground, freeze bars and cursor so it
+	// remains readable even when the practice tee is behind tiles or blocks.
+	GameClient()->m_Controls.RenderMacroHud();
 }
 
 void CHud::OnMessage(int MsgType, void *pRawMsg)
