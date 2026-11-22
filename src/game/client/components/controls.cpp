@@ -1387,6 +1387,10 @@ void CControls::StopMacroRecording()
 		m_aInputData[Dummy].m_Hook = 0;
 		if(m_aInputData[Dummy].m_Fire & 1)
 			m_aInputData[Dummy].m_Fire++;
+		m_aInputData[Dummy].m_Fire &= INPUT_STATE_MASK;
+		m_aInputData[Dummy].m_WantedWeapon = 0;
+		m_aInputData[Dummy].m_NextWeapon = 0;
+		m_aInputData[Dummy].m_PrevWeapon = 0;
 	}
 
 	m_MacroPlaying = false;
@@ -1663,7 +1667,7 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroPlaying = true;
 	m_MacroStartFrameIndex = StartFrameIndex;
 	m_MacroPlaybackIndex = (std::size_t)StartFrameIndex;
-	m_MacroDisplayedTick = StartFrameIndex;
+	m_MacroDisplayedTick = StartFrameIndex + 1;
 	m_MacroCurrentFrame = {};
 	m_MacroHasCurrentFrame = false;
 	m_MacroHoldCurrentFrame = false;
@@ -1862,6 +1866,7 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 		m_MacroDisplayedTick = Target + 1;
 		m_MacroHasCurrentFrame = false;
 		m_MacroPlaybackLastTick = -1;
+		m_MacroPracticeAccumulator = 0.0;
 		m_MacroPracticeWaiting = false;
 	}
 	else if(!RestoreMacroPracticeFrame(Target))
@@ -2701,7 +2706,7 @@ void CControls::OnRender()
 
 void CControls::RenderMacroHud()
 {
-	if(!m_MacroPracticeActive)
+	if(!m_MacroPracticeActive && !m_MacroPlaybackLive)
 		return;
 
 	const CScreenRect PreviousScreen = Graphics()->GetScreen();
