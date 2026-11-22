@@ -21,6 +21,7 @@
 #include <game/client/gameclient.h>
 #include <game/client/prediction/entities/character.h>
 #include <game/client/race.h>
+#include <game/gamecore.h>
 
 const char *CGhost::ms_pGhostDir = "ghosts";
 
@@ -389,7 +390,17 @@ void CGhost::OnRender()
 				continue;
 			CTeeRenderInfo RenderInfo = m_apMacroPracticeRenderInfo[ClientId]->TeeRenderInfo();
 			GameClient()->m_Players.RenderHook(ScreenRect, &m_aMacroPracticePrev[ClientId], &m_aMacroPracticeCurrent[ClientId], &RenderInfo, -3, 1.0f);
-			GameClient()->m_Players.RenderPlayer(ScreenRect, &m_aMacroPracticePrev[ClientId], &m_aMacroPracticeCurrent[ClientId], &RenderInfo, -3, 1.0f);
+
+			bool IsInteracting = m_aMacroPracticeCurrent[ClientId].m_HookState == HOOK_GRABBED;
+			for(int OtherId = 0; OtherId < MAX_CLIENTS && !IsInteracting; ++OtherId)
+			{
+				if(OtherId == ClientId || !m_aMacroPracticeVisible[OtherId])
+					continue;
+				const CNetObj_Character &Other = m_aMacroPracticeCurrent[OtherId];
+				IsInteracting = Other.m_HookState == HOOK_GRABBED && Other.m_HookedPlayer == ClientId;
+			}
+			GameClient()->m_Players.RenderPlayer(ScreenRect, &m_aMacroPracticePrev[ClientId], &m_aMacroPracticeCurrent[ClientId],
+				&RenderInfo, -3, 1.0f, IsInteracting ? 0.38f : 1.0f);
 
 			char aFreezeStatus[64];
 			if(m_aMacroPracticeFreezeTicks[ClientId] > 0)
