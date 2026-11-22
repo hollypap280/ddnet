@@ -65,7 +65,7 @@ public:
 	bool MacroRecording() const { return m_MacroRecording; }
 	bool MacroPlaying() const { return m_MacroPlaying; }
 	bool MacroPlaybackLive() const { return m_MacroPlaybackLive; }
-	int MacroPosition() const { return m_MacroRecording ? (int)m_vMacroFrames.size() : (int)m_MacroPlaybackIndex; }
+	int MacroPosition() const { return m_MacroRecording ? (int)m_vMacroFrames.size() : m_MacroPlaying ? m_MacroDisplayedTick : (int)m_MacroPlaybackIndex; }
 	int MacroFrameCount() const { return (int)m_vMacroFrames.size(); }
 	const char *MacroRecordingName() const { return m_aRecordingMacroName; }
 	struct SMacroInfo
@@ -162,7 +162,6 @@ private:
 		int m_TargetY;
 	};
 	std::vector<SMacroFrame> m_vMacroFrames;
-	std::vector<SMacroFrame> m_vMacroCorrectionFrames;
 	std::size_t m_MacroPlaybackIndex = 0;
 	int m_MacroStartFrameIndex = 0;
 	int m_MacroDisplayedTick = 0;
@@ -210,7 +209,6 @@ private:
 	bool m_aMacroPracticeSnapshotInitialized[MAX_CLIENTS]{};
 	char m_aMacroMapName[64] = "Неизвестная карта";
 	char m_aRecordingMacroName[64] = "";
-	char m_aLoadedMacroName[64] = "";
 	bool m_aManualHook[NUM_DUMMIES]{};
 	bool m_aAutoHookActive[NUM_DUMMIES]{};
 	bool m_aAutoHookFireActive[NUM_DUMMIES]{};
