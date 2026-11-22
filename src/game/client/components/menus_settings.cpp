@@ -635,7 +635,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		MainView.HSplitTop(28.0f, &PlaybackRow, &MainView);
 		PlaybackRow.VSplitLeft(142.0f, &Button, &Row);
 		if(DoButton_Menu(&s_PlayToggle,
-			Playing ? Localize("Остановить воспроизведение") : Localize("Запустить выбранный"),
+			Playing ? Localize("Отключить макрос") : Localize("Включить макрос"),
 			Playing, &Button))
 		{
 			if(GameClient()->m_Controls.MacroPlaying())
@@ -706,6 +706,19 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		if(DoButton_CheckBox(&s_MacroLoop, Localize("Повторять макрос по кругу"),
 			g_Config.m_ClMacroLoop, &LoopRow))
 			g_Config.m_ClMacroLoop ^= 1;
+
+		static CButtonContainer s_MacroTraining;
+		CUIRect MacroTrainingRow;
+		MainView.HSplitTop(24.0f, &MacroTrainingRow, &MainView);
+		if(DoButton_CheckBox(&s_MacroTraining, Localize("Обучать макрос моими исправлениями"),
+			g_Config.m_ClMacroTraining, &MacroTrainingRow))
+			g_Config.m_ClMacroTraining ^= 1;
+
+		CUIRect MacroTrainingInfo;
+		MainView.HSplitTop(30.0f, &MacroTrainingInfo, &MainView);
+		Ui()->DoLabel(&MacroTrainingInfo,
+			Localize("Когда макрос ждёт совпадения позиции, веди тии вручную. Этот участок добавится в макрос для следующих запусков."),
+			11.0f, TEXTALIGN_ML);
 
 		CUIRect SearchRow;
 		MainView.HSplitTop(25.0f, &SearchRow, &MainView);
@@ -875,8 +888,9 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		if(AddSettingRow(22.0f, SamplesRow))
 		{
 			char aSamples[128];
-			str_format(aSamples, sizeof(aSamples), "Сохранено примеров: %d",
-				GameClient()->m_Controls.AutoUnfreezeTrainingSampleCount());
+			str_format(aSamples, sizeof(aSamples), "Примеров: %d  |  успешных анфризов: %d/3",
+				GameClient()->m_Controls.AutoUnfreezeTrainingSampleCount(),
+				GameClient()->m_Controls.AutoUnfreezeTrainingEpisodeCount());
 			Ui()->DoLabel(&SamplesRow, aSamples, 12.0f, TEXTALIGN_ML);
 		}
 
@@ -891,7 +905,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		CUIRect TrainingInfo;
 		if(AddSettingRow(54.0f, TrainingInfo))
 			Ui()->DoLabel(&TrainingInfo,
-				Localize("Включи обучение и вручную размораживайся. Когда заморозка закончится, успешный эпизод сохранится. Автоанфриз подбирает похожие примеры по позиции на карте, скорости и оставшемуся фризу. Это обучаемая база примеров, а не полноценная нейросеть."),
+				Localize("Включи обучение и успешно разморозься вручную 3 раза. После этого модель начнёт подбирать похожие действия и пробовать зеркальный вариант по горизонтали. Это обучение на примерах, а не полноценная нейросеть."),
 				12.0f, TEXTALIGN_ML);
 
 		AddSection("КОМАНДЫ В ТРЕНИРОВКЕ");

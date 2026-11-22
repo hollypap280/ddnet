@@ -95,6 +95,7 @@ public:
 	bool PlayMacro(const char *pName);
 	bool DeleteMacro(const char *pName);
 	int AutoUnfreezeTrainingSampleCount();
+	int AutoUnfreezeTrainingEpisodeCount();
 	void ClearAutoUnfreezeTraining();
 
 private:
@@ -133,6 +134,24 @@ private:
 		int m_HasCoordinates = 1;
 		// Tee controlled in this private-world frame, or -1 in older macros.
 		int m_ClientId = -1;
+		// Freeze state is separate from CCharacterCore and must be replayed too.
+		int m_PreFreezeTime = 0;
+		int m_FreezeTime = 0;
+		int m_PreFrozenLastTick = 0;
+		int m_FrozenLastTick = 0;
+	};
+	struct SMacroFrameV4
+	{
+		CNetObj_PlayerInput m_Input{};
+		CNetObj_CharacterCore m_PreCore{};
+		CNetObj_CharacterCore m_Core{};
+		CNetObj_Character m_Character{};
+		int m_PreWeapon = WEAPON_HAMMER;
+		int m_Weapon = WEAPON_HAMMER;
+		int m_AttackTick = 0;
+		int m_Tick = 0;
+		int m_HasCoordinates = 1;
+		int m_ClientId = -1;
 	};
 	struct SMacroFrameV3
 	{
@@ -159,8 +178,10 @@ private:
 		int m_TargetY;
 	};
 	std::vector<SMacroFrame> m_vMacroFrames;
+	std::vector<SMacroFrame> m_vMacroCorrectionFrames;
 	std::vector<SAutoUnfreezeSample> m_vAutoUnfreezeSamples;
 	std::vector<SAutoUnfreezeSample> m_vAutoUnfreezeEpisode;
+	int m_AutoUnfreezeCompletedEpisodes = 0;
 	bool m_AutoUnfreezeTrainingLoaded = false;
 	bool m_AutoUnfreezeWasFrozen = false;
 	int m_AutoUnfreezeLastPredTick = -1;
@@ -172,6 +193,7 @@ private:
 	bool m_MacroPlaying = false;
 	bool m_MacroPlaybackLive = false;
 	bool m_MacroPlaybackOwnsDummy = false;
+	bool m_MacroPlaybackOwnsPractice = false;
 	int m_MacroPlaybackLastTick = -1;
 	bool m_MacroRewindHeld = false;
 	int64_t m_MacroRewindHeldSince = 0;
@@ -196,6 +218,7 @@ private:
 	CNetObj_Character m_MacroPracticeRenderChar{};
 	bool m_MacroPracticeHasRenderChar = false;
 	char m_aMacroMapName[64] = "Неизвестная карта";
+	char m_aLoadedMacroName[64] = "";
 	bool m_aManualHook[NUM_DUMMIES]{};
 	bool m_aAutoHookActive[NUM_DUMMIES]{};
 	bool m_aAutoHookFireActive[NUM_DUMMIES]{};

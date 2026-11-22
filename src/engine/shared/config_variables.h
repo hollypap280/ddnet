@@ -229,6 +229,7 @@ MACRO_CONFIG_INT(ClAutoUnfreezeLaser, cl_auto_unfreeze_laser, 0, 0, 1, CFGFLAG_C
 MACRO_CONFIG_INT(ClAutoEdgeHook, cl_auto_edge_hook, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Автоматически цепляться крюком у края платформы без прыжка")
 MACRO_CONFIG_INT(ClMacroRewindStep, cl_macro_rewind_step, 50, 1, 18000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Количество тиков для перемотки макроса")
 MACRO_CONFIG_INT(ClMacroLoop, cl_macro_loop, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Повторять воспроизведение макроса по кругу")
+MACRO_CONFIG_INT(ClMacroTraining, cl_macro_training, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Обучать макрос по ручным исправлениям пути в тренировочном мире")
 MACRO_CONFIG_INT(ClAutoUnfreezeTraining, cl_auto_unfreeze_training, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Собирать примеры ручной успешной разморозки для обучения")
 MACRO_CONFIG_INT(ClAutoUnfreezeAI, cl_auto_unfreeze_ai, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Использовать обученные примеры для автоматической разморозки")
 MACRO_CONFIG_INT(ClMacroPracticeRate, cl_macro_practice_rate, 50, 1, 50, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Количество тренировочных тиков, выполняемых за одну реальную секунду")

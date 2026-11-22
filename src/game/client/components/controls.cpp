@@ -288,7 +288,7 @@ void CControls::SendPracticeTeleportToCursor(int Conn)
 namespace
 {
 	constexpr uint32_t MACRO_FILE_MAGIC = 0x444D4143;
-	constexpr uint32_t MACRO_FILE_VERSION = 4;
+	constexpr uint32_t MACRO_FILE_VERSION = 5;
 	constexpr uint32_t MACRO_MAX_FRAMES = 18000;
 }
 
@@ -470,6 +470,9 @@ void CControls::StopMacroPractice()
 	m_MacroPracticeLastTime = 0;
 	m_MacroPracticeLocalId = -1;
 	m_MacroPlaybackOwnsDummy = false;
+	m_MacroPlaybackOwnsPractice = false;
+	m_vMacroCorrectionFrames.clear();
+	m_aLoadedMacroName[0] = '\0';
 	m_MacroPlaybackLive = false;
 	m_MacroPlaybackLastTick = -1;
 	m_MacroRewindHeld = false;
@@ -655,6 +658,8 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 		pCharacter->SetCore(Core);
 		pCharacter->m_Pos = Core.m_Pos;
 		pCharacter->SetActiveWeapon(Frame.m_Weapon);
+		pCharacter->m_FreezeTime = Frame.m_FreezeTime;
+		pCharacter->m_FrozenLastTick = Frame.m_FrozenLastTick != 0;
 		m_MacroPracticeWorld.m_GameTick = Frame.m_Tick;
 		m_MacroPracticeTick = Frame.m_Tick;
 
@@ -713,6 +718,8 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput)
 					pCharacter->m_PrevPos = FirstCore.m_Pos;
 					pCharacter->m_PrevPrevPos = FirstCore.m_Pos;
 					pCharacter->SetActiveWeapon(FirstFrame.m_PreWeapon);
+					pCharacter->m_FreezeTime = FirstFrame.m_PreFreezeTime;
+					pCharacter->m_FrozenLastTick = FirstFrame.m_PreFrozenLastTick != 0;
 					m_MacroPracticeWorld.m_GameTick = std::max(0, FirstFrame.m_Tick - 1);
 					m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
 				}
@@ -729,13 +736,17 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput)
 				return;
 			}
 
+			const bool StopOwnedPractice = m_MacroPlaybackOwnsPractice;
 			m_MacroPlaying = false;
+			m_MacroPlaybackOwnsPractice = false;
 			m_MacroPracticeWaiting = false;
 			CNetObj_PlayerInput IdleInput{};
 			IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
 			IdleInput.m_TargetX = 1;
 			pCharacter->SetInput(&IdleInput);
 			GameClient()->Echo("Воспроизведение макроса завершено");
+			if(StopOwnedPractice)
+				StopMacroPractice();
 			return;
 		}
 
@@ -755,7 +766,20 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput)
 			else
 			{
 				m_MacroPracticeWaiting = false;
-				TickInput = Frame.m_Input;
+				if(g_Config.m_ClMacroTraining && !m_vMacroCorrectionFrames.empty())
+				{
+					const std::size_t CorrectionCount = m_vMacroCorrectionFrames.size();
+					m_vMacroFrames.insert(m_vMacroFrames.begin() + static_cast<std::vector<SMacroFrame>::difference_type>(m_MacroPlaybackIndex),
+						m_vMacroCorrectionFrames.begin(), m_vMacroCorrectionFrames.end());
+					m_MacroPlaybackIndex += CorrectionCount;
+					m_vMacroCorrectionFrames.clear();
+					if(m_aLoadedMacroName[0] && SaveMacro(m_aLoadedMacroName))
+						GameClient()->Echo("Макрос обучен: ручная коррекция сохранена для следующих запусков.");
+					else
+						GameClient()->Echo("Не удалось сохранить обученную коррекцию макроса.");
+				}
+				const SMacroFrame &ReadyFrame = m_vMacroFrames[m_MacroPlaybackIndex];
+				TickInput = ReadyFrame.m_Input;
 				TickInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
 				ReplayRecordedFrame = true;
 			}
@@ -789,12 +813,15 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput)
 		TickInput.m_Fire = m_MacroPracticeFireCounter;
 	}
 
+	const bool LearnMacroCorrection = m_MacroPlaying && m_MacroPracticeWaiting && g_Config.m_ClMacroTraining;
 	SMacroFrame NewFrame;
-	if(m_MacroRecording)
+	if(m_MacroRecording || LearnMacroCorrection)
 	{
 		NewFrame.m_Input = TickInput;
 		pCharacter->Core()->Write(&NewFrame.m_PreCore);
 		NewFrame.m_PreWeapon = pCharacter->GetActiveWeapon();
+		NewFrame.m_PreFreezeTime = pCharacter->m_FreezeTime;
+		NewFrame.m_PreFrozenLastTick = pCharacter->m_FrozenLastTick ? 1 : 0;
 		NewFrame.m_HasCoordinates = 1;
 		NewFrame.m_ClientId = m_MacroPracticeLocalId;
 	}
@@ -815,21 +842,30 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput)
 		return;
 	}
 
-	if(m_MacroRecording)
+	if(m_MacroRecording || LearnMacroCorrection)
 	{
 		pCharacter->Core()->Write(&NewFrame.m_Core);
 		NewFrame.m_Weapon = pCharacter->GetActiveWeapon();
 		NewFrame.m_AttackTick = pCharacter->GetAttackTick();
 		NewFrame.m_Tick = m_MacroPracticeTick;
+		NewFrame.m_FreezeTime = pCharacter->m_FreezeTime;
+		NewFrame.m_FrozenLastTick = pCharacter->m_FrozenLastTick ? 1 : 0;
 		static_cast<CNetObj_CharacterCore &>(NewFrame.m_Character) = NewFrame.m_Core;
 		NewFrame.m_Character.m_Weapon = NewFrame.m_Weapon;
 		NewFrame.m_Character.m_AttackTick = NewFrame.m_AttackTick;
 		NewFrame.m_Character.m_Tick = NewFrame.m_Tick;
-		m_vMacroFrames.push_back(NewFrame);
-		if(m_vMacroFrames.size() >= MACRO_MAX_FRAMES)
+		if(m_MacroRecording)
 		{
-			m_MacroRecording = false;
-			GameClient()->Echo("Запись достигла ограничения в 18000 тиков");
+			m_vMacroFrames.push_back(NewFrame);
+			if(m_vMacroFrames.size() >= MACRO_MAX_FRAMES)
+			{
+				m_MacroRecording = false;
+				GameClient()->Echo("Запись достигла ограничения в 18000 тиков");
+			}
+		}
+		else
+		{
+			m_vMacroCorrectionFrames.push_back(NewFrame);
 		}
 	}
 	else if(m_MacroPlaying && ReplayRecordedFrame)
@@ -843,6 +879,8 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput)
 			pCharacter->SetCore(RecordedCore);
 			pCharacter->m_Pos = RecordedCore.m_Pos;
 			pCharacter->SetActiveWeapon(PlayedFrame.m_Weapon);
+			pCharacter->m_FreezeTime = PlayedFrame.m_FreezeTime;
+			pCharacter->m_FrozenLastTick = PlayedFrame.m_FrozenLastTick != 0;
 			m_MacroPracticeWorld.m_GameTick = PlayedFrame.m_Tick;
 			m_MacroPracticeTick = PlayedFrame.m_Tick;
 		}
@@ -888,6 +926,7 @@ void CControls::StartMacroRecording()
 	m_MacroPracticeLastTime = time_get();
 	m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
 	m_vMacroFrames.clear();
+	m_vMacroCorrectionFrames.clear();
 	m_MacroRecording = true;
 	GameClient()->Echo("Запись началась в отдельном тренировочном мире");
 }
@@ -895,6 +934,7 @@ void CControls::StartMacroRecording()
 void CControls::StopMacroRecording()
 {
 	const bool WasRecording = m_MacroRecording;
+	const bool StopOwnedPractice = m_MacroPlaying && m_MacroPlaybackOwnsPractice;
 	if(m_MacroRecording)
 	{
 		m_MacroRecording = false;
@@ -915,6 +955,7 @@ void CControls::StopMacroRecording()
 	}
 	m_MacroPlaying = false;
 	m_MacroPlaybackLive = false;
+	m_MacroPlaybackOwnsPractice = false;
 	m_MacroPlaybackLastTick = -1;
 	m_MacroRewindHeld = false;
 	m_MacroRewindHeldSince = 0;
@@ -937,6 +978,8 @@ void CControls::StopMacroRecording()
 			pCharacter->SetInput(&IdleInput);
 		}
 	}
+	if(StopOwnedPractice)
+		StopMacroPractice();
 }
 
 bool CControls::SaveMacro(const char *pName)
@@ -984,14 +1027,38 @@ bool CControls::PlayMacro(const char *pName)
 
 	const int64_t RemainingBytes = Valid ? io_length(File) - io_tell(File) : 0;
 	const int64_t CurrentFrameBytes = (int64_t)Count * sizeof(SMacroFrame);
+	const int64_t Version4FrameBytes = (int64_t)Count * sizeof(SMacroFrameV4);
 	const int64_t Version3FrameBytes = (int64_t)Count * sizeof(SMacroFrameV3);
 	const int64_t LegacyFrameBytes = (int64_t)Count * sizeof(SMacroFrameV1);
 	std::vector<SMacroFrame> Frames;
-	if(Valid && Version >= 4)
+	if(Valid && Version >= 5)
 	{
 		Frames.resize(Count);
 		Valid = RemainingBytes == CurrentFrameBytes &&
 			io_read(File, Frames.data(), CurrentFrameBytes) == CurrentFrameBytes;
+	}
+	else if(Valid && Version == 4)
+	{
+		std::vector<SMacroFrameV4> OldFrames(Count);
+		Valid = RemainingBytes == Version4FrameBytes &&
+			io_read(File, OldFrames.data(), Version4FrameBytes) == Version4FrameBytes;
+		if(Valid)
+		{
+			Frames.resize(Count);
+			for(uint32_t i = 0; i < Count; ++i)
+			{
+				Frames[i].m_Input = OldFrames[i].m_Input;
+				Frames[i].m_PreCore = OldFrames[i].m_PreCore;
+				Frames[i].m_Core = OldFrames[i].m_Core;
+				Frames[i].m_Character = OldFrames[i].m_Character;
+				Frames[i].m_PreWeapon = OldFrames[i].m_PreWeapon;
+				Frames[i].m_Weapon = OldFrames[i].m_Weapon;
+				Frames[i].m_AttackTick = OldFrames[i].m_AttackTick;
+				Frames[i].m_Tick = OldFrames[i].m_Tick;
+				Frames[i].m_HasCoordinates = OldFrames[i].m_HasCoordinates;
+				Frames[i].m_ClientId = OldFrames[i].m_ClientId;
+			}
+		}
 	}
 	else if(Valid && (Version >= 2 || (Version == 1 && RemainingBytes == Version3FrameBytes)))
 	{
@@ -1062,19 +1129,24 @@ bool CControls::PlayMacro(const char *pName)
 	if(Frames[0].m_ClientId >= 0 && !SwitchMacroPracticeCharacter(Frames[0].m_ClientId))
 	{
 		GameClient()->Echo("Не удалось выбрать начального тии из записи.");
+		StopMacroPractice();
 		return false;
 	}
 	CCharacter *pPracticeCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId);
 	if(!pPracticeCharacter)
 	{
 		GameClient()->Echo("Не удалось найти тренировочного тии для воспроизведения.");
+		StopMacroPractice();
 		return false;
 	}
 
 	m_vMacroFrames = std::move(Frames);
+	m_vMacroCorrectionFrames.clear();
+	str_copy(m_aLoadedMacroName, pName);
 	m_MacroPlaybackOwnsDummy = std::any_of(m_vMacroFrames.begin(), m_vMacroFrames.end(), [](const SMacroFrame &Frame) { return Frame.m_ClientId >= 0; });
 	m_MacroRecording = false;
 	m_MacroPlaybackLive = false;
+	m_MacroPlaybackOwnsPractice = true;
 	m_MacroPlaying = true;
 	m_MacroPlaybackIndex = 0;
 	m_MacroCurrentFrame = {};
@@ -1098,6 +1170,8 @@ bool CControls::PlayMacro(const char *pName)
 		pPracticeCharacter->m_PrevPos = Core.m_Pos;
 		pPracticeCharacter->m_PrevPrevPos = Core.m_Pos;
 		pPracticeCharacter->SetActiveWeapon(FirstFrame.m_PreWeapon);
+		pPracticeCharacter->m_FreezeTime = FirstFrame.m_PreFreezeTime;
+		pPracticeCharacter->m_FrozenLastTick = FirstFrame.m_PreFrozenLastTick != 0;
 		pPracticeCharacter->m_IsLocal = true;
 		m_MacroPracticeWorld.m_GameTick = std::max(0, FirstFrame.m_Tick - 1);
 		m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
@@ -1250,38 +1324,21 @@ bool CControls::IsMacroPracticeBindSafe(const char *pBind) const
 		if(*pName == '+' || *pName == '-')
 			++pName;
 
-		const bool IsInputCommand =
-			str_comp(pName, "left") == 0 ||
-			str_comp(pName, "right") == 0 ||
-			str_comp(pName, "jump") == 0 ||
-			str_comp(pName, "hook") == 0 ||
-			str_comp(pName, "fire") == 0 ||
-			str_comp(pName, "weapon1") == 0 ||
-			str_comp(pName, "weapon2") == 0 ||
-			str_comp(pName, "weapon3") == 0 ||
-			str_comp(pName, "weapon4") == 0 ||
-			str_comp(pName, "weapon5") == 0 ||
-			str_comp(pName, "nextweapon") == 0 ||
-			str_comp(pName, "prevweapon") == 0 ||
-			str_comp(pName, "showhookcoll") == 0 ||
-			str_comp(pName, "macro_rewind") == 0 ||
-			str_comp(pName, "macro_seek") == 0 ||
-			str_comp(pName, "macro_slow") == 0 ||
-			str_comp(pName, "cl_dummy") == 0;
-
-		bool IsDummyToggle = false;
-		if(str_comp(pName, "toggle") == 0)
-		{
-			while(*p && std::isspace((unsigned char)*p))
-				++p;
-			const char *pVariable = p;
-			while(*p && !std::isspace((unsigned char)*p) && *p != ';')
-				++p;
-			IsDummyToggle = (size_t)(p - pVariable) == (size_t)str_length("cl_dummy") &&
-				str_comp_num(pVariable, "cl_dummy", str_length("cl_dummy")) == 0;
-		}
-
-		if(!IsInputCommand && !IsDummyToggle)
+		// Custom binds continue to work in the private world. Only commands
+		// that would change the real server session are blocked.
+		const bool IsLiveServerCommand =
+			str_comp(pName, "connect") == 0 ||
+			str_comp(pName, "disconnect") == 0 ||
+			str_comp(pName, "quit") == 0 ||
+			str_comp(pName, "kill") == 0 ||
+			str_comp(pName, "team") == 0 ||
+			str_comp(pName, "join") == 0 ||
+			str_comp(pName, "spectate") == 0 ||
+			str_comp(pName, "rcon") == 0 ||
+			str_comp(pName, "vote") == 0 ||
+			str_comp(pName, "timeout") == 0 ||
+			str_comp(pName, "ready") == 0;
+		if(IsLiveServerCommand)
 			return false;
 
 		HasCommand = true;
@@ -1296,7 +1353,7 @@ bool CControls::IsMacroPracticeBindSafe(const char *pBind) const
 namespace
 {
 	constexpr uint32_t AUTO_UNFREEZE_MAGIC = 0x414E4652;
-	constexpr uint32_t AUTO_UNFREEZE_VERSION = 1;
+	constexpr uint32_t AUTO_UNFREEZE_VERSION = 2;
 	constexpr uint32_t AUTO_UNFREEZE_MAX_SAMPLES = 50000;
 	const char *AUTO_UNFREEZE_FILE = "auto_unfreeze_training.dat";
 }
@@ -1311,19 +1368,26 @@ void CControls::LoadAutoUnfreezeTraining()
 	if(!File)
 		return;
 
-	uint32_t Magic = 0, Version = 0, Count = 0;
-	const bool HeaderValid =
+	uint32_t Magic = 0, Version = 0, Count = 0, Episodes = 0;
+	bool HeaderValid =
 		io_read(File, &Magic, sizeof(Magic)) == sizeof(Magic) &&
 		io_read(File, &Version, sizeof(Version)) == sizeof(Version) &&
 		io_read(File, &Count, sizeof(Count)) == sizeof(Count) &&
-		Magic == AUTO_UNFREEZE_MAGIC && Version == AUTO_UNFREEZE_VERSION &&
+		Magic == AUTO_UNFREEZE_MAGIC && Version >= 1 && Version <= AUTO_UNFREEZE_VERSION &&
 		Count <= AUTO_UNFREEZE_MAX_SAMPLES;
+	if(HeaderValid && Version >= 2)
+		HeaderValid = io_read(File, &Episodes, sizeof(Episodes)) == sizeof(Episodes);
 	if(HeaderValid)
 	{
 		m_vAutoUnfreezeSamples.resize(Count);
 		if(io_read(File, m_vAutoUnfreezeSamples.data(), Count * sizeof(SAutoUnfreezeSample)) !=
 			(int64_t)Count * sizeof(SAutoUnfreezeSample))
+		{
 			m_vAutoUnfreezeSamples.clear();
+			HeaderValid = false;
+		}
+		if(HeaderValid)
+			m_AutoUnfreezeCompletedEpisodes = Version >= 2 ? (int)Episodes : (Count > 0 ? 1 : 0);
 	}
 	io_close(File);
 }
@@ -1340,10 +1404,12 @@ void CControls::SaveAutoUnfreezeTraining()
 	const uint32_t Magic = AUTO_UNFREEZE_MAGIC;
 	const uint32_t Version = AUTO_UNFREEZE_VERSION;
 	const uint32_t Count = (uint32_t)std::min<std::size_t>(m_vAutoUnfreezeSamples.size(), AUTO_UNFREEZE_MAX_SAMPLES);
+	const uint32_t Episodes = (uint32_t)std::max(0, m_AutoUnfreezeCompletedEpisodes);
 	const bool Written =
 		io_write(File, &Magic, sizeof(Magic)) == sizeof(Magic) &&
 		io_write(File, &Version, sizeof(Version)) == sizeof(Version) &&
 		io_write(File, &Count, sizeof(Count)) == sizeof(Count) &&
+		io_write(File, &Episodes, sizeof(Episodes)) == sizeof(Episodes) &&
 		io_write(File, m_vAutoUnfreezeSamples.data(), Count * sizeof(SAutoUnfreezeSample)) ==
 			(int64_t)Count * sizeof(SAutoUnfreezeSample);
 	io_close(File);
@@ -1357,11 +1423,18 @@ int CControls::AutoUnfreezeTrainingSampleCount()
 	return (int)m_vAutoUnfreezeSamples.size();
 }
 
+int CControls::AutoUnfreezeTrainingEpisodeCount()
+{
+	LoadAutoUnfreezeTraining();
+	return m_AutoUnfreezeCompletedEpisodes;
+}
+
 void CControls::ClearAutoUnfreezeTraining()
 {
 	LoadAutoUnfreezeTraining();
 	m_vAutoUnfreezeSamples.clear();
 	m_vAutoUnfreezeEpisode.clear();
+	m_AutoUnfreezeCompletedEpisodes = 0;
 	m_AutoUnfreezeWasFrozen = false;
 	Storage()->RemoveFile(AUTO_UNFREEZE_FILE, IStorage::TYPE_SAVE);
 }
@@ -1390,10 +1463,11 @@ void CControls::UpdateAutoUnfreezeTraining(int Dummy, const CCharacterCore &Core
 				{
 					m_vAutoUnfreezeSamples.insert(m_vAutoUnfreezeSamples.end(),
 						m_vAutoUnfreezeEpisode.begin(), m_vAutoUnfreezeEpisode.begin() + Add);
+					++m_AutoUnfreezeCompletedEpisodes;
 					SaveAutoUnfreezeTraining();
-					char aMessage[128];
-					str_format(aMessage, sizeof(aMessage), "Автоанфриз обучен: сохранено примеров %d",
-						(int)m_vAutoUnfreezeSamples.size());
+					char aMessage[160];
+					str_format(aMessage, sizeof(aMessage), "Автоанфриз: разморозка %d/3, примеров %d",
+						m_AutoUnfreezeCompletedEpisodes, (int)m_vAutoUnfreezeSamples.size());
 					GameClient()->Echo(aMessage);
 				}
 			}
@@ -1443,7 +1517,9 @@ bool CControls::ApplyTrainedAutoUnfreeze(int Dummy, const CCharacterCore &Core, 
 	if(!g_Config.m_ClAutoUnfreezeAI || !Frozen || m_MacroRecording || m_MacroPlaying)
 		return false;
 	LoadAutoUnfreezeTraining();
-	if(m_vAutoUnfreezeSamples.empty())
+	// Wait for three complete successful manual escapes before attempting
+	// to generalize their action sequences.
+	if(m_AutoUnfreezeCompletedEpisodes < 3 || m_vAutoUnfreezeSamples.empty())
 		return false;
 
 	const int MapIndex = Collision()->GetMapIndex(Position);
@@ -1451,28 +1527,35 @@ bool CControls::ApplyTrainedAutoUnfreeze(int Dummy, const CCharacterCore &Core, 
 	const int VelY = round_to_int(Core.m_Vel.y / 2.0f);
 	const SAutoUnfreezeSample *pBest = nullptr;
 	int BestScore = std::numeric_limits<int>::max();
+	bool BestMirrored = false;
 	for(const SAutoUnfreezeSample &Sample : m_vAutoUnfreezeSamples)
 	{
-		const int Score = std::abs(Sample.m_MapIndex - MapIndex) * 80 +
-			std::abs(Sample.m_VelX - VelX) * 3 +
-			std::abs(Sample.m_VelY - VelY) * 3 +
-			(Sample.m_Weapon == Core.m_ActiveWeapon ? 0 : 100) +
-			(Sample.m_FreezeTicks < 0 || FreezeTicks < 0 ? 0 : std::abs(Sample.m_FreezeTicks - FreezeTicks) / 5);
-		if(Score < BestScore)
+		for(int Mirror = 0; Mirror < 2; ++Mirror)
 		{
-			BestScore = Score;
-			pBest = &Sample;
+			const int SampleVelX = Mirror ? -Sample.m_VelX : Sample.m_VelX;
+			const int LocationPenalty = std::min(std::abs(Sample.m_MapIndex - MapIndex), 48) * 3;
+			const int Score = LocationPenalty +
+				std::abs(SampleVelX - VelX) * 3 +
+				std::abs(Sample.m_VelY - VelY) * 3 +
+				(Sample.m_Weapon == Core.m_ActiveWeapon ? 0 : 100) +
+				(Sample.m_FreezeTicks < 0 || FreezeTicks < 0 ? 0 : std::abs(Sample.m_FreezeTicks - FreezeTicks) / 5);
+			if(Score < BestScore)
+			{
+				BestScore = Score;
+				pBest = &Sample;
+				BestMirrored = Mirror != 0;
+			}
 		}
 	}
 
 	if(!pBest || BestScore > 280)
 		return false;
 
-	m_aInputData[Dummy].m_Direction = pBest->m_Direction;
+	m_aInputData[Dummy].m_Direction = BestMirrored ? -pBest->m_Direction : pBest->m_Direction;
 	m_aInputData[Dummy].m_Jump = pBest->m_Jump;
 	m_aInputData[Dummy].m_Hook = pBest->m_Hook;
 	m_aInputData[Dummy].m_WantedWeapon = pBest->m_WantedWeapon;
-	m_aInputData[Dummy].m_TargetX = pBest->m_TargetX;
+	m_aInputData[Dummy].m_TargetX = BestMirrored ? -pBest->m_TargetX : pBest->m_TargetX;
 	m_aInputData[Dummy].m_TargetY = pBest->m_TargetY;
 	if((m_aInputData[Dummy].m_Fire & 1) != pBest->m_Fire)
 		++m_aInputData[Dummy].m_Fire;
