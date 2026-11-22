@@ -1,6 +1,7 @@
 #include "freezebars.h"
 
 #include <game/client/gameclient.h>
+#include <game/client/prediction/entities/character.h>
 
 void CFreezeBars::RenderFreezeBar(const int ClientId)
 {
@@ -231,24 +232,58 @@ void CFreezeBars::OnRender()
 
 	int LocalClientId = GameClient()->m_Snap.m_LocalClientId;
 
-	// render everyone else's freeze bar, then our own
+	const bool MacroPractice = GameClient()->m_Controls.MacroPracticeActive();
+	const int MainLocalId = GameClient()->m_aLocalIds[0];
+	const int DummyLocalId = GameClient()->m_aLocalIds[1];
+
+	// Render regular server tees first. While FP is active the two server-side
+	// local tees are only idle markers; their freeze bars belong to the clones.
 	for(int ClientId = 0; ClientId < MAX_CLIENTS; ClientId++)
 	{
-		if(ClientId == LocalClientId || !IsPlayerInfoAvailable(ClientId))
+		if(ClientId == LocalClientId || !IsPlayerInfoAvailable(ClientId) ||
+			(MacroPractice && (ClientId == MainLocalId || ClientId == DummyLocalId)))
 		{
 			continue;
 		}
 
-		//don't render if the tee is offscreen
 		if(!ScreenRect.Inside(GameClient()->m_aClients[ClientId].m_RenderPos))
-		{
 			continue;
-		}
 
 		RenderFreezeBar(ClientId);
 	}
-	if(LocalClientId != -1 && IsPlayerInfoAvailable(LocalClientId))
-	{
+	if(!MacroPractice && LocalClientId != -1 && IsPlayerInfoAvailable(LocalClientId))
 		RenderFreezeBar(LocalClientId);
+
+	// The private practice world is rendered after foreground map tiles. Use
+	// DDNet's actual FreezeBar sprites and geometry for every cloned tee.
+	if(CGameWorld *pPracticeWorld = GameClient()->m_Controls.MacroPracticeWorld())
+	{
+		const int PracticeTick = pPracticeWorld->GameTick();
+		for(CEntity *pEnt = pPracticeWorld->FindFirst(CGameWorld::ENTTYPE_CHARACTER); pEnt; pEnt = pEnt->TypeNext())
+		{
+			auto *pCharacter = static_cast<CCharacter *>(pEnt);
+			const CCharacterCore &Core = *pCharacter->Core();
+			if(Core.m_FreezeStart <= 0 || Core.m_FreezeEnd <= Core.m_FreezeStart || Core.m_FreezeEnd <= PracticeTick)
+				continue;
+
+			const int64_t Duration = (int64_t)Core.m_FreezeEnd - Core.m_FreezeStart;
+			const float Progress = std::clamp<int64_t>((int64_t)Core.m_FreezeEnd - PracticeTick, 0, Duration) / (float)Duration;
+			if(Progress <= 0.0f)
+				continue;
+
+			float Alpha = GameClient()->IsOtherTeam(pCharacter->GetCid()) ? g_Config.m_ClShowOthersAlpha / 100.0f : 1.0f;
+			if(Core.m_IsInFreeze)
+			{
+				if(g_Config.m_ClFreezeBarsAlphaInsideFreeze == 0)
+					continue;
+				Alpha *= g_Config.m_ClFreezeBarsAlphaInsideFreeze / 100.0f;
+			}
+
+			const vec2 Position = Core.m_Pos;
+			if(!ScreenRect.Inside(Position))
+				continue;
+
+			RenderFreezeBarPos(Position.x - 32.0f, Position.y + 32.0f, 64.0f, 16.0f, Progress, Alpha);
+		}
 	}
 }
