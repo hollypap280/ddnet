@@ -400,27 +400,36 @@ void CGhost::OnRender()
 				const CNetObj_Character &Other = m_aMacroPracticeCurrent[OtherId];
 				IsInteracting = Other.m_HookState == HOOK_GRABBED && Other.m_HookedPlayer == ClientId;
 			}
+			const bool IsOwnTee = ClientId == GameClient()->m_aLocalIds[0] || ClientId == GameClient()->m_aLocalIds[1];
 			GameClient()->m_Players.RenderPlayer(ScreenRect, &m_aMacroPracticePrev[ClientId], &m_aMacroPracticeCurrent[ClientId],
-				&RenderInfo, -3, 1.0f, IsInteracting ? 0.38f : 1.0f);
+				&RenderInfo, -3, 1.0f, (IsOwnTee || !IsInteracting) ? 1.0f : 0.38f);
 
-			char aFreezeStatus[64];
-			if(m_aMacroPracticeFreezeTicks[ClientId] > 0)
-				str_format(aFreezeStatus, sizeof(aFreezeStatus), "%d тиков", m_aMacroPracticeFreezeTicks[ClientId]);
-			else if(m_aMacroPracticeFreezeTicks[ClientId] < 0)
-				str_copy(aFreezeStatus, "ГЛУБОКИЙ ФРИЗ");
-			else if(m_aMacroPracticeUnfreezeUntil[ClientId] >= GameClient()->m_Controls.MacroPracticeTick())
-				str_copy(aFreezeStatus, "АНФРИЗ!");
-			else
-				continue;
-			const float FontSize = 11.0f;
-			const float Width = TextRender()->TextWidth(FontSize, aFreezeStatus);
-			const float X = m_aMacroPracticeCurrent[ClientId].m_X - Width * 0.5f;
-			const float Y = m_aMacroPracticeCurrent[ClientId].m_Y - 57.0f;
-			TextRender()->TextColor(ColorRGBA(0.45f, 0.9f, 1.0f, 1.0f));
-			TextRender()->TextOutlineColor(ColorRGBA(0.0f, 0.0f, 0.0f, 0.9f));
-			TextRender()->Text(X, Y, FontSize, aFreezeStatus);
-			TextRender()->TextColor(ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f));
-			TextRender()->TextOutlineColor(ColorRGBA(0.0f, 0.0f, 0.0f, 0.3f));
+			// Show a compact bar under the tee instead of a floating tick counter.
+			// The bar drains during a timed freeze and briefly remains after unfreeze.
+			const int PracticeTick = GameClient()->m_Controls.MacroPracticeTick();
+			const int FreezeTicks = m_aMacroPracticeFreezeTicks[ClientId];
+			float Progress = -1.0f;
+			if(FreezeTicks < 0)
+				Progress = 1.0f; // deep/live freeze
+			else if(FreezeTicks > 0)
+				Progress = std::clamp(FreezeTicks /
+					(float)std::max(1, m_aMacroPracticeFreezeTotalTicks[ClientId]), 0.0f, 1.0f);
+			else if(m_aMacroPracticeUnfreezeUntil[ClientId] > PracticeTick)
+				Progress = std::clamp((m_aMacroPracticeUnfreezeUntil[ClientId] - PracticeTick) /
+					(float)SERVER_TICK_SPEED, 0.0f, 1.0f);
+
+			if(Progress >= 0.0f)
+			{
+				const float BarWidth = 48.0f;
+				const float BarHeight = 4.0f;
+				const float X = m_aMacroPracticeCurrent[ClientId].m_X - BarWidth * 0.5f;
+				const float Y = m_aMacroPracticeCurrent[ClientId].m_Y + 36.0f;
+				Graphics()->DrawRect(X, Y, BarWidth, BarHeight,
+					ColorRGBA(0.0f, 0.0f, 0.0f, 0.75f), IGraphics::CORNER_ALL, 1.5f);
+				if(Progress > 0.0f)
+					Graphics()->DrawRect(X + 1.0f, Y + 1.0f, (BarWidth - 2.0f) * Progress, BarHeight - 2.0f,
+						ColorRGBA(0.45f, 0.85f, 1.0f, 0.95f), IGraphics::CORNER_ALL, 1.0f);
+			}
 		}
 	}
 }
@@ -461,19 +470,26 @@ void CGhost::SetMacroPracticeWorld(CGameWorld *pWorld)
 		const CCharacterCore &Core = *pCharacter->Core();
 		const int PracticeTick = pWorld->GameTick();
 		const int CoreFreezeTicks = Core.m_FreezeEnd > PracticeTick ? Core.m_FreezeEnd - PracticeTick : 0;
-		const bool Frozen = pCharacter->m_FreezeTime > 0 || Core.m_FreezeEnd > PracticeTick ||
-			Core.m_FreezeEnd < 0 || Core.m_DeepFrozen || Core.m_LiveFrozen;
-		m_aMacroPracticeFreezeTicks[ClientId] =
-			(Core.m_DeepFrozen || Core.m_LiveFrozen || Core.m_FreezeEnd < 0) ? -1 :
-			(pCharacter->m_FreezeTime > 0 ? pCharacter->m_FreezeTime : CoreFreezeTicks);
+		// The core freeze end is cleared by Unfreeze(). Do not keep showing a
+		// freeze just because the character's cached countdown has gone stale.
+		const bool PermanentFrozen = Core.m_DeepFrozen || Core.m_LiveFrozen || Core.m_FreezeEnd < 0;
+		const bool Frozen = PermanentFrozen || Core.m_FreezeEnd > PracticeTick;
+		m_aMacroPracticeFreezeTicks[ClientId] = PermanentFrozen ? -1 : (Frozen ? CoreFreezeTicks : 0);
+		if(Frozen && (!m_aMacroPracticeWasFrozen[ClientId] ||
+			m_aMacroPracticeFreezeTicks[ClientId] > m_aMacroPracticeFreezeTotalTicks[ClientId]))
+			m_aMacroPracticeFreezeTotalTicks[ClientId] = std::max(1, m_aMacroPracticeFreezeTicks[ClientId]);
 		if(m_aMacroPracticeWasFrozen[ClientId] && !Frozen)
 			m_aMacroPracticeUnfreezeUntil[ClientId] = PracticeTick + SERVER_TICK_SPEED;
+		if(!Frozen && m_aMacroPracticeUnfreezeUntil[ClientId] <= PracticeTick)
+		{
+			m_aMacroPracticeUnfreezeUntil[ClientId] = 0;
+			m_aMacroPracticeFreezeTotalTicks[ClientId] = 0;
+		}
 		m_aMacroPracticeWasFrozen[ClientId] = Frozen;
 		if(Frozen)
 		{
 			RenderInfo.m_TeeRenderFlags |= TEE_EFFECT_FROZEN;
-			if(pCharacter->m_FreezeTime > 0 || Core.m_FreezeEnd > PracticeTick ||
-				Core.m_FreezeEnd < 0 || Core.m_DeepFrozen || Core.m_LiveFrozen)
+			if(!Core.m_LiveFrozen)
 				RenderInfo.m_TeeRenderFlags |= TEE_NO_WEAPON;
 			if(g_Config.m_ClShowNinja && !GameClient()->m_GameInfo.m_NoSkinChangeForFrozen)
 			{
@@ -509,6 +525,7 @@ void CGhost::ClearMacroPracticeCharacter()
 {
 	std::fill(std::begin(m_aMacroPracticeVisible), std::end(m_aMacroPracticeVisible), false);
 	std::fill(std::begin(m_aMacroPracticeFreezeTicks), std::end(m_aMacroPracticeFreezeTicks), 0);
+	std::fill(std::begin(m_aMacroPracticeFreezeTotalTicks), std::end(m_aMacroPracticeFreezeTotalTicks), 0);
 	std::fill(std::begin(m_aMacroPracticeWasFrozen), std::end(m_aMacroPracticeWasFrozen), false);
 	std::fill(std::begin(m_aMacroPracticeUnfreezeUntil), std::end(m_aMacroPracticeUnfreezeUntil), 0);
 	std::fill(std::begin(m_apMacroPracticeRenderInfo), std::end(m_apMacroPracticeRenderInfo), nullptr);
