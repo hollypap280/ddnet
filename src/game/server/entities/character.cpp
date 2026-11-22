@@ -872,6 +872,15 @@ void CCharacter::Tick()
 	m_PrevInput = m_Input;
 
 	m_PrevPos = m_Core.m_Pos;
+
+	// A macro frame advances exactly one authoritative server tick, then
+	// the tee is removed from the live world until the next recorded frame.
+	if(m_MacroPlaybackPauseAfterTick)
+	{
+		m_MacroPlaybackPauseAfterTick = false;
+		if(m_MacroPlaybackControlled)
+			Pause(true);
+	}
 }
 
 void CCharacter::TickDeferred()
@@ -2481,13 +2490,15 @@ void CCharacter::SetEndlessHook(bool Enable)
 
 void CCharacter::Pause(bool Pause)
 {
+	if(m_Paused == Pause)
+		return;
 	m_Paused = Pause;
 	if(Pause)
 	{
 		GameServer()->m_World.m_Core.m_apCharacters[m_pPlayer->GetCid()] = nullptr;
 		GameServer()->m_World.RemoveEntity(this);
 
-		if(m_Core.HookedPlayer() != -1) // Keeping hook would allow cheats
+		if(m_Core.HookedPlayer() != -1 && !m_MacroPlaybackControlled) // Keep recorded hooks attached while macro playback is paused
 		{
 			ResetHook();
 			GameWorld()->ReleaseHooked(GetPlayer()->GetCid());
@@ -2509,6 +2520,8 @@ void CCharacter::Pause(bool Pause)
 void CCharacter::DDRaceInit()
 {
 	m_Paused = false;
+	m_MacroPlaybackControlled = false;
+	m_MacroPlaybackPauseAfterTick = false;
 	m_DDRaceState = ERaceState::NONE;
 	m_PrevPos = m_Pos;
 	std::fill(std::begin(m_aSetSavePos), std::end(m_aSetSavePos), false);
