@@ -268,7 +268,6 @@ void CControls::OnConsoleInit()
 	Console()->Register("macro_delete", "s[name]", CFGFLAG_CLIENT, ConMacroDelete, this, "Delete a saved player input macro");
 	Console()->Register("+macro_rewind", "", CFGFLAG_CLIENT, ConMacroRewind, this, "Hold to rewind a macro; repeat speed increases while held");
 	Console()->Register("+macro_seek", "", CFGFLAG_CLIENT, ConMacroSeek, this, "Jump forward by the configured number of macro ticks");
-	Console()->Register("+macro_slow", "", CFGFLAG_CLIENT, ConMacroSlow, this, "Hold to slow down macro playback");
 }
 
 void CControls::ConTpToCursor(IConsole::IResult *pResult, void *pUserData)
@@ -620,8 +619,6 @@ void CControls::StopMacroPractice()
 	m_MacroRewindHeld = false;
 	m_MacroRewindHeldSince = 0;
 	m_MacroRewindNextRepeat = 0;
-	m_MacroSlowHeld = false;
-	m_MacroPlaybackSlowTickCounter = 0;
 	m_MacroPracticePendingFireTransitions = 0;
 	m_MacroPracticePendingNextWeaponTransitions = 0;
 	m_MacroPracticePendingPrevWeaponTransitions = 0;
@@ -1289,8 +1286,6 @@ void CControls::StopMacroRecording()
 	m_MacroRewindHeld = false;
 	m_MacroRewindHeldSince = 0;
 	m_MacroRewindNextRepeat = 0;
-	m_MacroSlowHeld = false;
-	m_MacroPlaybackSlowTickCounter = 0;
 	if(WasRecording)
 		m_MacroPlaybackIndex = m_vMacroFrames.size();
 	m_MacroCurrentFrame = {};
@@ -1542,7 +1537,6 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroHasCurrentFrame = false;
 	m_MacroHoldCurrentFrame = false;
 	m_MacroPlaybackLastTick = -1;
-	m_MacroPlaybackSlowTickCounter = 0;
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeAccumulator = 0.0f;
 	m_MacroPracticeLastTime = time_get();
@@ -1648,14 +1642,6 @@ void CControls::ConMacroSeek(IConsole::IResult *pResult, void *pUserData)
 	pSelf->SeekMacro(pSelf->MacroSeekStep(), true, true);
 }
 
-void CControls::ConMacroSlow(IConsole::IResult *pResult, void *pUserData)
-{
-	CControls *pSelf = (CControls *)pUserData;
-	pSelf->m_MacroSlowHeld = pResult->GetInteger(0) != 0;
-	if(!pSelf->m_MacroSlowHeld)
-		pSelf->m_MacroPlaybackSlowTickCounter = 0;
-}
-
 int CControls::MacroSeekStep() const
 {
 	return g_Config.m_ClMacroRewindStep;
@@ -1689,12 +1675,7 @@ vec2 CControls::MacroPracticePosition()
 
 int CControls::MacroPracticeRate() const
 {
-	return g_Config.m_ClMacroPracticeRate;
-}
-
-void CControls::SetMacroPracticeRate(int Rate)
-{
-	g_Config.m_ClMacroPracticeRate = std::clamp(Rate, 1, (int)SERVER_TICK_SPEED);
+	return SERVER_TICK_SPEED;
 }
 
 bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
@@ -1721,7 +1702,6 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 		m_MacroPlaybackIndex = (std::size_t)Target;
 		m_MacroHasCurrentFrame = false;
 		m_MacroPlaybackLastTick = -1;
-		m_MacroPlaybackSlowTickCounter = 0;
 		m_MacroPracticeWaiting = false;
 	}
 	else if(!RestoreMacroPracticeFrame(Target))
@@ -2307,23 +2287,10 @@ int CControls::SnapInput(int *pData)
 			}
 			else if(!m_MacroHasCurrentFrame || PredTick != m_MacroPlaybackLastTick)
 			{
-				bool AdvanceFrame = !m_MacroHasCurrentFrame;
-				if(m_MacroHasCurrentFrame)
-				{
-					if(m_MacroSlowHeld)
-					{
-						++m_MacroPlaybackSlowTickCounter;
-					if(m_MacroPlaybackSlowTickCounter >= std::clamp(g_Config.m_ClMacroSlowFactor, 2, 10))
-						AdvanceFrame = true;
-					}
-					else
-						AdvanceFrame = true;
-				}
+				const bool AdvanceFrame = true;
 				m_MacroPlaybackLastTick = PredTick;
-
 				if(AdvanceFrame)
 				{
-					m_MacroPlaybackSlowTickCounter = 0;
 					if(m_MacroPlaybackIndex >= m_vMacroFrames.size())
 					{
 						StopMacroRecording();
