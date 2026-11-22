@@ -1308,10 +1308,15 @@ bool CControls::PlayMacro(const char *pName)
 		return false;
 	}
 
+	// io_length() seeks to end and resets the stream to the beginning.
+	// Capture the full size before consuming the header so it cannot reset
+	// io_tell() and make the already-read 76-byte header count as payload.
+	const int64_t FileLength = io_length(File);
 	uint32_t Magic = 0;
 	uint32_t Version = 0;
 	uint32_t Count = 0;
-	bool Valid = io_read(File, &Magic, sizeof(Magic)) == sizeof(Magic) &&
+	bool Valid = FileLength >= 0 &&
+		io_read(File, &Magic, sizeof(Magic)) == sizeof(Magic) &&
 		io_read(File, &Version, sizeof(Version)) == sizeof(Version) &&
 		io_read(File, &Count, sizeof(Count)) == sizeof(Count) &&
 		Magic == MACRO_FILE_MAGIC && Version >= 1 && Version <= MACRO_FILE_VERSION &&
@@ -1321,7 +1326,11 @@ bool CControls::PlayMacro(const char *pName)
 	if(Valid && Version >= 3)
 		Valid = io_read(File, aRecordedMapName, sizeof(aRecordedMapName)) == sizeof(aRecordedMapName);
 
-	const int64_t RemainingBytes = Valid ? io_length(File) - io_tell(File) : 0;
+	const int64_t HeaderBytes = (int64_t)sizeof(Magic) + sizeof(Version) + sizeof(Count) +
+		(Version >= 3 ? (int64_t)sizeof(aRecordedMapName) : 0);
+	const int64_t RemainingBytes = Valid && FileLength >= HeaderBytes ? FileLength - HeaderBytes : 0;
+	if(Valid && FileLength < HeaderBytes)
+		Valid = false;
 	const int64_t CurrentFrameBytes = (int64_t)Count * sizeof(SMacroFrame);
 	const int64_t Version5FrameBytes = (int64_t)Count * sizeof(SMacroFrameV4);
 	const int64_t Version4FrameBytes = (int64_t)Count * sizeof(SMacroFrameV4);
