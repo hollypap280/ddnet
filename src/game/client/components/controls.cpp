@@ -2393,22 +2393,6 @@ int CControls::SnapInput(int *pData)
 		if(!m_aInputDirectionLeft[g_Config.m_ClDummy] && m_aInputDirectionRight[g_Config.m_ClDummy])
 			m_aInputData[g_Config.m_ClDummy].m_Direction = 1;
 
-		const int LocalIdForTraining = GameClient()->m_Snap.m_LocalClientId;
-		if(LocalIdForTraining >= 0 && LocalIdForTraining < MAX_CLIENTS)
-		{
-			const auto &LocalData = GameClient()->m_aClients[LocalIdForTraining];
-			const auto &LocalSnap = GameClient()->m_Snap.m_aCharacters[LocalIdForTraining];
-			const int FreezeEnd = LocalData.m_FreezeEnd;
-			const int ExtendedFreezeEnd = LocalSnap.m_HasExtendedData ? LocalSnap.m_ExtendedData.m_FreezeEnd : 0;
-			const int GameTick = Client()->PredGameTick(g_Config.m_ClDummy);
-			const CCharacterCore &Core = GameClient()->m_PredictedChar;
-			const bool Frozen = Core.m_DeepFrozen || Core.m_LiveFrozen || FreezeEnd == -1 || FreezeEnd > GameTick ||
-				ExtendedFreezeEnd == -1 || ExtendedFreezeEnd > GameTick;
-			const int FreezeTicks = (Core.m_DeepFrozen || Core.m_LiveFrozen || FreezeEnd == -1 || ExtendedFreezeEnd == -1) ?
-				-1 : std::max(0, std::max(FreezeEnd, ExtendedFreezeEnd) - GameTick);
-			UpdateAutoUnfreezeTraining(g_Config.m_ClDummy, Core, Core.m_Pos, FreezeTicks, Frozen);
-		}
-
 		// Saved macros run on the real server-controlled tee. The first frame
 		// waits for the recorded starting position; after that, one frame is
 		// selected per predicted game tick and sent through the regular input path.
