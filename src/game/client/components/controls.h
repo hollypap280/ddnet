@@ -65,7 +65,6 @@ public:
 	bool MacroRecording() const { return m_MacroRecording; }
 	bool MacroPlaying() const { return m_MacroPlaying; }
 	bool MacroPlaybackLive() const { return m_MacroPlaybackLive; }
-	bool MacroSlowHeld() const { return m_MacroSlowHeld; }
 	int MacroPosition() const { return m_MacroRecording ? (int)m_vMacroFrames.size() : (int)m_MacroPlaybackIndex; }
 	int MacroFrameCount() const { return (int)m_vMacroFrames.size(); }
 	const char *MacroRecordingName() const { return m_aRecordingMacroName; }
@@ -79,7 +78,6 @@ public:
 	int MacroSeekStep() const;
 	void SetMacroSeekStep(int Step);
 	int MacroPracticeRate() const;
-	void SetMacroPracticeRate(int Rate);
 	bool MacroPracticeActive() const { return m_MacroPracticeActive; }
 	int MacroPracticeTick() const { return m_MacroPracticeTick; }
 	vec2 MacroPracticePosition();
@@ -87,6 +85,7 @@ public:
 	CGameWorld *MacroPracticeWorld() { return m_MacroPracticeActive ? &m_MacroPracticeWorld : nullptr; }
 	float MacroPracticeTickFraction() const { return m_MacroPracticeAccumulator; }
 	bool MacroPracticeWaiting() const { return m_MacroPracticeWaiting; }
+	void RenderMacroHud();
 	bool StartMacroPractice();
 	void StopMacroPractice();
 	void ResetMacroPracticeCharacter();
@@ -165,6 +164,7 @@ private:
 	std::vector<SMacroFrame> m_vMacroFrames;
 	std::vector<SMacroFrame> m_vMacroCorrectionFrames;
 	std::size_t m_MacroPlaybackIndex = 0;
+	int m_MacroStartFrameIndex = 0;
 	SMacroFrame m_MacroCurrentFrame{};
 	bool m_MacroHasCurrentFrame = false;
 	bool m_MacroHoldCurrentFrame = false;
@@ -177,8 +177,6 @@ private:
 	bool m_MacroRewindHeld = false;
 	int64_t m_MacroRewindHeldSince = 0;
 	int64_t m_MacroRewindNextRepeat = 0;
-	bool m_MacroSlowHeld = false;
-	int m_MacroPlaybackSlowTickCounter = 0;
 	int m_MacroLiveFireOffset = 0;
 	int m_MacroLiveNextWeaponOffset = 0;
 	int m_MacroLivePrevWeaponOffset = 0;
