@@ -2,6 +2,7 @@
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
 #include "controls.h"
 
+#include <base/color.h>
 #include <base/dbg.h>
 #include <base/io.h>
 #include <base/str.h>
@@ -650,7 +651,7 @@ void CControls::PopulateMacroPracticeWorld()
 		const bool IsFlightDummy = !m_MacroPlaying &&
 			ClientId == GameClient()->m_aLocalIds[!g_Config.m_ClDummy] &&
 			(g_Config.m_ClDummyHammer || g_Config.m_ClDummyControl || g_Config.m_ClDummyCopyMoves);
-		if(IsFlightDummy)
+		if(IsFlightDummy && !pPracticeCharacter->m_IsMacroPracticeStatic)
 			pPracticeCharacter->m_IsMacroPracticeStatic = false;
 		else if(!pPracticeCharacter->m_IsMacroPracticeStatic)
 		{
