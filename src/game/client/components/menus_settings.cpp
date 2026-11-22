@@ -657,8 +657,6 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 				char aPlaybackName[64]{};
 				if(s_aSelectedMacro[0])
 					str_copy(aPlaybackName, s_aSelectedMacro);
-				else if(!s_MacroName.IsEmpty())
-					str_copy(aPlaybackName, s_MacroName.GetString());
 
 				if(!aPlaybackName[0])
 					GameClient()->Echo(Localize("Сначала выбери макрос в библиотеке"));
