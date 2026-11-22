@@ -404,19 +404,6 @@ void CGhost::OnRender()
 			GameClient()->m_Players.RenderPlayer(ScreenRect, &m_aMacroPracticePrev[ClientId], &m_aMacroPracticeCurrent[ClientId],
 				&RenderInfo, -3, 1.0f, (IsOwnTee || !IsInteracting) ? 1.0f : 0.38f);
 
-			// Use DDNet's native HUD bar artwork for freeze progress.
-			// It is visible only while the tee is actually frozen and vanishes
-			// immediately when the local core reports an unfreeze.
-			const int FreezeTicks = m_aMacroPracticeFreezeTicks[ClientId];
-			if(FreezeTicks != 0)
-			{
-				const float Progress = FreezeTicks < 0 ? 1.0f :
-					std::clamp(FreezeTicks / (float)std::max(1, m_aMacroPracticeFreezeTotalTicks[ClientId]), 0.0f, 1.0f);
-				GameClient()->m_Hud.RenderNinjaBarPos(
-					m_aMacroPracticeCurrent[ClientId].m_X - 3.0f,
-					m_aMacroPracticeCurrent[ClientId].m_Y + 34.0f,
-					6.0f, 24.0f, Progress);
-			}
 		}
 	}
 }
