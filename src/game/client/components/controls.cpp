@@ -2282,20 +2282,12 @@ int CControls::SnapInput(int *pData)
 					else
 					{
 						const SMacroFrame &Frame = m_vMacroFrames[m_MacroPlaybackIndex];
-						bool AtStartPosition = true;
-						if(!m_MacroHasCurrentFrame && m_MacroPlaybackIndex == 0 && Frame.m_HasCoordinates)
-						{
-							const vec2 CurrentPos = GameClient()->m_PredictedChar.m_Pos;
-							const vec2 RequiredPos((float)Frame.m_PreCore.m_X, (float)Frame.m_PreCore.m_Y);
-						AtStartPosition = distance(CurrentPos, RequiredPos) <= 24.0f;
-						}
-						m_MacroPracticeWaiting = !AtStartPosition;
-						if(AtStartPosition)
-						{
-							m_MacroCurrentFrame = Frame;
-							m_MacroHasCurrentFrame = true;
-							++m_MacroPlaybackIndex;
-						}
+						// No coordinate wait in the legacy live-input path either.
+						m_MacroPracticeWaiting = false;
+						m_MacroCurrentFrame = Frame;
+						m_MacroHasCurrentFrame = true;
+						++m_MacroPlaybackIndex;
+						m_MacroDisplayedTick = (int)m_MacroPlaybackIndex;
 					}
 				}
 			}
