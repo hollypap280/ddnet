@@ -560,7 +560,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			if(pFirstVisible)
 				str_copy(s_aSelectedMacro, pFirstVisible->m_aName);
 			else
-				s_aSelectedMacro[0] = '\\0';
+				s_aSelectedMacro[0] = '\0';
 		}
 	};
 	if(!s_MacroListLoaded)
