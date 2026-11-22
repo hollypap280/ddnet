@@ -997,7 +997,17 @@ void CPlayers::OnRender()
 			Frozen = GameClient()->m_Snap.m_aCharacters[i].m_HasExtendedData && GameClient()->m_Snap.m_aCharacters[i].m_ExtendedData.m_FreezeEnd != 0;
 		}
 
-		if((GameClient()->m_aClients[i].m_RenderCur.m_Weapon == WEAPON_NINJA || (Frozen && !GameClient()->m_GameInfo.m_NoSkinChangeForFrozen)) && g_Config.m_ClShowNinja)
+		const bool IsMacroPracticeServerTee = GameClient()->m_Controls.MacroPracticeActive() &&
+			(i == GameClient()->m_aLocalIds[0] || i == GameClient()->m_aLocalIds[1]);
+		if(IsMacroPracticeServerTee)
+		{
+			// The live server tees are only faint position markers. Their
+			// freeze skin must not remain visible over the local practice clones.
+			aRenderInfo[i].m_TeeRenderFlags = 0;
+			Frozen = false;
+		}
+		if(!IsMacroPracticeServerTee &&
+			(GameClient()->m_aClients[i].m_RenderCur.m_Weapon == WEAPON_NINJA || (Frozen && !GameClient()->m_GameInfo.m_NoSkinChangeForFrozen)) && g_Config.m_ClShowNinja)
 		{
 			// change the skin for the player to the ninja
 			aRenderInfo[i].m_aSixup[g_Config.m_ClDummy].Reset();
