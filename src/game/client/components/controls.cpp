@@ -161,14 +161,38 @@ void CControls::ConKeyInputSet(IConsole::IResult *pResult, void *pUserData)
 	if(pResult->GetInteger(0))
 	{
 		*pSet->m_apVariables[g_Config.m_ClDummy] = pSet->m_Value;
+		if(pSet->m_pControls->m_MacroPracticeActive &&
+			pSet->m_apVariables[0] == &pSet->m_pControls->m_aInputData[0].m_WantedWeapon)
+			pSet->m_pControls->m_MacroPracticePendingWantedWeapon = pSet->m_Value;
 	}
 }
 
 void CControls::ConKeyInputNextPrevWeapon(IConsole::IResult *pResult, void *pUserData)
 {
 	CInputSet *pSet = (CInputSet *)pUserData;
-	ConKeyInputCounter(pResult, pSet);
-	pSet->m_pControls->m_aInputData[g_Config.m_ClDummy].m_WantedWeapon = 0;
+	CControls *pSelf = pSet->m_pControls;
+	const int Dummy = g_Config.m_ClDummy;
+	int *pVariable = pSet->m_apVariables[Dummy];
+	const int Stroke = pResult->GetInteger(0);
+
+	// Do not reinterpret CInputSet as CInputState here: the two structures
+	// have different trailing fields. Count each press/release transition
+	// directly and queue it for the slower private practice clock.
+	if(((*pVariable) & 1) != Stroke)
+	{
+		++(*pVariable);
+		if(pSelf->m_MacroPracticeActive)
+		{
+			if(pSet->m_apVariables[0] == &pSelf->m_aInputData[0].m_NextWeapon)
+				pSelf->m_MacroPracticePendingNextWeaponTransitions =
+					std::min(pSelf->m_MacroPracticePendingNextWeaponTransitions + 1, 64);
+			else if(pSet->m_apVariables[0] == &pSelf->m_aInputData[0].m_PrevWeapon)
+				pSelf->m_MacroPracticePendingPrevWeaponTransitions =
+					std::min(pSelf->m_MacroPracticePendingPrevWeaponTransitions + 1, 64);
+		}
+	}
+	*pVariable &= INPUT_STATE_MASK;
+	pSelf->m_aInputData[Dummy].m_WantedWeapon = 0;
 }
 
 void CControls::OnConsoleInit()
@@ -491,7 +515,11 @@ bool CControls::StartMacroPractice()
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeActive = true;
 	m_MacroPracticePendingFireTransitions = 0;
+	m_MacroPracticePendingNextWeaponTransitions = 0;
+	m_MacroPracticePendingPrevWeaponTransitions = 0;
+	m_MacroPracticePendingWantedWeapon = 0;
 	m_MacroPracticeFireCounter = m_aInputData[g_Config.m_ClDummy].m_Fire & INPUT_STATE_MASK;
+	m_MacroPracticeInput = m_aInputData[g_Config.m_ClDummy];
 	m_MacroPracticePendingJump = false;
 	m_MacroPracticePendingHook = false;
 	m_MacroPracticePendingDirectionLeft = false;
@@ -546,7 +574,11 @@ void CControls::ResetMacroPracticeCharacter()
 	m_MacroPracticePendingDirectionLeft = false;
 	m_MacroPracticePendingDirectionRight = false;
 	m_MacroPracticePendingFireTransitions = 0;
+	m_MacroPracticePendingNextWeaponTransitions = 0;
+	m_MacroPracticePendingPrevWeaponTransitions = 0;
+	m_MacroPracticePendingWantedWeapon = 0;
 	m_MacroPracticeFireCounter = m_aInputData[g_Config.m_ClDummy].m_Fire & INPUT_STATE_MASK;
+	m_MacroPracticeInput = IdleInput;
 	UpdateMacroPracticeGhost(pCharacter);
 	GameClient()->Echo("Тренировочный тии возвращён в начальную точку. Серверный персонаж не затронут.");
 }
@@ -589,6 +621,10 @@ void CControls::StopMacroPractice()
 	m_MacroSlowHeld = false;
 	m_MacroPlaybackSlowTickCounter = 0;
 	m_MacroPracticePendingFireTransitions = 0;
+	m_MacroPracticePendingNextWeaponTransitions = 0;
+	m_MacroPracticePendingPrevWeaponTransitions = 0;
+	m_MacroPracticePendingWantedWeapon = 0;
+	m_MacroPracticeInput = {};
 	m_MacroPracticePendingJump = false;
 	m_MacroPracticePendingHook = false;
 	m_MacroPracticePendingDirectionLeft = false;
@@ -746,9 +782,13 @@ bool CControls::SwitchMacroPracticeCharacter(int ClientId)
 	m_MacroPracticeLocalId = ClientId;
 	m_MacroPracticeWorld.m_LocalClientId = ClientId;
 	m_MacroPracticePendingFireTransitions = 0;
+	m_MacroPracticePendingNextWeaponTransitions = 0;
+	m_MacroPracticePendingPrevWeaponTransitions = 0;
+	m_MacroPracticePendingWantedWeapon = 0;
 	m_MacroPracticePendingJump = false;
 	m_MacroPracticePendingHook = false;
 	m_MacroPracticeFireCounter = m_aInputData[g_Config.m_ClDummy].m_Fire & INPUT_STATE_MASK;
+	m_MacroPracticeInput = m_aInputData[g_Config.m_ClDummy];
 	UpdateMacroPracticeGhost(pNewCharacter);
 	return true;
 }
@@ -964,6 +1004,26 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 			--m_MacroPracticePendingFireTransitions;
 		}
 		TickInput.m_Fire = m_MacroPracticeFireCounter;
+
+		// Preserve tap-style weapon binds between slow practice ticks.
+		if(m_MacroPracticePendingWantedWeapon > 0)
+		{
+			TickInput.m_WantedWeapon = m_MacroPracticePendingWantedWeapon;
+			m_MacroPracticePendingWantedWeapon = 0;
+		}
+		if(m_MacroPracticePendingNextWeaponTransitions > 0)
+		{
+			m_MacroPracticeInput.m_NextWeapon = (m_MacroPracticeInput.m_NextWeapon + 1) & INPUT_STATE_MASK;
+			--m_MacroPracticePendingNextWeaponTransitions;
+		}
+		if(m_MacroPracticePendingPrevWeaponTransitions > 0)
+		{
+			m_MacroPracticeInput.m_PrevWeapon = (m_MacroPracticeInput.m_PrevWeapon + 1) & INPUT_STATE_MASK;
+			--m_MacroPracticePendingPrevWeaponTransitions;
+		}
+		TickInput.m_NextWeapon = m_MacroPracticeInput.m_NextWeapon;
+		TickInput.m_PrevWeapon = m_MacroPracticeInput.m_PrevWeapon;
+		m_MacroPracticeInput.m_WantedWeapon = TickInput.m_WantedWeapon;
 	}
 
 	const bool LearnMacroCorrection = m_MacroPlaying && m_MacroPracticeWaiting && g_Config.m_ClMacroTraining;
