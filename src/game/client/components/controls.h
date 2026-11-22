@@ -192,6 +192,8 @@ private:
 	int m_MacroPracticeFireCounter = 0;
 	bool m_MacroPracticePendingJump = false;
 	bool m_MacroPracticePendingHook = false;
+	bool m_MacroPracticePendingDirectionLeft = false;
+	bool m_MacroPracticePendingDirectionRight = false;
 	CGameWorld m_MacroPracticeWorld;
 	CNetObj_Character m_MacroPracticeRenderChar{};
 	bool m_MacroPracticeHasRenderChar = false;
