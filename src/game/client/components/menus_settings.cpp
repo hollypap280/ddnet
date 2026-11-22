@@ -512,6 +512,8 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	static CLineInputBuffered<64> s_MacroSearch;
 	static CLineInputNumber s_RewindStep;
 	static bool s_RewindStepInitialized = false;
+	static CLineInputNumber s_StartTick;
+	static bool s_StartTickInitialized = false;
 	static std::vector<CControls::SMacroInfo> s_vMacros;
 	static std::vector<CButtonContainer> s_vMacroButtons;
 	static bool s_MacroListLoaded = false;
@@ -696,19 +698,6 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			g_Config.m_ClMacroLoop, &LoopRow))
 			g_Config.m_ClMacroLoop ^= 1;
 
-		static CButtonContainer s_MacroTraining;
-		CUIRect MacroTrainingRow;
-		MainView.HSplitTop(24.0f, &MacroTrainingRow, &MainView);
-		if(DoButton_CheckBox(&s_MacroTraining, Localize("Обучать макрос моими исправлениями"),
-			g_Config.m_ClMacroTraining, &MacroTrainingRow))
-			g_Config.m_ClMacroTraining ^= 1;
-
-		CUIRect MacroTrainingInfo;
-		MainView.HSplitTop(30.0f, &MacroTrainingInfo, &MainView);
-		Ui()->DoLabel(&MacroTrainingInfo,
-			Localize("Когда макрос ждёт совпадения позиции, веди тии вручную. Этот участок добавится в макрос для следующих запусков."),
-			11.0f, TEXTALIGN_ML);
-
 		CUIRect SearchRow;
 		MainView.HSplitTop(25.0f, &SearchRow, &MainView);
 		SearchRow.VSplitRight(76.0f, &SearchRect, &Button);
@@ -811,11 +800,31 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			g_Config.m_ClMacroPracticeShowOthers ^= 1;
 
 		CUIRect PracticeRateRow;
-		if(AddSettingRow(27.0f, PracticeRateRow))
-			Ui()->DoScrollbarOption(&g_Config.m_ClMacroPracticeRate, &g_Config.m_ClMacroPracticeRate,
-				&PracticeRateRow, Localize("Скорость тренировки (тиков в секунду)"), 1, 50);
+		if(AddSettingRow(24.0f, PracticeRateRow))
+			Ui()->DoLabel(&PracticeRateRow, Localize("Скорость: 50 тиков/с (одна секунда = 50 тиков)"), 12.0f, TEXTALIGN_ML);
 
-		AddSection("ПЕРЕМОТКА И ЗАМЕДЛЕНИЕ");
+		AddSection("СТАРТ И ПЕРЕМОТКА МАКРОСА");
+		if(!s_StartTickInitialized)
+		{
+			s_StartTick.SetInteger(g_Config.m_ClMacroStartTick);
+			s_StartTickInitialized = true;
+		}
+		CUIRect StartRow;
+		if(AddSettingRow(27.0f, StartRow))
+		{
+			StartRow.VSplitLeft(185.0f, &Label, &NameRect);
+			Ui()->DoLabel(&Label, Localize("Начать с тика"), 12.0f, TEXTALIGN_ML);
+			Ui()->DoEditBox(&s_StartTick, &NameRect, 13.0f);
+			if(s_StartTick.WasChanged())
+			{
+				const int StartTick = s_StartTick.GetInteger();
+				if(StartTick >= 1 && StartTick <= 18000)
+					g_Config.m_ClMacroStartTick = StartTick;
+				else
+					s_StartTick.SetInteger(g_Config.m_ClMacroStartTick);
+			}
+		}
+
 		if(!s_RewindStepInitialized)
 		{
 			s_RewindStep.SetInteger(g_Config.m_ClMacroRewindStep);
@@ -825,7 +834,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		if(AddSettingRow(27.0f, StepRow))
 		{
 			StepRow.VSplitLeft(185.0f, &Label, &NameRect);
-			Ui()->DoLabel(&Label, Localize("Шаг перехода (тиков)"), 12.0f, TEXTALIGN_ML);
+			Ui()->DoLabel(&Label, Localize("Шаг перемотки (тиков)"), 12.0f, TEXTALIGN_ML);
 			Ui()->DoEditBox(&s_RewindStep, &NameRect, 13.0f);
 			if(s_RewindStep.WasChanged())
 			{
@@ -836,16 +845,12 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 					s_RewindStep.SetInteger(g_Config.m_ClMacroRewindStep);
 			}
 		}
-		CUIRect SlowRow;
-		if(AddSettingRow(27.0f, SlowRow))
-			Ui()->DoScrollbarOption(&g_Config.m_ClMacroSlowFactor, &g_Config.m_ClMacroSlowFactor,
-				&SlowRow, Localize("Замедление при удержании клавиши"), 2, 10);
 
 		AddSection("КОМАНДЫ В ТРЕНИРОВКЕ");
 		CUIRect InfoRow;
 		if(AddSettingRow(48.0f, InfoRow))
 			Ui()->DoLabel(&InfoRow,
-				Localize("Обычные бинды работают в FP-тренировке. Движение выполняется в локальном мире с выбранной скоростью; на сервер отправляется только нейтральный ввод."),
+				Localize("Обычные игровые бинды управляют локальной копией. Воспроизведение идёт по 50 тиков/с, а настоящий персонаж на сервере остаётся неподвижным."),
 				12.0f, TEXTALIGN_ML);
 
 		s_MacroSettingsScrollRegion.End();
@@ -872,8 +877,7 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 		{ "Подхват крюком у края", "toggle cl_auto_edge_hook 0 1" },
 		{ "Полёт дамми (хаммерфлай)", "toggle cl_dummy_hammer 0 1" },
 		{ "Перемотка макроса назад (удерживать)", "+macro_rewind" },
-		{ "Телепорт макроса вперёд (одно нажатие)", "+macro_seek" },
-		{ "Замедлить макрос (удерживать)", "+macro_slow" },
+		{ "Перемотка макроса вперёд (нажатие)", "+macro_seek" },
 	};
 	static CButtonContainer s_aKeyReaders[std::size(s_aHotkeys)];
 	static CButtonContainer s_aKeyClearButtons[std::size(s_aHotkeys)];
@@ -912,5 +916,5 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 	}
 
 	MainView.HSplitTop(12.0f, nullptr, &MainView);
-	Ui()->DoLabel(&MainView, Localize("Нажмите на поле клавиши и выберите кнопку. Телепорт вперёд срабатывает один раз на нажатие и в основном мире требует /practice; перемотка назад повторяется при удержании; замедление действует, пока клавиша зажата."), 12.0f, TEXTALIGN_ML);
+	Ui()->DoLabel(&MainView, Localize("Назначь клавиши перемотки назад и вперёд. Удержание перемотки назад повторяет шаг с нарастающей скоростью."), 12.0f, TEXTALIGN_ML);
 }
