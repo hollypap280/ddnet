@@ -503,6 +503,7 @@ void CControls::StopMacroPractice()
 	m_MacroPlaybackOwnsPractice = false;
 	m_vMacroCorrectionFrames.clear();
 	m_aLoadedMacroName[0] = '\0';
+	m_aRecordingMacroName[0] = '\0';
 	m_MacroPlaybackLive = false;
 	m_MacroPlaybackLastTick = -1;
 	m_MacroRewindHeld = false;
@@ -931,8 +932,9 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 			m_vMacroFrames.push_back(NewFrame);
 			if(m_vMacroFrames.size() >= MACRO_MAX_FRAMES)
 			{
-				m_MacroRecording = false;
-				GameClient()->Echo("Запись достигла ограничения в 18000 тиков");
+				GameClient()->Echo("Запись достигла ограничения в 18000 тиков. Макрос сохраняется.");
+				StopMacroRecording();
+				return;
 			}
 		}
 		else
@@ -961,13 +963,49 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 	UpdateMacroPracticeGhost(pCharacter);
 }
 
-void CControls::StartMacroRecording()
+bool CControls::StartMacroRecording(const char *pName)
 {
-	if(m_MacroPlaybackLive)
-		StopMacroRecording();
-	if(!StartMacroPractice())
-		return;
+	if(m_MacroRecording)
+	{
+		GameClient()->Echo("Запись макроса уже идёт.");
+		return false;
+	}
 
+	if(m_MacroPlaying || m_MacroPlaybackLive)
+		StopMacroRecording();
+
+	char aRecordingName[64]{};
+	if(pName && pName[0])
+	{
+		str_copy(aRecordingName, pName);
+	}
+	else
+	{
+		std::vector<SMacroInfo> vExistingMacros;
+		GetMacroList(vExistingMacros);
+		for(unsigned Number = 1; Number < 100000; ++Number)
+		{
+			str_format(aRecordingName, sizeof(aRecordingName), "Macro_%03u", Number);
+			const bool Exists = std::any_of(vExistingMacros.begin(), vExistingMacros.end(), [&](const SMacroInfo &Info) {
+				return str_comp(Info.m_aName, aRecordingName) == 0;
+			});
+			if(!Exists)
+				break;
+			aRecordingName[0] = '\0';
+		}
+	}
+
+	char aPath[128];
+	if(!aRecordingName[0] || !MacroFilePath(aRecordingName, aPath, sizeof(aPath)))
+	{
+		GameClient()->Echo("Недопустимое название макроса. Используй буквы, цифры, пробел, дефис или подчёркивание.");
+		return false;
+	}
+
+	if(!StartMacroPractice())
+		return false;
+
+	str_copy(m_aRecordingMacroName, aRecordingName);
 	str_copy(m_aMacroMapName, "Неизвестная карта");
 	const char *pMapName = Client()->MapDownloadName();
 	if(pMapName && pMapName[0])
@@ -1000,22 +1038,47 @@ void CControls::StartMacroRecording()
 	m_vMacroFrames.clear();
 	m_vMacroCorrectionFrames.clear();
 	m_MacroRecording = true;
-	GameClient()->Echo("Запись началась в отдельном тренировочном мире");
+
+	char aMessage[128];
+	str_format(aMessage, sizeof(aMessage), "Макрос «%s»: FP-тренировка началась. Скорость: %d тиков/с.",
+		m_aRecordingMacroName, MacroPracticeRate());
+	GameClient()->Echo(aMessage);
+	return true;
 }
 
 void CControls::StopMacroRecording()
 {
 	const bool WasRecording = m_MacroRecording;
-	const bool StopOwnedPractice = m_MacroPlaying && m_MacroPlaybackOwnsPractice;
-	if(m_MacroRecording)
+	const bool WasPlaying = m_MacroPlaying;
+	const bool StopOwnedPractice = WasPlaying && m_MacroPlaybackOwnsPractice;
+
+	if(WasRecording)
 	{
 		m_MacroRecording = false;
-		char aBuf[112];
-		str_format(aBuf, sizeof(aBuf), "Запись макроса остановлена (%d тренировочных тиков)", (int)m_vMacroFrames.size());
-		GameClient()->Echo(aBuf);
+		char aName[64];
+		str_copy(aName, m_aRecordingMacroName);
+		if(m_vMacroFrames.empty())
+		{
+			GameClient()->Echo("Макрос пустой: нечего сохранять.");
+		}
+		else if(aName[0] && SaveMacro(aName))
+		{
+			char aMessage[160];
+			str_format(aMessage, sizeof(aMessage), "Макрос «%s» сохранён автоматически (%d тиков).", aName, (int)m_vMacroFrames.size());
+			GameClient()->Echo(aMessage);
+		}
+		else
+		{
+			char aMessage[128];
+			str_format(aMessage, sizeof(aMessage), "Не удалось автоматически сохранить макрос «%s».", aName);
+			GameClient()->Echo(aMessage);
+		}
+		m_aRecordingMacroName[0] = '\0';
 	}
-	if(m_MacroPlaying)
+
+	if(WasPlaying)
 		GameClient()->Echo("Воспроизведение макроса остановлено");
+
 	if(m_MacroPlaybackLive)
 	{
 		const int Dummy = g_Config.m_ClDummy;
@@ -1025,6 +1088,7 @@ void CControls::StopMacroRecording()
 		if(m_aInputData[Dummy].m_Fire & 1)
 			m_aInputData[Dummy].m_Fire++;
 	}
+
 	m_MacroPlaying = false;
 	m_MacroPlaybackLive = false;
 	m_MacroPlaybackOwnsPractice = false;
@@ -1040,17 +1104,10 @@ void CControls::StopMacroRecording()
 	m_MacroHasCurrentFrame = false;
 	m_MacroHoldCurrentFrame = false;
 	m_MacroPracticeWaiting = false;
-	if(m_MacroPracticeActive)
-	{
-		if(CCharacter *pCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId))
-		{
-			CNetObj_PlayerInput IdleInput{};
-			IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
-			IdleInput.m_TargetX = 1;
-			pCharacter->SetInput(&IdleInput);
-		}
-	}
-	if(StopOwnedPractice)
+
+	// Finishing a recording or stopping playback also ends the private FP
+	// world immediately; the live server tee is already receiving neutral input.
+	if(m_MacroPracticeActive && (WasRecording || WasPlaying || StopOwnedPractice))
 		StopMacroPractice();
 }
 
