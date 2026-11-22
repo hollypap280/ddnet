@@ -354,8 +354,8 @@ void CControls::SendPracticeTeleportToCursor(int Conn)
 namespace
 {
 	constexpr uint32_t MACRO_FILE_MAGIC = 0x444D4143;
-	// Version 6 adds the private freeze fields to each stored frame.
-	// Version 5 files may still use the previous, smaller frame layout.
+	// Version 6 writes the current frame layout. Version 5 files are read
+	// using either the current layout or the older version-4-compatible one.
 	constexpr uint32_t MACRO_FILE_VERSION = 6;
 	constexpr uint32_t MACRO_MAX_FRAMES = 18000;
 }
