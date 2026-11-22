@@ -186,6 +186,44 @@ void CControls::ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData)
 	*pVariable &= INPUT_STATE_MASK;
 }
 
+void CControls::ConMacroPracticeInput(IConsole::IResult *pResult, void *pUserData)
+{
+	SMacroPracticeDummyBind *pBind = (SMacroPracticeDummyBind *)pUserData;
+	CControls *pSelf = pBind->m_pControls;
+	const bool Pressed = pResult->GetInteger(0) != 0;
+	if(!pSelf->m_MacroPracticeActive || pSelf->m_MacroPlaying)
+		return;
+
+	switch(pBind->m_Action)
+	{
+	case EMacroPracticeDummyAction::LEFT:
+		pSelf->m_MacroPracticeDirectionLeft = Pressed;
+		if(Pressed) pSelf->m_MacroPracticePendingDirectionLeft = true;
+		break;
+	case EMacroPracticeDummyAction::RIGHT:
+		pSelf->m_MacroPracticeDirectionRight = Pressed;
+		if(Pressed) pSelf->m_MacroPracticePendingDirectionRight = true;
+		break;
+	case EMacroPracticeDummyAction::JUMP:
+		pSelf->m_MacroPracticeInput.m_Jump = Pressed ? 1 : 0;
+		if(Pressed) pSelf->m_MacroPracticePendingJump = true;
+		break;
+	case EMacroPracticeDummyAction::HOOK:
+		pSelf->m_MacroPracticeInput.m_Hook = Pressed ? 1 : 0;
+		pSelf->m_aManualHook[g_Config.m_ClDummy] = Pressed;
+		if(Pressed) pSelf->m_MacroPracticePendingHook = true;
+		break;
+	case EMacroPracticeDummyAction::FIRE:
+		if(pSelf->m_MacroPracticeFirePressed != Pressed)
+		{
+			pSelf->m_MacroPracticeFirePressed = Pressed;
+			pSelf->m_MacroPracticePendingFireTransitions =
+				std::min(pSelf->m_MacroPracticePendingFireTransitions + 1, 64);
+		}
+		break;
+	}
+}
+
 void CControls::ConMacroPracticeDummyInput(IConsole::IResult *pResult, void *pUserData)
 {
 	SMacroPracticeDummyBind *pBind = (SMacroPracticeDummyBind *)pUserData;
@@ -354,6 +392,7 @@ void CControls::OnConsoleInit()
 	Console()->Register("tp_dummy_to_cursor", "", CFGFLAG_CLIENT, ConTpDummyToCursor, this, "Practice: teleport the other tee to your cursor");
 
 	Console()->Register("macro_practice", "", CFGFLAG_CLIENT, ConMacroPractice, this, "Toggle isolated FP practice");
+	Console()->Register("macro_pause", "", CFGFLAG_CLIENT, ConMacroPause, this, "Pause or resume live macro playback");
 	Console()->Register("macro_record", "", CFGFLAG_CLIENT, ConMacroRecord, this, "Start recording a player input macro");
 	Console()->Register("macro_stop", "", CFGFLAG_CLIENT, ConMacroStop, this, "Stop recording or playback of a player input macro");
 	Console()->Register("macro_save", "s[name]", CFGFLAG_CLIENT, ConMacroSave, this, "Save the recorded player input macro");
@@ -362,6 +401,17 @@ void CControls::OnConsoleInit()
 	Console()->Register("+macro_rewind", "", CFGFLAG_CLIENT, ConMacroRewind, this, "Hold to rewind a macro; repeat speed increases while held");
 	Console()->Register("+macro_seek", "", CFGFLAG_CLIENT, ConMacroSeek, this, "Jump forward by the configured number of macro ticks");
 	Console()->Register("macro_goto", "i[tick]", CFGFLAG_CLIENT, ConMacroGoto, this, "Jump to an exact macro tick");
+
+	static const SMacroPracticeDummyBind s_PlayerLeft{this, EMacroPracticeDummyAction::LEFT};
+	static const SMacroPracticeDummyBind s_PlayerRight{this, EMacroPracticeDummyAction::RIGHT};
+	static const SMacroPracticeDummyBind s_PlayerJump{this, EMacroPracticeDummyAction::JUMP};
+	static const SMacroPracticeDummyBind s_PlayerHook{this, EMacroPracticeDummyAction::HOOK};
+	static const SMacroPracticeDummyBind s_PlayerFire{this, EMacroPracticeDummyAction::FIRE};
+	Console()->Register("+macro_left", "", CFGFLAG_CLIENT, ConMacroPracticeInput, (void *)&s_PlayerLeft, "Move the FP practice tee left");
+	Console()->Register("+macro_right", "", CFGFLAG_CLIENT, ConMacroPracticeInput, (void *)&s_PlayerRight, "Move the FP practice tee right");
+	Console()->Register("+macro_jump", "", CFGFLAG_CLIENT, ConMacroPracticeInput, (void *)&s_PlayerJump, "Jump with the FP practice tee");
+	Console()->Register("+macro_hook", "", CFGFLAG_CLIENT, ConMacroPracticeInput, (void *)&s_PlayerHook, "Hook with the FP practice tee");
+	Console()->Register("+macro_fire", "", CFGFLAG_CLIENT, ConMacroPracticeInput, (void *)&s_PlayerFire, "Fire with the FP practice tee");
 
 	static const SMacroPracticeDummyBind s_DummyLeft{this, EMacroPracticeDummyAction::LEFT};
 	static const SMacroPracticeDummyBind s_DummyRight{this, EMacroPracticeDummyAction::RIGHT};
@@ -442,6 +492,69 @@ void CControls::TeleportMacroPracticeCharacter(int ClientId, vec2 Pos)
 	UpdateMacroPracticeGhost(pCharacter);
 }
 
+void CControls::SendMacroFrameControl(EMacroFrameMode Mode)
+{
+	CNetMsg_Cl_MacroFrame Msg{};
+	Msg.m_Mode = (int)Mode;
+	const int Conn = g_Config.m_ClDummy ? IClient::CONN_DUMMY : IClient::CONN_MAIN;
+	Client()->SendPackMsg(Conn, &Msg, MSGFLAG_VITAL);
+}
+
+void CControls::SendMacroFrame(int Index, EMacroFrameMode Mode)
+{
+	if(Index < 0 || Index >= (int)m_vMacroFrames.size())
+		return;
+
+	const SMacroFrame &Frame = m_vMacroFrames[Index];
+	const CNetObj_CharacterCore &Core = Frame.m_PreCore;
+	const CNetObj_DDNetCharacter &DDNet = Frame.m_PreDDNetCharacter;
+	CNetMsg_Cl_MacroFrame Msg{};
+	Msg.m_Mode = (int)Mode;
+	Msg.m_RecordedTick = Frame.m_Tick - 1;
+	Msg.m_X = Core.m_X;
+	Msg.m_Y = Core.m_Y;
+	Msg.m_VelX = Core.m_VelX;
+	Msg.m_VelY = Core.m_VelY;
+	Msg.m_Angle = Core.m_Angle;
+	Msg.m_Direction = Core.m_Direction;
+	Msg.m_Jumped = Core.m_Jumped;
+	Msg.m_HookedPlayer = Core.m_HookedPlayer;
+	Msg.m_HookState = Core.m_HookState;
+	Msg.m_HookTick = Core.m_HookTick;
+	Msg.m_HookX = Core.m_HookX;
+	Msg.m_HookY = Core.m_HookY;
+	Msg.m_HookDx = Core.m_HookDx;
+	Msg.m_HookDy = Core.m_HookDy;
+	Msg.m_FreezeTime = Frame.m_PreFreezeTime;
+	Msg.m_FrozenLastTick = Frame.m_PreFrozenLastTick != 0;
+	Msg.m_Weapon = Frame.m_PreWeapon;
+	Msg.m_AttackTick = Frame.m_PreAttackTick;
+	Msg.m_InputDirection = Frame.m_Input.m_Direction;
+	Msg.m_InputTargetX = Frame.m_Input.m_TargetX;
+	Msg.m_InputTargetY = Frame.m_Input.m_TargetY;
+	Msg.m_InputJump = Frame.m_Input.m_Jump;
+	Msg.m_InputFire = (Frame.m_Input.m_Fire + m_MacroLiveFireOffset) & INPUT_STATE_MASK;
+	Msg.m_InputHook = Frame.m_Input.m_Hook;
+	Msg.m_InputWantedWeapon = Frame.m_Input.m_WantedWeapon;
+	Msg.m_InputNextWeapon = (Frame.m_Input.m_NextWeapon + m_MacroLiveNextWeaponOffset) & INPUT_STATE_MASK;
+	Msg.m_InputPrevWeapon = (Frame.m_Input.m_PrevWeapon + m_MacroLivePrevWeaponOffset) & INPUT_STATE_MASK;
+	Msg.m_DDNetHasState = Frame.m_HasDDNetState;
+	Msg.m_DDNetFlags = Frame.m_HasDDNetState ? DDNet.m_Flags : 0;
+	Msg.m_DDNetFreezeEnd = Frame.m_HasDDNetState ? DDNet.m_FreezeEnd : 0;
+	Msg.m_DDNetJumps = Frame.m_HasDDNetState ? DDNet.m_Jumps : -1;
+	Msg.m_DDNetTeleCheckpoint = Frame.m_HasDDNetState ? DDNet.m_TeleCheckpoint : 0;
+	Msg.m_DDNetStrongWeakId = Frame.m_HasDDNetState ? DDNet.m_StrongWeakId : 0;
+	Msg.m_DDNetJumpedTotal = Frame.m_HasDDNetState ? DDNet.m_JumpedTotal : -1;
+	Msg.m_DDNetNinjaActivationTick = Frame.m_HasDDNetState ? DDNet.m_NinjaActivationTick : -1;
+	Msg.m_DDNetFreezeStart = Frame.m_HasDDNetState ? DDNet.m_FreezeStart : -1;
+	Msg.m_DDNetTargetX = Frame.m_HasDDNetState ? DDNet.m_TargetX : Frame.m_Input.m_TargetX;
+	Msg.m_DDNetTargetY = Frame.m_HasDDNetState ? DDNet.m_TargetY : Frame.m_Input.m_TargetY;
+	Msg.m_DDNetTuneZoneOverride = Frame.m_HasDDNetState ? DDNet.m_TuneZoneOverride : -1;
+
+	const int Conn = g_Config.m_ClDummy ? IClient::CONN_DUMMY : IClient::CONN_MAIN;
+	Client()->SendPackMsg(Conn, &Msg, MSGFLAG_VITAL);
+}
+
 void CControls::SendPracticeTeleport(vec2 Pos, int Conn)
 {
 	CNetMsg_Cl_PracticeTeleport Msg;
@@ -460,7 +573,7 @@ namespace
 	constexpr uint32_t MACRO_FILE_MAGIC = 0x444D4143;
 	// Version 6 writes the current frame layout. Version 5 files are read
 	// using either the current layout or the older version-4-compatible one.
-	constexpr uint32_t MACRO_FILE_VERSION = 6;
+	constexpr uint32_t MACRO_FILE_VERSION = 7;
 	constexpr uint32_t MACRO_MAX_FRAMES = 18000;
 }
 
@@ -1174,6 +1287,44 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		NewFrame.m_PreWeapon = pCharacter->GetActiveWeapon();
 		NewFrame.m_PreFreezeTime = pCharacter->m_FreezeTime;
 		NewFrame.m_PreFrozenLastTick = pCharacter->m_FrozenLastTick ? 1 : 0;
+		NewFrame.m_PreAttackTick = pCharacter->GetAttackTick();
+		NewFrame.m_HasDDNetState = 1;
+		CCharacterCore &PreCore = *pCharacter->Core();
+		CNetObj_DDNetCharacter &DDNet = NewFrame.m_PreDDNetCharacter;
+		DDNet = {};
+		if(PreCore.m_Solo) DDNet.m_Flags |= CHARACTERFLAG_SOLO;
+		if(PreCore.m_Jetpack) DDNet.m_Flags |= CHARACTERFLAG_JETPACK;
+		if(PreCore.m_CollisionDisabled) DDNet.m_Flags |= CHARACTERFLAG_COLLISION_DISABLED;
+		if(PreCore.m_EndlessHook) DDNet.m_Flags |= CHARACTERFLAG_ENDLESS_HOOK;
+		if(PreCore.m_EndlessJump) DDNet.m_Flags |= CHARACTERFLAG_ENDLESS_JUMP;
+		if(PreCore.m_Super) DDNet.m_Flags |= CHARACTERFLAG_SUPER;
+		if(PreCore.m_Invincible) DDNet.m_Flags |= CHARACTERFLAG_INVINCIBLE;
+		if(PreCore.m_HammerHitDisabled) DDNet.m_Flags |= CHARACTERFLAG_HAMMER_HIT_DISABLED;
+		if(PreCore.m_ShotgunHitDisabled) DDNet.m_Flags |= CHARACTERFLAG_SHOTGUN_HIT_DISABLED;
+		if(PreCore.m_GrenadeHitDisabled) DDNet.m_Flags |= CHARACTERFLAG_GRENADE_HIT_DISABLED;
+		if(PreCore.m_LaserHitDisabled) DDNet.m_Flags |= CHARACTERFLAG_LASER_HIT_DISABLED;
+		if(PreCore.m_HookHitDisabled) DDNet.m_Flags |= CHARACTERFLAG_HOOK_HIT_DISABLED;
+		if(PreCore.m_HasTelegunGun) DDNet.m_Flags |= CHARACTERFLAG_TELEGUN_GUN;
+		if(PreCore.m_HasTelegunGrenade) DDNet.m_Flags |= CHARACTERFLAG_TELEGUN_GRENADE;
+		if(PreCore.m_HasTelegunLaser) DDNet.m_Flags |= CHARACTERFLAG_TELEGUN_LASER;
+		if(PreCore.m_LiveFrozen) DDNet.m_Flags |= CHARACTERFLAG_MOVEMENTS_DISABLED;
+		if(PreCore.m_IsInFreeze) DDNet.m_Flags |= CHARACTERFLAG_IN_FREEZE;
+		if(PreCore.m_aWeapons[WEAPON_HAMMER].m_Got) DDNet.m_Flags |= CHARACTERFLAG_WEAPON_HAMMER;
+		if(PreCore.m_aWeapons[WEAPON_GUN].m_Got) DDNet.m_Flags |= CHARACTERFLAG_WEAPON_GUN;
+		if(PreCore.m_aWeapons[WEAPON_SHOTGUN].m_Got) DDNet.m_Flags |= CHARACTERFLAG_WEAPON_SHOTGUN;
+		if(PreCore.m_aWeapons[WEAPON_GRENADE].m_Got) DDNet.m_Flags |= CHARACTERFLAG_WEAPON_GRENADE;
+		if(PreCore.m_aWeapons[WEAPON_LASER].m_Got) DDNet.m_Flags |= CHARACTERFLAG_WEAPON_LASER;
+		if(PreCore.m_aWeapons[WEAPON_NINJA].m_Got) DDNet.m_Flags |= CHARACTERFLAG_WEAPON_NINJA;
+		DDNet.m_FreezeEnd = PreCore.m_DeepFrozen ? -1 : PreCore.m_FreezeEnd;
+		DDNet.m_Jumps = PreCore.m_Jumps;
+		DDNet.m_TeleCheckpoint = pCharacter->m_TeleCheckpoint;
+		DDNet.m_StrongWeakId = pCharacter->m_StrongWeakId;
+		DDNet.m_JumpedTotal = PreCore.m_JumpedTotal;
+		DDNet.m_NinjaActivationTick = PreCore.m_Ninja.m_ActivationTick;
+		DDNet.m_FreezeStart = PreCore.m_FreezeStart;
+		DDNet.m_TargetX = PreCore.m_Input.m_TargetX;
+		DDNet.m_TargetY = PreCore.m_Input.m_TargetY;
+		DDNet.m_TuneZoneOverride = -1;
 		NewFrame.m_HasCoordinates = 1;
 		NewFrame.m_ClientId = m_MacroPracticeLocalId;
 	}
@@ -1380,6 +1531,8 @@ void CControls::StopMacroRecording()
 		GameClient()->Echo("Воспроизведение макроса остановлено");
 
 	if(m_MacroPlaybackLive)
+		SendMacroFrameControl(EMacroFrameMode::STOP);
+	if(m_MacroPlaybackLive)
 	{
 		const int Dummy = g_Config.m_ClDummy;
 		m_aInputData[Dummy].m_Direction = 0;
@@ -1395,6 +1548,7 @@ void CControls::StopMacroRecording()
 
 	m_MacroPlaying = false;
 	m_MacroPlaybackLive = false;
+	m_MacroPlaybackPaused = false;
 	m_MacroPlaybackOwnsPractice = false;
 	m_MacroPlaybackLastTick = -1;
 	m_MacroRewindHeld = false;
@@ -1488,11 +1642,35 @@ bool CControls::PlayMacro(const char *pName)
 	if(Valid && FileLength < HeaderBytes)
 		Valid = false;
 	const int64_t CurrentFrameBytes = (int64_t)Count * sizeof(SMacroFrame);
+	const int64_t Version6FrameBytes = (int64_t)Count * sizeof(SMacroFrameV6);
 	const int64_t Version5FrameBytes = (int64_t)Count * sizeof(SMacroFrameV4);
 	const int64_t Version4FrameBytes = (int64_t)Count * sizeof(SMacroFrameV4);
 	const int64_t Version3FrameBytes = (int64_t)Count * sizeof(SMacroFrameV3);
 	const int64_t LegacyFrameBytes = (int64_t)Count * sizeof(SMacroFrameV1);
 	std::vector<SMacroFrame> Frames;
+	auto CopyVersion6Frames = [&](const std::vector<SMacroFrameV6> &OldFrames) {
+		Frames.resize(Count);
+		for(uint32_t i = 0; i < Count; ++i)
+		{
+			Frames[i].m_Input = OldFrames[i].m_Input;
+			Frames[i].m_PreCore = OldFrames[i].m_PreCore;
+			Frames[i].m_Core = OldFrames[i].m_Core;
+			Frames[i].m_Character = OldFrames[i].m_Character;
+			Frames[i].m_PreWeapon = OldFrames[i].m_PreWeapon;
+			Frames[i].m_Weapon = OldFrames[i].m_Weapon;
+			Frames[i].m_AttackTick = OldFrames[i].m_AttackTick;
+			Frames[i].m_Tick = OldFrames[i].m_Tick;
+			Frames[i].m_HasCoordinates = OldFrames[i].m_HasCoordinates;
+			Frames[i].m_ClientId = OldFrames[i].m_ClientId;
+			Frames[i].m_PreFreezeTime = OldFrames[i].m_PreFreezeTime;
+			Frames[i].m_FreezeTime = OldFrames[i].m_FreezeTime;
+			Frames[i].m_PreFrozenLastTick = OldFrames[i].m_PreFrozenLastTick;
+			Frames[i].m_FrozenLastTick = OldFrames[i].m_FrozenLastTick;
+			Frames[i].m_PreAttackTick = 0;
+			Frames[i].m_HasDDNetState = 0;
+			Frames[i].m_PreDDNetCharacter = {};
+		}
+	};
 	auto CopyVersion5Frames = [&](const std::vector<SMacroFrameV4> &OldFrames) {
 		Frames.resize(Count);
 		for(uint32_t i = 0; i < Count; ++i)
@@ -1507,23 +1685,37 @@ bool CControls::PlayMacro(const char *pName)
 			Frames[i].m_Tick = OldFrames[i].m_Tick;
 			Frames[i].m_HasCoordinates = OldFrames[i].m_HasCoordinates;
 			Frames[i].m_ClientId = OldFrames[i].m_ClientId;
+			Frames[i].m_PreFreezeTime = 0;
+			Frames[i].m_FreezeTime = 0;
+			Frames[i].m_PreFrozenLastTick = 0;
+			Frames[i].m_FrozenLastTick = 0;
+			Frames[i].m_PreAttackTick = 0;
+			Frames[i].m_HasDDNetState = 0;
+			Frames[i].m_PreDDNetCharacter = {};
 		}
 	};
-	if(Valid && Version >= 6)
+	if(Valid && Version >= 7)
 	{
 		Frames.resize(Count);
 		Valid = RemainingBytes == CurrentFrameBytes &&
 			io_read(File, Frames.data(), CurrentFrameBytes) == CurrentFrameBytes;
 	}
+	else if(Valid && Version == 6)
+	{
+		std::vector<SMacroFrameV6> OldFrames(Count);
+		Valid = RemainingBytes == Version6FrameBytes &&
+			io_read(File, OldFrames.data(), Version6FrameBytes) == Version6FrameBytes;
+		if(Valid)
+			CopyVersion6Frames(OldFrames);
+	}
 	else if(Valid && Version == 5)
 	{
-		// Some early Version 5 builds wrote the old frame size, while later
-		// builds appended freeze fields without changing the file version.
-		// Detect both layouts by the exact payload length and migrate the old one.
-		if(RemainingBytes == CurrentFrameBytes)
+		if(RemainingBytes == Version6FrameBytes)
 		{
-			Frames.resize(Count);
-			Valid = io_read(File, Frames.data(), CurrentFrameBytes) == CurrentFrameBytes;
+			std::vector<SMacroFrameV6> OldFrames(Count);
+			Valid = io_read(File, OldFrames.data(), Version6FrameBytes) == Version6FrameBytes;
+			if(Valid)
+				CopyVersion6Frames(OldFrames);
 		}
 		else if(RemainingBytes == Version5FrameBytes)
 		{
@@ -1666,29 +1858,25 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroPlaybackOwnsDummy = false;
 	m_MacroPlaying = true;
 	m_MacroStartFrameIndex = StartFrameIndex;
-	m_MacroPlaybackIndex = (std::size_t)StartFrameIndex;
+	m_MacroPlaybackIndex = (std::size_t)StartFrameIndex + 1;
 	m_MacroDisplayedTick = StartFrameIndex + 1;
 	m_MacroCurrentFrame = {};
 	m_MacroHasCurrentFrame = false;
 	m_MacroHoldCurrentFrame = false;
-	m_MacroPlaybackLastTick = -1;
+	m_MacroPlaybackPaused = false;
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeAccumulator = 0.0;
 	m_MacroPracticeLastTime = time_get();
-	m_MacroLiveFireOffset = 0;
-	m_MacroLiveNextWeaponOffset = 0;
-	m_MacroLivePrevWeaponOffset = 0;
+	const SMacroFrame &StartFrame = m_vMacroFrames[StartFrameIndex];
+	m_MacroLiveFireOffset = (m_aInputData[g_Config.m_ClDummy].m_Fire - StartFrame.m_Input.m_Fire) & INPUT_STATE_MASK;
+	m_MacroLiveNextWeaponOffset = (m_aInputData[g_Config.m_ClDummy].m_NextWeapon - StartFrame.m_Input.m_NextWeapon) & INPUT_STATE_MASK;
+	m_MacroLivePrevWeaponOffset = (m_aInputData[g_Config.m_ClDummy].m_PrevWeapon - StartFrame.m_Input.m_PrevWeapon) & INPUT_STATE_MASK;
+	m_MacroPlaybackLastTick = Client()->PredGameTick(g_Config.m_ClDummy);
+	SendMacroFrame(StartFrameIndex, EMacroFrameMode::STEP);
 
-	const SMacroFrame &StartFrame = m_vMacroFrames[m_MacroPlaybackIndex];
-	if(StartFrame.m_HasCoordinates)
-	{
-		const int Conn = g_Config.m_ClDummy ? IClient::CONN_DUMMY : IClient::CONN_MAIN;
-		SendPracticeTeleport(vec2((float)StartFrame.m_PreCore.m_X, (float)StartFrame.m_PreCore.m_Y), Conn);
-	}
-
-	char aStartMessage[160];
-	str_format(aStartMessage, sizeof(aStartMessage), "Макрос «%s» запущен на обычном персонаже. Скорость: %d тиков/с.",
-		pName, std::min(MacroPracticeRate(), (int)SERVER_TICK_SPEED));
+	char aStartMessage[192];
+	str_format(aStartMessage, sizeof(aStartMessage), "Макрос «%s» запущен в серверном мире. Скорость: %d тиков/с. Нужен /practice и сервер с поддержкой макросов.",
+		pName, MacroPracticeRate());
 	GameClient()->Echo(aStartMessage);
 	return true;
 }
@@ -1804,6 +1992,31 @@ void CControls::ConMacroGoto(IConsole::IResult *pResult, void *pUserData)
 	pSelf->SeekMacro(TargetTick - CurrentTick, true, true);
 }
 
+void CControls::ToggleMacroPause()
+{
+	if(!m_MacroPlaybackLive || !m_MacroPlaying)
+		return;
+
+	m_MacroPlaybackPaused = !m_MacroPlaybackPaused;
+	if(m_MacroPlaybackPaused)
+	{
+		SendMacroFrameControl(EMacroFrameMode::PAUSE);
+		GameClient()->Echo("Макрос на паузе.");
+	}
+	else
+	{
+		m_MacroPracticeAccumulator = 0.0;
+		m_MacroPlaybackLastTick = Client()->PredGameTick(g_Config.m_ClDummy);
+		GameClient()->Echo("Воспроизведение макроса продолжено.");
+	}
+}
+
+void CControls::ConMacroPause(IConsole::IResult *pResult, void *pUserData)
+{
+	(void)pResult;
+	((CControls *)pUserData)->ToggleMacroPause();
+}
+
 int CControls::MacroSeekStep() const
 {
 	return g_Config.m_ClMacroRewindStep;
@@ -1837,7 +2050,7 @@ vec2 CControls::MacroPracticePosition()
 
 int CControls::MacroPracticeRate() const
 {
-	return std::clamp(g_Config.m_ClMacroPracticeRate, 1, 250);
+	return std::clamp(g_Config.m_ClMacroPracticeRate, 1, 50);
 }
 
 bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
@@ -1851,21 +2064,11 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 	const int Target = std::clamp(Current + Offset, 0, (int)m_vMacroFrames.size() - 1);
 	if(m_MacroPlaybackLive)
 	{
-		if(TeleportLive)
-		{
-			const SMacroFrame &Frame = m_vMacroFrames[Target];
-			if(Frame.m_HasCoordinates)
-			{
-				const int Conn = g_Config.m_ClDummy ? IClient::CONN_DUMMY : IClient::CONN_MAIN;
-				SendPracticeTeleport(vec2((float)Frame.m_PreCore.m_X, (float)Frame.m_PreCore.m_Y), Conn);
-			}
-			else if(ShowMessage)
-				GameClient()->Echo("Эта старая запись не содержит координат для телепортации.");
-		}
-		m_MacroPlaybackIndex = (std::size_t)Target;
+		SendMacroFrame(Target, m_MacroPlaybackPaused ? EMacroFrameMode::RESTORE_PAUSED : EMacroFrameMode::STEP);
+		m_MacroPlaybackIndex = (std::size_t)Target + 1;
 		m_MacroDisplayedTick = Target + 1;
 		m_MacroHasCurrentFrame = false;
-		m_MacroPlaybackLastTick = -1;
+		m_MacroPlaybackLastTick = Client()->PredGameTick(g_Config.m_ClDummy);
 		m_MacroPracticeAccumulator = 0.0;
 		m_MacroPracticeWaiting = false;
 	}
@@ -2430,76 +2633,46 @@ int CControls::SnapInput(int *pData)
 		if(m_MacroPlaybackLive && m_MacroPlaying &&
 			(m_aInputData[g_Config.m_ClDummy].m_PlayerFlags & PLAYERFLAG_PLAYING))
 		{
+			MacroLiveInput = true;
 			const int PredTick = Client()->PredGameTick(g_Config.m_ClDummy);
-			if(!GameClient()->m_Snap.m_pLocalCharacter)
+			if(!m_MacroPlaybackPaused)
 			{
-				StopMacroRecording();
-			}
-			else if(!m_MacroHasCurrentFrame || PredTick != m_MacroPlaybackLastTick)
-			{
-				const int TickDelta = m_MacroPlaybackLastTick < 0 ? 0 :
-					std::max(0, PredTick - m_MacroPlaybackLastTick);
+				if(m_MacroPlaybackLastTick < 0)
+					m_MacroPlaybackLastTick = PredTick;
+				const int TickDelta = std::max(0, PredTick - m_MacroPlaybackLastTick);
 				m_MacroPlaybackLastTick = PredTick;
+				m_MacroPracticeAccumulator +=
+					(double)TickDelta * (double)MacroPracticeRate() / (double)SERVER_TICK_SPEED;
 
-				auto LoadNextFrame = [&]() {
+				// At most one frame is sent per input update. Backlog is drained
+				// over later updates so two frames are never collapsed into one server tick.
+				if(m_MacroPracticeAccumulator >= 1.0)
+				{
+					m_MacroPracticeAccumulator -= 1.0;
 					if(m_MacroPlaybackIndex >= m_vMacroFrames.size())
 					{
 						if(g_Config.m_ClMacroLoop && !m_vMacroFrames.empty())
-						{
 							m_MacroPlaybackIndex = (std::size_t)std::clamp(m_MacroStartFrameIndex, 0, (int)m_vMacroFrames.size() - 1);
-							const SMacroFrame &LoopFrame = m_vMacroFrames[m_MacroPlaybackIndex];
-							if(LoopFrame.m_HasCoordinates)
-							{
-								const int Conn = g_Config.m_ClDummy ? IClient::CONN_DUMMY : IClient::CONN_MAIN;
-								SendPracticeTeleport(vec2((float)LoopFrame.m_PreCore.m_X, (float)LoopFrame.m_PreCore.m_Y), Conn);
-							}
-						}
 						else
-						{
 							StopMacroRecording();
-							return false;
-						}
 					}
 
-					m_MacroCurrentFrame = m_vMacroFrames[m_MacroPlaybackIndex];
-					m_MacroHasCurrentFrame = true;
-					++m_MacroPlaybackIndex;
-					m_MacroDisplayedTick = (int)m_MacroPlaybackIndex;
-					m_MacroPracticeWaiting = false;
-					return true;
-				};
-
-				if(!m_MacroHasCurrentFrame)
-				{
-					LoadNextFrame();
-				}
-				else
-				{
-					const int PlaybackRate = std::clamp(MacroPracticeRate(), 1, (int)SERVER_TICK_SPEED);
-					m_MacroPracticeAccumulator += (double)TickDelta * (double)PlaybackRate / (double)SERVER_TICK_SPEED;
-					int FramesToAdvance = (int)m_MacroPracticeAccumulator;
-					m_MacroPracticeAccumulator -= FramesToAdvance;
-					while(FramesToAdvance-- > 0 && m_MacroPlaying && m_MacroPlaybackLive)
+					if(m_MacroPlaying && m_MacroPlaybackLive && m_MacroPlaybackIndex < m_vMacroFrames.size())
 					{
-						if(!LoadNextFrame())
-							break;
+						const int FrameIndex = (int)m_MacroPlaybackIndex;
+						SendMacroFrame(FrameIndex, EMacroFrameMode::STEP);
+						++m_MacroPlaybackIndex;
+						m_MacroDisplayedTick = FrameIndex + 1;
 					}
 				}
 			}
 
-			if(m_MacroPlaybackLive && m_MacroPlaying && m_MacroHasCurrentFrame && !m_MacroPracticeWaiting)
-			{
-				const int PlayerFlags = m_aInputData[g_Config.m_ClDummy].m_PlayerFlags;
-				m_aInputData[g_Config.m_ClDummy] = m_MacroCurrentFrame.m_Input;
-				m_aInputData[g_Config.m_ClDummy].m_PlayerFlags = PlayerFlags;
-				m_aInputData[g_Config.m_ClDummy].m_Fire = (m_aInputData[g_Config.m_ClDummy].m_Fire + m_MacroLiveFireOffset) & INPUT_STATE_MASK;
-				m_aInputData[g_Config.m_ClDummy].m_NextWeapon = (m_aInputData[g_Config.m_ClDummy].m_NextWeapon + m_MacroLiveNextWeaponOffset) & INPUT_STATE_MASK;
-				m_aInputData[g_Config.m_ClDummy].m_PrevWeapon = (m_aInputData[g_Config.m_ClDummy].m_PrevWeapon + m_MacroLivePrevWeaponOffset) & INPUT_STATE_MASK;
-				m_aMousePos[g_Config.m_ClDummy] = vec2(
-					(float)m_aInputData[g_Config.m_ClDummy].m_TargetX,
-					(float)m_aInputData[g_Config.m_ClDummy].m_TargetY);
-				MacroLiveInput = true;
-			}
+			// The custom macro-frame message controls the server tee. Normal
+			// client input remains neutral until macro_stop sends STOP.
+			const int PlayerFlags = m_aInputData[g_Config.m_ClDummy].m_PlayerFlags;
+			m_aInputData[g_Config.m_ClDummy] = {};
+			m_aInputData[g_Config.m_ClDummy].m_PlayerFlags = PlayerFlags;
+			m_aInputData[g_Config.m_ClDummy].m_TargetX = 1;
 		}
 
 		if(!MacroLiveInput)
