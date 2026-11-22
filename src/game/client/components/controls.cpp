@@ -474,6 +474,7 @@ bool CControls::StartMacroPractice()
 	}
 
 	m_MacroPracticeLocalId = LocalId;
+	std::fill(std::begin(m_aMacroPracticeSnapshotInitialized), std::end(m_aMacroPracticeSnapshotInitialized), false);
 	m_MacroPracticeWorld.CopyWorld(&GameClient()->m_PredictedWorld);
 
 	// Fast Practice must simulate the same local gameplay as the normal
@@ -608,6 +609,7 @@ void CControls::StopMacroPractice()
 	m_MacroPracticeAccumulator = 0.0f;
 	m_MacroPracticeLastTime = 0;
 	m_MacroPracticeLocalId = -1;
+	std::fill(std::begin(m_aMacroPracticeSnapshotInitialized), std::end(m_aMacroPracticeSnapshotInitialized), false);
 	m_MacroPlaybackOwnsDummy = false;
 	m_MacroPlaybackOwnsPractice = false;
 	m_vMacroCorrectionFrames.clear();
@@ -656,15 +658,21 @@ void CControls::PopulateMacroPracticeWorld()
 		CCharacter *pPracticeCharacter = m_MacroPracticeWorld.GetCharacterById(ClientId);
 		const auto &Info = GameClient()->m_Snap.m_aCharacters[ClientId];
 
-		// The local practice tee is never overwritten by live server snapshots.
+		// The active practice tee is already owned by the private world.
+		// Mark it imported so it cannot be reloaded from the server after a
+		// later dummy switch.
 		if(ClientId == m_MacroPracticeLocalId)
+		{
+			m_aMacroPracticeSnapshotInitialized[ClientId] = true;
 			continue;
+		}
 
 		const bool IsOwnDummy = ClientId == GameClient()->m_aLocalIds[0] || ClientId == GameClient()->m_aLocalIds[1];
 		if((!g_Config.m_ClMacroPracticeShowOthers && !IsOwnDummy) || !Info.m_Active)
 		{
 			if(pPracticeCharacter)
 				pPracticeCharacter->Destroy();
+			m_aMacroPracticeSnapshotInitialized[ClientId] = false;
 			continue;
 		}
 
@@ -686,23 +694,33 @@ void CControls::PopulateMacroPracticeWorld()
 			pPracticeCharacter->m_IsLocal = false;
 			m_MacroPracticeWorld.InsertEntity(pPracticeCharacter);
 		}
-		// Import each tee from the live snapshot only once. After that the
-		// private clone owns its position even if dummy-copy/fly binds are
-		// toggled on or off; never snap it back to the server's old position.
-		if(!pPracticeCharacter->m_IsMacroPracticeStatic)
+
+		const bool IsFlightDummy = !m_MacroPlaying &&
+			ClientId == GameClient()->m_aLocalIds[!g_Config.m_ClDummy] &&
+			(g_Config.m_ClDummyHammer || g_Config.m_ClDummyControl || g_Config.m_ClDummyCopyMoves);
+
+		// Only the first import may read the server snapshot. Keep the moving
+		// dummy's copied prediction state when fly is enabled, and when fly is
+		// later disabled freeze it in place without reloading stale coordinates.
+		if(!m_aMacroPracticeSnapshotInitialized[ClientId])
 		{
-			pPracticeCharacter->Read(&GameClient()->m_Snap.m_aCharacters[ClientId].m_Cur,
-				Info.m_HasExtendedData ? &GameClient()->m_Snap.m_aCharacters[ClientId].m_ExtendedData : nullptr, false);
-			CCharacterCore StaticCore = pPracticeCharacter->GetCore();
-			StaticCore.m_Vel = vec2(0.0f, 0.0f);
-			pPracticeCharacter->SetCore(StaticCore);
-			pPracticeCharacter->ReleaseHook();
-			CNetObj_PlayerInput IdleInput{};
-			IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
-			IdleInput.m_TargetX = 1;
-			pPracticeCharacter->SetInput(&IdleInput);
-			pPracticeCharacter->m_IsMacroPracticeStatic = true;
+			if(!IsFlightDummy)
+			{
+				pPracticeCharacter->Read(&GameClient()->m_Snap.m_aCharacters[ClientId].m_Cur,
+					Info.m_HasExtendedData ? &GameClient()->m_Snap.m_aCharacters[ClientId].m_ExtendedData : nullptr, false);
+				CCharacterCore StaticCore = pPracticeCharacter->GetCore();
+				StaticCore.m_Vel = vec2(0.0f, 0.0f);
+				pPracticeCharacter->SetCore(StaticCore);
+				pPracticeCharacter->ReleaseHook();
+				CNetObj_PlayerInput IdleInput{};
+				IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+				IdleInput.m_TargetX = 1;
+				pPracticeCharacter->SetInput(&IdleInput);
+			}
+			m_aMacroPracticeSnapshotInitialized[ClientId] = true;
 		}
+
+		pPracticeCharacter->m_IsMacroPracticeStatic = !IsFlightDummy;
 		pPracticeCharacter->m_GameTeam = GameTeam;
 	}
 
