@@ -2,6 +2,7 @@
 
 #include <game/client/gameclient.h>
 #include <game/client/prediction/entities/character.h>
+#include <game/client/prediction/gameworld.h>
 
 void CFreezeBars::RenderFreezeBar(const int ClientId)
 {
