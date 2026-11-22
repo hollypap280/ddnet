@@ -733,9 +733,9 @@ bool CControls::SwitchMacroPracticeCharacter(int ClientId)
 	{
 		pOldCharacter->SetInput(&IdleInput);
 		pOldCharacter->m_IsLocal = false;
-		pOldCharacter->m_IsMacroPracticeStatic = m_MacroPlaying ||
-			!(pOldCharacter->GetCid() == GameClient()->m_aLocalIds[!g_Config.m_ClDummy] &&
-				(g_Config.m_ClDummyHammer || g_Config.m_ClDummyControl || g_Config.m_ClDummyCopyMoves));
+		// Keep this tee at its last practice position while the other local
+		// tee is controlled. Never refresh it from the server snapshot.
+		pOldCharacter->m_IsMacroPracticeStatic = true;
 	}
 
 	pNewCharacter->m_IsLocal = true;
@@ -1429,26 +1429,8 @@ bool CControls::PlayMacro(const char *pName)
 		m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
 	}
 
-	char aCurrentMapName[64] = "Неизвестная карта";
-	const char *pMapName = Client()->MapDownloadName();
-	if(pMapName && pMapName[0])
-	{
-		const char *pBaseName = pMapName;
-		for(const char *p = pMapName; *p; ++p)
-			if(*p == '/' || *p == '\\')
-				pBaseName = p + 1;
-		str_copy(aCurrentMapName, pBaseName);
-		for(char *p = aCurrentMapName; *p; ++p)
-			if(*p == '.') { *p = '\0'; break; }
-	}
-
-	if(aRecordedMapName[0] && str_comp_nocase(aRecordedMapName, aCurrentMapName) != 0)
-	{
-		char aMessage[180];
-		str_format(aMessage, sizeof(aMessage), "Внимание: макрос записан на карте «%s», текущая карта — «%s».",
-			aRecordedMapName, aCurrentMapName);
-		GameClient()->Echo(aMessage);
-	}
+	// Macro playback is intentionally map-agnostic. The saved map label is
+	// informational only; it must not block a local playback attempt.
 
 	UpdateMacroPracticeGhost(pPracticeCharacter);
 	GameClient()->Echo("Макрос запущен в отдельном тренировочном мире. Настоящий тии остаётся неподвижным.");
@@ -1549,15 +1531,12 @@ void CControls::SetMacroSeekStep(int Step)
 
 void CControls::OnMacroPracticeDummySwap()
 {
-	if(!m_MacroPracticeActive)
-		return;
-	if(m_MacroPlaying)
+	if(!m_MacroPracticeActive || m_MacroPlaying)
 		return;
 	m_MacroPlaybackOwnsDummy = false;
 	const int RequestedLocalId = GameClient()->m_aLocalIds[g_Config.m_ClDummy];
 	if(RequestedLocalId >= 0 && RequestedLocalId < MAX_CLIENTS)
 		SwitchMacroPracticeCharacter(RequestedLocalId);
-	PopulateMacroPracticeWorld();
 }
 
 vec2 CControls::MacroPracticePosition()
@@ -2446,20 +2425,39 @@ void CControls::OnRender()
 	if(m_MacroPracticeActive)
 	{
 		const CScreenRect PreviousScreen = Graphics()->GetScreen();
-		Graphics()->MapScreenToSize(Graphics()->ScreenWidth(), Graphics()->ScreenHeight());
-		char aTickLabel[96];
+		const float ScreenWidth = Graphics()->ScreenWidth();
+		const float ScreenHeight = Graphics()->ScreenHeight();
+		Graphics()->MapScreenToSize(ScreenWidth, ScreenHeight);
+
+		char aTickLabel[128];
 		if(m_MacroRecording)
-			str_format(aTickLabel, sizeof(aTickLabel), "ЗАПИСЬ  |  %d ТИКОВ", (int)m_vMacroFrames.size());
+			str_format(aTickLabel, sizeof(aTickLabel), "МАКРОС  |  ТИК %d  |  %d ТИК = 1С",
+				(int)m_vMacroFrames.size(), SERVER_TICK_SPEED);
 		else if(m_MacroPlaying)
-			str_format(aTickLabel, sizeof(aTickLabel), "МАКРОС  |  %d / %d ТИКОВ%s",
-				(int)m_MacroPlaybackIndex, (int)m_vMacroFrames.size(),
-				m_MacroPracticeWaiting ? "  |  ОЖИДАНИЕ ПОЗИЦИИ" : "");
+			str_format(aTickLabel, sizeof(aTickLabel), "МАКРОС  |  ТИК %d / %d  |  %d ТИК = 1С",
+				(int)m_MacroPlaybackIndex, (int)m_vMacroFrames.size(), SERVER_TICK_SPEED);
 		else
-			str_format(aTickLabel, sizeof(aTickLabel), "ТРЕНИРОВКА  |  %d ТИКОВ", m_MacroPracticeTick);
-		const float FontSize = 18.0f;
-		const float Width = TextRender()->TextWidth(FontSize, aTickLabel);
+			str_format(aTickLabel, sizeof(aTickLabel), "FP-ТРЕНИРОВКА  |  ТИК %d", m_MacroPracticeTick);
+
+		const float BoxWidth = std::min(640.0f, ScreenWidth - 32.0f);
+		const float BoxHeight = 92.0f;
+		const float BoxX = (ScreenWidth - BoxWidth) * 0.5f;
+		const float BoxY = 76.0f;
+		Graphics()->DrawRect(BoxX, BoxY, BoxWidth, BoxHeight,
+			ColorRGBA(0.0f, 0.0f, 0.0f, 0.82f), IGraphics::CORNER_ALL, 2.0f);
+		Graphics()->DrawRect(BoxX + 4.0f, BoxY + 4.0f, BoxWidth - 8.0f, BoxHeight - 8.0f,
+			ColorRGBA(0.42f, 0.42f, 0.42f, 0.88f), IGraphics::CORNER_ALL, 2.0f);
+
+		const char *pClientName = "КЛИЕНТ 1";
+		const float ClientFontSize = 15.0f;
+		const float ClientWidth = TextRender()->TextWidth(ClientFontSize, pClientName);
 		TextRender()->TextColor(0.55f, 0.9f, 1.0f, 1.0f);
-		TextRender()->Text((Graphics()->ScreenWidth() - Width) * 0.5f, 14.0f, FontSize, aTickLabel);
+		TextRender()->Text((ScreenWidth - ClientWidth) * 0.5f, BoxY + 10.0f, ClientFontSize, pClientName);
+
+		const float FontSize = ScreenWidth < 700.0f ? 22.0f : 30.0f;
+		const float Width = TextRender()->TextWidth(FontSize, aTickLabel);
+		TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
+		TextRender()->Text((ScreenWidth - Width) * 0.5f, BoxY + 42.0f, FontSize, aTickLabel);
 		TextRender()->TextColor(TextRender()->DefaultTextColor());
 		Graphics()->MapScreen(PreviousScreen);
 	}
