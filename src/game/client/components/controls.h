@@ -102,8 +102,8 @@ private:
 	static void ConTpToCursor(IConsole::IResult *pResult, void *pUserData);
 	static void ConTpDummyToCursor(IConsole::IResult *pResult, void *pUserData);
 	vec2 CursorWorldPos() const;
+	void TeleportMacroPracticeCharacter(int ClientId, vec2 Pos);
 
-;
 	struct SMacroFrame
 	{
 		CNetObj_PlayerInput m_Input{};
