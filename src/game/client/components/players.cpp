@@ -506,8 +506,9 @@ void CPlayers::RenderHook(
 		Alpha = g_Config.m_ClRaceGhostAlpha / 100.0f;
 	else if(ClientId == -3) // macro practice copy
 		Alpha = 1.0f;
-	else if(GameClient()->m_Controls.MacroPracticeActive() && ClientId == GameClient()->m_Snap.m_LocalClientId)
-		Alpha *= 0.22f;
+	else if(GameClient()->m_Controls.MacroPracticeActive() &&
+		(ClientId == GameClient()->m_aLocalIds[0] || ClientId == GameClient()->m_aLocalIds[1]))
+		Alpha *= 0.18f;
 
 	RenderInfo.m_Size = 64.0f;
 
