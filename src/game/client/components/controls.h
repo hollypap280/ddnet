@@ -195,6 +195,9 @@ private:
 	bool m_MacroPracticeStartFrozenLastTick = false;
 	CNetObj_PlayerInput m_MacroPracticeInput{};
 	int m_MacroPracticePendingFireTransitions = 0;
+	int m_MacroPracticePendingNextWeaponTransitions = 0;
+	int m_MacroPracticePendingPrevWeaponTransitions = 0;
+	int m_MacroPracticePendingWantedWeapon = 0;
 	int m_MacroPracticeFireCounter = 0;
 	bool m_MacroPracticePendingJump = false;
 	bool m_MacroPracticePendingHook = false;
