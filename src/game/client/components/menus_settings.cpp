@@ -549,7 +549,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	static CButtonContainer s_PracticeToggle, s_ShowOthers;
 	static CButtonContainer s_RecordToggle, s_Save;
 	static CButtonContainer s_PlayToggle, s_Delete, s_Refresh;
-	static CButtonContainer s_MacroLoop, s_AutoUnfreezeTrain, s_AutoUnfreezeAI, s_ClearAutoUnfreeze;
+	static CButtonContainer s_MacroLoop;
 	static CScrollRegion s_MacroListScrollRegion;
 	static CScrollRegion s_MacroSettingsScrollRegion;
 
