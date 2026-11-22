@@ -1588,7 +1588,11 @@ void CGameContext::OnClientDirectInput(int ClientId, const void *pInput)
 	const CNetObj_PlayerInput *pPlayerInput = static_cast<const CNetObj_PlayerInput *>(pInput);
 
 	if(!m_pController->IsGamePaused())
-		m_apPlayers[ClientId]->OnDirectInput(pPlayerInput);
+	{
+		CCharacter *pChr = m_apPlayers[ClientId] ? m_apPlayers[ClientId]->GetCharacter() : nullptr;
+		if(!pChr || !pChr->MacroPlaybackControlled())
+			m_apPlayers[ClientId]->OnDirectInput(pPlayerInput);
+	}
 
 	int Flags = pPlayerInput->m_PlayerFlags;
 	if((Flags & 256) || (Flags & 512))
@@ -1613,7 +1617,11 @@ void CGameContext::OnClientPredictedInput(int ClientId, const void *pInput)
 	}
 
 	if(!m_pController->IsGamePaused())
-		m_apPlayers[ClientId]->OnPredictedInput(pApplyInput);
+	{
+		CCharacter *pChr = m_apPlayers[ClientId] ? m_apPlayers[ClientId]->GetCharacter() : nullptr;
+		if(!pChr || !pChr->MacroPlaybackControlled())
+			m_apPlayers[ClientId]->OnPredictedInput(pApplyInput);
+	}
 }
 
 void CGameContext::OnClientPredictedEarlyInput(int ClientId, const void *pInput)
@@ -1641,7 +1649,11 @@ void CGameContext::OnClientPredictedEarlyInput(int ClientId, const void *pInput)
 	}
 
 	if(!m_pController->IsGamePaused())
-		m_apPlayers[ClientId]->OnPredictedEarlyInput(pApplyInput);
+	{
+		CCharacter *pChr = m_apPlayers[ClientId] ? m_apPlayers[ClientId]->GetCharacter() : nullptr;
+		if(!pChr || !pChr->MacroPlaybackControlled())
+			m_apPlayers[ClientId]->OnPredictedEarlyInput(pApplyInput);
+	}
 
 	if(m_TeeHistorianActive)
 	{
@@ -2267,6 +2279,9 @@ void CGameContext::OnMessage(int MsgId, CUnpacker *pUnpacker, int ClientId)
 		case NETMSGTYPE_CL_PRACTICETELEPORT:
 			OnPracticeTeleportNetMessage(static_cast<CNetMsg_Cl_PracticeTeleport *>(pRawMsg), ClientId);
 			break;
+		case NETMSGTYPE_CL_MACROFRAME:
+			OnMacroFrameNetMessage(static_cast<CNetMsg_Cl_MacroFrame *>(pRawMsg), ClientId);
+			break;
 		case NETMSGTYPE_CL_SETSPECTATORMODE:
 			OnSetSpectatorModeNetMessage(static_cast<CNetMsg_Cl_SetSpectatorMode *>(pRawMsg), ClientId);
 			break;
@@ -2826,6 +2841,132 @@ void CGameContext::OnPracticeTeleportNetMessage(const CNetMsg_Cl_PracticeTelepor
 	}
 
 	PracticeTeleport(pChr, vec2((float)pMsg->m_X, (float)pMsg->m_Y));
+}
+
+void CGameContext::OnMacroFrameNetMessage(const CNetMsg_Cl_MacroFrame *pMsg, int ClientId)
+{
+	CPlayer *pPlayer = m_apPlayers[ClientId];
+	if(!pPlayer)
+		return;
+	CCharacter *pChr = pPlayer->GetCharacter();
+	if(!pChr)
+		return;
+
+	const int Mode = pMsg->m_Mode;
+	if(Mode == 3) // STOP: return control to the normal input stream.
+	{
+		pChr->SetMacroPlaybackPauseAfterTick(false);
+		if(pChr->IsPaused())
+			pChr->Pause(false);
+		pChr->SetMacroPlaybackControlled(false);
+		return;
+	}
+
+	CGameTeams &Teams = m_pController->Teams();
+	if(!Teams.IsPractice(GetDDRaceTeam(ClientId)))
+	{
+		SendChatTarget(ClientId, "Enable /practice in your team before playing a macro in the live world.");
+		pChr->SetMacroPlaybackPauseAfterTick(false);
+		if(pChr->IsPaused())
+			pChr->Pause(false);
+		pChr->SetMacroPlaybackControlled(false);
+		return;
+	}
+
+	pChr->SetMacroPlaybackControlled(true);
+	if(Mode == 0) // PAUSE
+	{
+		pChr->SetMacroPlaybackPauseAfterTick(false);
+		if(!pChr->IsPaused())
+			pChr->Pause(true);
+		return;
+	}
+	if(Mode != 1 && Mode != 2)
+		return;
+
+	if(Mode == 2) // RESTORE_PAUSED
+	{
+		pChr->SetMacroPlaybackPauseAfterTick(false);
+		if(!pChr->IsPaused())
+			pChr->Pause(true);
+	}
+	else // STEP: resume, restore the pre-state and execute exactly one server tick.
+	{
+		if(pChr->IsPaused())
+			pChr->Pause(false);
+		else
+		{
+			// Establish the same paused boundary as all later macro frames.
+			pChr->Pause(true);
+			pChr->Pause(false);
+		}
+	}
+
+	const int TickOffset = Server()->Tick() - pMsg->m_RecordedTick;
+	CNetObj_CharacterCore Core{};
+	Core.m_X = pMsg->m_X;
+	Core.m_Y = pMsg->m_Y;
+	Core.m_VelX = pMsg->m_VelX;
+	Core.m_VelY = pMsg->m_VelY;
+	Core.m_Angle = pMsg->m_Angle;
+	Core.m_Direction = pMsg->m_Direction;
+	Core.m_Jumped = pMsg->m_Jumped;
+	Core.m_HookedPlayer = pMsg->m_HookedPlayer;
+	Core.m_HookState = pMsg->m_HookState;
+	Core.m_HookTick = pMsg->m_HookTick > 0 ? pMsg->m_HookTick + TickOffset : pMsg->m_HookTick;
+	Core.m_HookX = pMsg->m_HookX;
+	Core.m_HookY = pMsg->m_HookY;
+	Core.m_HookDx = pMsg->m_HookDx;
+	Core.m_HookDy = pMsg->m_HookDy;
+	pChr->Core()->Read(&Core);
+
+	if(pMsg->m_DDNetHasState)
+	{
+		CNetObj_DDNetCharacter DDNetCharacter{};
+		DDNetCharacter.m_Flags = pMsg->m_DDNetFlags;
+		DDNetCharacter.m_FreezeEnd = pMsg->m_DDNetFreezeEnd > 0 ?
+			pMsg->m_DDNetFreezeEnd + TickOffset : pMsg->m_DDNetFreezeEnd;
+		DDNetCharacter.m_Jumps = pMsg->m_DDNetJumps;
+		DDNetCharacter.m_TeleCheckpoint = pMsg->m_DDNetTeleCheckpoint;
+		DDNetCharacter.m_StrongWeakId = pMsg->m_DDNetStrongWeakId;
+		DDNetCharacter.m_JumpedTotal = pMsg->m_DDNetJumpedTotal;
+		DDNetCharacter.m_NinjaActivationTick = pMsg->m_DDNetNinjaActivationTick > 0 ?
+			pMsg->m_DDNetNinjaActivationTick + TickOffset : pMsg->m_DDNetNinjaActivationTick;
+		DDNetCharacter.m_FreezeStart = pMsg->m_DDNetFreezeStart > 0 ?
+			pMsg->m_DDNetFreezeStart + TickOffset : pMsg->m_DDNetFreezeStart;
+		DDNetCharacter.m_TargetX = pMsg->m_DDNetTargetX;
+		DDNetCharacter.m_TargetY = pMsg->m_DDNetTargetY;
+		DDNetCharacter.m_TuneZoneOverride = pMsg->m_DDNetTuneZoneOverride;
+		pChr->Core()->ReadDDNet(&DDNetCharacter);
+		pChr->m_TeleCheckpoint = pMsg->m_DDNetTeleCheckpoint;
+		pChr->m_StrongWeakId = pMsg->m_DDNetStrongWeakId;
+	}
+
+	pChr->m_Pos = pChr->Core()->m_Pos;
+	pChr->m_PrevPos = pChr->Core()->m_Pos;
+	pChr->m_FreezeTime = std::max(0, pMsg->m_FreezeTime);
+	pChr->m_FrozenLastTick = pMsg->m_FrozenLastTick != 0;
+	if(pMsg->m_Weapon >= 0 && pMsg->m_Weapon < NUM_WEAPONS)
+		pChr->SetWeapon(pMsg->m_Weapon);
+	pChr->SetAttackTick(pMsg->m_AttackTick > 0 ? pMsg->m_AttackTick + TickOffset : pMsg->m_AttackTick);
+
+	if(Mode == 1)
+	{
+		CNetObj_PlayerInput Input{};
+		Input.m_PlayerFlags = PLAYERFLAG_PLAYING;
+		Input.m_Direction = pMsg->m_InputDirection;
+		Input.m_TargetX = pMsg->m_InputTargetX;
+		Input.m_TargetY = pMsg->m_InputTargetY;
+		Input.m_Jump = pMsg->m_InputJump;
+		Input.m_Fire = pMsg->m_InputFire;
+		Input.m_Hook = pMsg->m_InputHook;
+		Input.m_WantedWeapon = pMsg->m_InputWantedWeapon;
+		Input.m_NextWeapon = pMsg->m_InputNextWeapon;
+		Input.m_PrevWeapon = pMsg->m_InputPrevWeapon;
+		pChr->SetMacroPlaybackPauseAfterTick(true);
+		pChr->OnDirectInput(&Input);
+		pChr->OnPredictedInput(&Input);
+	}
 }
 
 void CGameContext::OnSetSpectatorModeNetMessage(const CNetMsg_Cl_SetSpectatorMode *pMsg, int ClientId)
