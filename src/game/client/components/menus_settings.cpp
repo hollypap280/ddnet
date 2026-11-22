@@ -539,12 +539,29 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		s_vMacroButtons.resize(std::max(s_vMacroButtons.size(), s_vMacros.size()));
 		s_MacroListLoaded = true;
 
-		bool SelectedExists = false;
+		const auto MatchesSearch = [&](const CControls::SMacroInfo &Info) {
+			return s_MacroSearch.IsEmpty() ||
+				str_utf8_find_nocase(Info.m_aName, s_MacroSearch.GetString()) ||
+				str_utf8_find_nocase(Info.m_aMapName, s_MacroSearch.GetString());
+		};
+		bool SelectedIsVisible = false;
+		const CControls::SMacroInfo *pFirstVisible = nullptr;
 		for(const CControls::SMacroInfo &Info : s_vMacros)
+		{
+			if(!MatchesSearch(Info))
+				continue;
+			if(!pFirstVisible)
+				pFirstVisible = &Info;
 			if(str_comp(s_aSelectedMacro, Info.m_aName) == 0)
-				SelectedExists = true;
-		if(!s_vMacros.empty() && (!s_aSelectedMacro[0] || !SelectedExists))
-			str_copy(s_aSelectedMacro, s_vMacros.front().m_aName);
+				SelectedIsVisible = true;
+		}
+		if(!SelectedIsVisible)
+		{
+			if(pFirstVisible)
+				str_copy(s_aSelectedMacro, pFirstVisible->m_aName);
+			else
+				s_aSelectedMacro[0] = '\\0';
+		}
 	};
 	if(!s_MacroListLoaded)
 		RefreshMacroList();
@@ -642,8 +659,6 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 					str_copy(aPlaybackName, s_aSelectedMacro);
 				else if(!s_MacroName.IsEmpty())
 					str_copy(aPlaybackName, s_MacroName.GetString());
-				else if(s_aRecordingMacroName[0])
-					str_copy(aPlaybackName, s_aRecordingMacroName);
 
 				if(!aPlaybackName[0])
 					GameClient()->Echo(Localize("Сначала выбери макрос в библиотеке"));
