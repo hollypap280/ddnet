@@ -299,6 +299,8 @@ jobs:
     - name: Install current MinGW pthread runtime
       if: contains(matrix.name, 'mingw')
       uses: msys2/setup-msys2@v2
+      env:
+        __SETUP_MSYS2_USE_MAIN_MIRROR_ONLY: "true"
       with:
         msystem: MINGW64
         update: true
