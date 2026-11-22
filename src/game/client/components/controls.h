@@ -206,6 +206,9 @@ private:
 	CGameWorld m_MacroPracticeWorld;
 	CNetObj_Character m_MacroPracticeRenderChar{};
 	bool m_MacroPracticeHasRenderChar = false;
+	// Tracks one-time import from the live snapshot independently from whether
+	// a local dummy is currently allowed to move in the private practice world.
+	bool m_aMacroPracticeSnapshotInitialized[MAX_CLIENTS]{};
 	char m_aMacroMapName[64] = "Неизвестная карта";
 	char m_aRecordingMacroName[64] = "";
 	char m_aLoadedMacroName[64] = "";
