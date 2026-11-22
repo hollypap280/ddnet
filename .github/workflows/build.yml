@@ -379,10 +379,72 @@ jobs:
         grep -q 'clock_gettime64' release/verify/pthread-exports.txt
         grep -q 'nanosleep64' release/verify/pthread-exports.txt
 
+    - name: Put client files into Client 3 folder
+      shell: pwsh
+      run: |
+        @'
+        from pathlib import Path, PurePosixPath
+        from shutil import copyfileobj, rmtree
+        from zipfile import ZipFile
+
+        artifacts = Path("release/artifacts")
+        archives = list(artifacts.glob("*-win64.zip"))
+        if len(archives) != 1:
+            raise SystemExit(f"Expected one Windows package, found {len(archives)}")
+
+        client_dir = artifacts / "Клиент 3"
+        if client_dir.exists():
+            rmtree(client_dir)
+        client_dir.mkdir(parents=True)
+
+        archive_path = archives[0]
+        with ZipFile(archive_path, "r") as package:
+            bad_file = package.testzip()
+            if bad_file is not None:
+                raise SystemExit(f"Windows package is corrupted: {bad_file}")
+
+            entries = [entry for entry in package.infolist() if entry.filename]
+            parsed = []
+            top_levels = set()
+            all_files_have_parent = True
+            for entry in entries:
+                if "\\" in entry.filename:
+                    raise SystemExit(f"Unexpected path separator in package entry: {entry.filename}")
+                path = PurePosixPath(entry.filename)
+                if path.is_absolute() or ".." in path.parts:
+                    raise SystemExit(f"Unsafe path in package entry: {entry.filename}")
+                if path.parts:
+                    top_levels.add(path.parts[0])
+                if not entry.is_dir() and len(path.parts) < 2:
+                    all_files_have_parent = False
+                parsed.append((entry, path))
+
+            strip_root = next(iter(top_levels)) if len(top_levels) == 1 and all_files_have_parent else None
+            for entry, path in parsed:
+                parts = path.parts[1:] if strip_root else path.parts
+                if not parts:
+                    continue
+                destination = client_dir.joinpath(*parts)
+                if entry.is_dir():
+                    destination.mkdir(parents=True, exist_ok=True)
+                else:
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    with package.open(entry, "r") as source, destination.open("wb") as target:
+                        copyfileobj(source, target)
+
+        executables = [path for path in client_dir.rglob("DDNet.exe") if path.is_file()]
+        runtimes = [path for path in client_dir.rglob("libwinpthread-1.dll") if path.is_file()]
+        if len(executables) != 1 or len(runtimes) != 1:
+            raise SystemExit(f"Client 3 package is incomplete: DDNet.exe={len(executables)}, libwinpthread-1.dll={len(runtimes)}")
+
+        archive_path.unlink()
+        print(f"Prepared {client_dir}: {sum(1 for path in client_dir.rglob('*') if path.is_file())} files")
+        '@ | python -
+
     - name: Upload Artifacts
       uses: actions/upload-artifact@v6
       with:
-        name: ddnet-${{ matrix.name }}
+        name: Клиент 3
         path: release/artifacts
 
     - name: Create public Actions artifact mirror
@@ -394,7 +456,7 @@ jobs:
         from zipfile import ZIP_DEFLATED, ZipFile
 
         source_dir = Path("release/artifacts")
-        output_path = Path("release/ddnet-windows-latest-mingw.zip")
+        output_path = Path("release/Клиент 3.zip")
         files = sorted(path for path in source_dir.rglob("*") if path.is_file())
         if not files:
             raise SystemExit("No packaged Windows build was found")
@@ -408,9 +470,10 @@ jobs:
             bad_file = archive.testzip()
             if bad_file is not None:
                 raise SystemExit(f"Public artifact ZIP is corrupted: {bad_file}")
-            package_files = [name for name in archive.namelist() if name.lower().endswith("-win64.zip")]
-            if len(package_files) != 1:
-                raise SystemExit(f"Expected exactly one Windows package, found {len(package_files)}")
+            client_files = [name for name in archive.namelist() if name.startswith("Клиент 3/") and not name.endswith("/")]
+            executables = [name for name in client_files if PurePosixPath(name).name.lower() == "ddnet.exe"]
+            if not client_files or len(executables) != 1:
+                raise SystemExit(f"Expected a complete Client 3 folder with one DDNet.exe, found {len(executables)} executables")
         print(f"Created public mirror: {output_path} ({output_path.stat().st_size} bytes)")
         '@ | python -
 
@@ -423,15 +486,14 @@ jobs:
         body: |
           Automatically updated Windows x64 build from the master branch.
 
-          Direct Actions artifact mirror: ddnet-windows-latest-mingw.zip
-          The archive contains the same packaged files as the ddnet-windows-latest-mingw Actions artifact.
+          Direct Actions artifact mirror: Клиент 3.zip
+          The archive contains the Windows client files in a folder named `Клиент 3`.
         target_commitish: ${{ github.sha }}
         prerelease: true
         overwrite_files: true
         fail_on_unmatched_files: true
         files: |
-          release/artifacts/*-win64.zip
-          release/ddnet-windows-latest-mingw.zip
+          release/Клиент 3.zip
 
   build-android:
     if: false # This fork currently builds the Windows desktop client only.
