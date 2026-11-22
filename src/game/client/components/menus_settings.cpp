@@ -664,6 +664,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			}
 			else
 			{
+				RefreshMacroList();
 				char aPlaybackName[64]{};
 				if(s_aSelectedMacro[0])
 					str_copy(aPlaybackName, s_aSelectedMacro);
@@ -675,10 +676,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 				if(!aPlaybackName[0])
 					GameClient()->Echo(Localize("Сначала выбери макрос в библиотеке"));
 				else
-				{
-					RefreshMacroList();
 					GameClient()->m_Controls.PlayMacro(aPlaybackName);
-				}
 			}
 		}
 		Row.VSplitLeft(6.0f, nullptr, &Row);
