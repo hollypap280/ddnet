@@ -1465,8 +1465,20 @@ bool CControls::PlayMacro(const char *pName)
 	}
 	if(m_MacroPlaying)
 		StopMacroRecording();
+	const bool WasPracticeActive = m_MacroPracticeActive;
 	if(!m_MacroPracticeActive && !StartMacroPractice())
 		return false;
+
+	if(aRecordedMapName[0] && m_aMacroMapName[0] && str_comp_nocase(aRecordedMapName, m_aMacroMapName) != 0)
+	{
+		char aMessage[192];
+		str_format(aMessage, sizeof(aMessage), "Макрос записан на карте «%s», а сейчас загружена «%s». Подключись к исходной карте.",
+			aRecordedMapName, m_aMacroMapName);
+		GameClient()->Echo(aMessage);
+		if(!WasPracticeActive)
+			StopMacroPractice();
+		return false;
+	}
 
 	const int StartFrameIndex = std::clamp(g_Config.m_ClMacroStartTick - 1, 0, (int)Frames.size() - 1);
 	const SMacroFrame &StartFrameBeforeMove = Frames[StartFrameIndex];
@@ -1524,9 +1536,6 @@ bool CControls::PlayMacro(const char *pName)
 		m_MacroPracticeWorld.m_GameTick = std::max(0, StartFrame.m_Tick - 1);
 		m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
 	}
-
-	// Macro playback is intentionally map-agnostic. The saved map label is
-	// informational only; it must not block a local playback attempt.
 
 	UpdateMacroPracticeGhost(pPracticeCharacter);
 	char aStartMessage[160];
