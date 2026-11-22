@@ -571,7 +571,8 @@ void CPlayers::RenderPlayer(
 	const CNetObj_Character *pPlayerChar,
 	const CTeeRenderInfo *pRenderInfo,
 	int ClientId,
-	float Intra)
+	float Intra,
+	float AlphaMultiplier)
 {
 	CNetObj_Character Prev;
 	CNetObj_Character Player;
@@ -599,6 +600,7 @@ void CPlayers::RenderPlayer(
 		Alpha = 1.0f;
 	else if(GameClient()->m_Controls.MacroPracticeActive() && ClientId == GameClient()->m_Snap.m_LocalClientId)
 		Alpha *= 0.22f;
+	Alpha *= AlphaMultiplier;
 	// TODO: snd_game_volume_others
 	const float Volume = 1.0f;
 
