@@ -68,6 +68,7 @@ public:
 	bool MacroSlowHeld() const { return m_MacroSlowHeld; }
 	int MacroPosition() const { return m_MacroRecording ? (int)m_vMacroFrames.size() : (int)m_MacroPlaybackIndex; }
 	int MacroFrameCount() const { return (int)m_vMacroFrames.size(); }
+	const char *MacroRecordingName() const { return m_aRecordingMacroName; }
 	struct SMacroInfo
 	{
 		char m_aName[64]{};
@@ -88,7 +89,7 @@ public:
 	bool MacroPracticeWaiting() const { return m_MacroPracticeWaiting; }
 	bool StartMacroPractice();
 	void StopMacroPractice();
-	void StartMacroRecording();
+	bool StartMacroRecording(const char *pName = nullptr);
 	void StopMacroRecording();
 	bool SaveMacro(const char *pName);
 	bool PlayMacro(const char *pName);
@@ -195,6 +196,7 @@ private:
 	CNetObj_Character m_MacroPracticeRenderChar{};
 	bool m_MacroPracticeHasRenderChar = false;
 	char m_aMacroMapName[64] = "Неизвестная карта";
+	char m_aRecordingMacroName[64] = "";
 	char m_aLoadedMacroName[64] = "";
 	bool m_aManualHook[NUM_DUMMIES]{};
 	bool m_aAutoHookActive[NUM_DUMMIES]{};
