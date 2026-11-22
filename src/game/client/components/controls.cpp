@@ -533,6 +533,10 @@ void CControls::ResetMacroPracticeCharacter()
 	pCharacter->m_FrozenLastTick = m_MacroPracticeStartFrozenLastTick;
 	pCharacter->m_IsMacroPracticeStatic = false;
 	pCharacter->ReleaseHook();
+	CNetObj_PlayerInput IdleInput{};
+	IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+	IdleInput.m_TargetX = 1;
+	pCharacter->SetInput(&IdleInput);
 
 	m_MacroPracticePendingJump = false;
 	m_MacroPracticePendingHook = false;
