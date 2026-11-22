@@ -435,8 +435,7 @@ void CMenus::RenderSettingsGame(CUIRect MainView)
 
 	static CButtonContainer s_AutoHook, s_Angle, s_Radius, s_Avoid, s_Edge;
 	static CButtonContainer s_Gun, s_Shotgun, s_Grenade, s_Laser;
-	static CButtonContainer s_AutoTriplefly, s_AutoUnfreeze, s_EdgeHook, s_DummyFlight;
-	static CButtonContainer s_AutoUnfreezeTrain, s_AutoUnfreezeAI, s_ClearAutoUnfreeze;
+	static CButtonContainer s_AutoTriplefly, s_EdgeHook, s_DummyFlight;
 	MainView.HSplitTop(24.0f, &Row, &MainView);
 	if(DoButton_CheckBox(&g_Config.m_ClAutoHook, Localize("Автохук"), g_Config.m_ClAutoHook, &Row))
 		g_Config.m_ClAutoHook ^= 1;
@@ -487,10 +486,6 @@ void CMenus::RenderSettingsGame(CUIRect MainView)
 		g_Config.m_ClAutoHookWeaponLaser ^= 1;
 	Ui()->DoToolTip(&s_Laser, &Row, Localize("Стреляет выбранным оружием по тии, на которого навёлся автохук"));
 
-	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoUnfreezeLaser, Localize("Авторазморозка лазером"), g_Config.m_ClAutoUnfreezeLaser, &Row))
-		g_Config.m_ClAutoUnfreezeLaser ^= 1;
-	Ui()->DoToolTip(&s_AutoUnfreeze, &Row, Localize("Находит ближайшего видимого замороженного тиммейта и стреляет по нему лазером"));
 
 	MainView.HSplitTop(24.0f, &Row, &MainView);
 	if(DoButton_CheckBox(&g_Config.m_ClAutoTriplefly, Localize("Автотрёххук (цепляться за третьего тии)"), g_Config.m_ClAutoTriplefly, &Row))
@@ -507,28 +502,6 @@ void CMenus::RenderSettingsGame(CUIRect MainView)
 		g_Config.m_ClDummyHammer ^= 1;
 	Ui()->DoToolTip(&s_DummyFlight, &Row, Localize("Использует обычный ввод хаммерфлая для дамми"));
 
-	MainView.HSplitTop(22.0f, &Row, &MainView);
-	Ui()->DoLabel(&Row, Localize("ОБУЧЕНИЕ АВТОАНФРИЗА"), 14.0f, TEXTALIGN_ML);
-	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&s_AutoUnfreezeTrain, Localize("Записывать мои успешные разморозки лазером"),
-		g_Config.m_ClAutoUnfreezeTraining, &Row))
-		g_Config.m_ClAutoUnfreezeTraining ^= 1;
-	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&s_AutoUnfreezeAI, Localize("Включить обученный автоанфриз"),
-		g_Config.m_ClAutoUnfreezeAI, &Row))
-		g_Config.m_ClAutoUnfreezeAI ^= 1;
-	MainView.HSplitTop(22.0f, &Row, &MainView);
-	char aTrainingStatus[128];
-	str_format(aTrainingStatus, sizeof(aTrainingStatus), "Подтверждённых разморозок: %d/3  |  примеров: %d",
-		GameClient()->m_Controls.AutoUnfreezeTrainingEpisodeCount(),
-		GameClient()->m_Controls.AutoUnfreezeTrainingSampleCount());
-	Ui()->DoLabel(&Row, aTrainingStatus, 12.0f, TEXTALIGN_ML);
-	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_Menu(&s_ClearAutoUnfreeze, Localize("Сбросить обучение автоанфриза"), 0, &Row))
-	{
-		GameClient()->m_Controls.ClearAutoUnfreezeTraining();
-		GameClient()->Echo(Localize("Обучение автоанфриза сброшено"));
-	}
 }
 
 void CMenus::RenderSettingsMacros(CUIRect MainView)
@@ -591,6 +564,27 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 
 	if(s_MacroSubPage == 0)
 	{
+		const CControls::SMacroInfo *pFirstVisibleMacro = nullptr;
+		bool SelectedIsVisible = false;
+		for(const CControls::SMacroInfo &Info : s_vMacros)
+		{
+			if(!s_MacroSearch.IsEmpty() &&
+				!str_utf8_find_nocase(Info.m_aName, s_MacroSearch.GetString()) &&
+				!str_utf8_find_nocase(Info.m_aMapName, s_MacroSearch.GetString()))
+				continue;
+			if(!pFirstVisibleMacro)
+				pFirstVisibleMacro = &Info;
+			if(str_comp(s_aSelectedMacro, Info.m_aName) == 0)
+				SelectedIsVisible = true;
+		}
+		if(!SelectedIsVisible)
+		{
+			if(pFirstVisibleMacro)
+				str_copy(s_aSelectedMacro, pFirstVisibleMacro->m_aName);
+			else
+				s_aSelectedMacro[0] = '\0';
+		}
+
 		// Keep all recording and playback controls visible. Only the macro
 		// library below is scrollable, so its length cannot hide Stop.
 		CUIRect Header;
@@ -657,7 +651,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		MainView.HSplitTop(28.0f, &PlaybackRow, &MainView);
 		PlaybackRow.VSplitLeft(142.0f, &Button, &Row);
 		if(DoButton_Menu(&s_PlayToggle,
-			Playing ? Localize("Отключить макрос") : Localize("Включить макрос"),
+			Playing ? Localize("Остановить макрос") : Localize("Запустить выбранный"),
 			Playing, &Button))
 		{
 			if(GameClient()->m_Controls.MacroPlaying())
@@ -670,9 +664,6 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			}
 			else
 			{
-				// Prefer the highlighted item, but also accept the name in the
-				// recording field. This avoids a false "select macro" warning
-				// if the list selection UI lost focus after saving.
 				char aPlaybackName[64]{};
 				if(s_aSelectedMacro[0])
 					str_copy(aPlaybackName, s_aSelectedMacro);
@@ -680,25 +671,11 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 					str_copy(aPlaybackName, s_MacroName.GetString());
 				else if(s_aRecordingMacroName[0])
 					str_copy(aPlaybackName, s_aRecordingMacroName);
-				else if(!s_vMacros.empty())
-					str_copy(aPlaybackName, s_vMacros.front().m_aName);
 
 				if(!aPlaybackName[0])
-					GameClient()->Echo(Localize("Введи название макроса или выбери его в библиотеке"));
+					GameClient()->Echo(Localize("Сначала выбери макрос в библиотеке"));
 				else if(!GameClient()->m_Controls.PlayMacro(aPlaybackName))
-				{
-					// One last fallback: the typed name may refer to the last
-					// recording while a stale highlighted entry still exists.
-					bool Started = false;
-					if(!s_MacroName.IsEmpty() && str_comp(aPlaybackName, s_MacroName.GetString()) != 0)
-						Started = GameClient()->m_Controls.PlayMacro(s_MacroName.GetString());
-					if(!Started && !s_vMacros.empty() && str_comp(aPlaybackName, s_vMacros.front().m_aName) != 0)
-						Started = GameClient()->m_Controls.PlayMacro(s_vMacros.front().m_aName);
-					if(!Started)
-						GameClient()->Echo(Localize("Не удалось запустить макрос. Проверь название и файл."));
-					else if(!s_vMacros.empty())
-						str_copy(s_aSelectedMacro, s_vMacros.front().m_aName);
-				}
+					GameClient()->Echo(Localize("Не удалось запустить выбранный макрос. Проверь файл и подключение."));
 			}
 		}
 		Row.VSplitLeft(6.0f, nullptr, &Row);
@@ -899,11 +876,11 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			Ui()->DoScrollbarOption(&g_Config.m_ClMacroSlowFactor, &g_Config.m_ClMacroSlowFactor,
 				&SlowRow, Localize("Замедление при удержании клавиши"), 2, 10);
 
-		AddSection("КОМАНДЫ В ТРЕНИРОВКЕ");		AddSection("КОМАНДЫ В ТРЕНИРОВКЕ");
+		AddSection("КОМАНДЫ В ТРЕНИРОВКЕ");
 		CUIRect InfoRow;
 		if(AddSettingRow(48.0f, InfoRow))
 			Ui()->DoLabel(&InfoRow,
-				Localize("Игровые кнопки и переключение дамми работают внутри копии мира. Серверные команды из биндов (например, say /coin) блокируются, чтобы не выполнять их на настоящем игроке."),
+				Localize("Обычные бинды продолжают работать. Во время воспроизведения движение и прицел тренировочной копии берутся только из записи; на сервер отправляется нейтральный ввод."),
 				12.0f, TEXTALIGN_ML);
 
 		s_MacroSettingsScrollRegion.End();
@@ -924,7 +901,6 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 	};
 	static const SHotkey s_aHotkeys[] = {
 		{ "Автотрёххук", "toggle cl_auto_triplefly 0 1" },
-		{ "Авторазморозка лазером", "toggle cl_auto_unfreeze_laser 0 1" },
 		{ "Автохук", "toggle cl_auto_hook 0 1" },
 		{ "Защита от фриза", "toggle cl_auto_avoid 0 1" },
 		{ "Точная наводка на край", "toggle cl_auto_edge 0 1" },
