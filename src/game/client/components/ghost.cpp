@@ -450,9 +450,10 @@ void CGhost::SetMacroPracticeWorld(CGameWorld *pWorld)
 		if(!m_apMacroPracticeRenderInfo[ClientId])
 			continue;
 
-		// Apply the same frozen appearance used for normal server characters
-		// to characters rendered from this isolated practice world.
-		CTeeRenderInfo RenderInfo = m_apMacroPracticeRenderInfo[ClientId]->TeeRenderInfo();
+		// Always start from the unmodified player skin data. The cached
+		// practice render info may contain a temporary Ninja skin from a freeze
+		// on the previous frame and must never become the next frame's base.
+		CTeeRenderInfo RenderInfo = ClientData.m_RenderInfo;
 		RenderInfo.m_TeeRenderFlags = 0;
 		const CCharacterCore &Core = *pCharacter->Core();
 		const int PracticeTick = pWorld->GameTick();
