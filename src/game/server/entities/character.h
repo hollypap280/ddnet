@@ -107,6 +107,10 @@ public:
 
 	void SetPosition(const vec2 &Position);
 	void Move(vec2 RelPos);
+	bool MacroPlaybackControlled() const { return m_MacroPlaybackControlled; }
+	void SetMacroPlaybackControlled(bool Controlled) { m_MacroPlaybackControlled = Controlled; }
+	void SetMacroPlaybackPauseAfterTick(bool PauseAfterTick) { m_MacroPlaybackPauseAfterTick = PauseAfterTick; }
+	void SetAttackTick(int Tick) { m_AttackTick = Tick; }
 
 	void ResetVelocity();
 	void SetVelocity(vec2 NewVelocity);
@@ -217,6 +221,8 @@ public:
 	bool SameTeam(int ClientId);
 	void StopRecording();
 	bool m_NinjaJetpack;
+	bool m_MacroPlaybackControlled = false;
+	bool m_MacroPlaybackPauseAfterTick = false;
 	int m_TeamBeforeSuper;
 	int m_FreezeTime;
 	bool m_FrozenLastTick;
