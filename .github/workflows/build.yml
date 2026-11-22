@@ -438,7 +438,7 @@ jobs:
             raise SystemExit(f"Client 3 package is incomplete: DDNet.exe={len(executables)}, libwinpthread-1.dll={len(runtimes)}")
 
         archive_path.unlink()
-        print(f"Prepared {client_dir}: {sum(1 for path in client_dir.rglob('*') if path.is_file())} files")
+        print("Prepared Client 3 package")
         '@ | python -
 
     - name: Upload Artifacts
@@ -474,7 +474,7 @@ jobs:
             executables = [name for name in client_files if PurePosixPath(name).name.lower() == "ddnet.exe"]
             if not client_files or len(executables) != 1:
                 raise SystemExit(f"Expected a complete Client 3 folder with one DDNet.exe, found {len(executables)} executables")
-        print(f"Created public mirror: {output_path} ({output_path.stat().st_size} bytes)")
+        print("Created public Windows mirror")
         '@ | python -
 
     - name: Publish latest Windows build on GitHub Releases
