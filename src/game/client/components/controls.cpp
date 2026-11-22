@@ -521,7 +521,7 @@ void CControls::ResetMacroPracticeCharacter()
 		Core.m_FreezeEnd = m_MacroPracticeWorld.GameTick() + (Core.m_FreezeEnd - m_MacroPracticeStartTick);
 	Core.m_Vel = vec2(0.0f, 0.0f);
 	Core.m_HookState = HOOK_IDLE;
-	Core.m_HookedPlayer = -1;
+	Core.SetHookedPlayer(-1);
 	Core.m_HookPos = Core.m_Pos;
 	Core.m_HookDir = vec2(0.0f, 0.0f);
 	pCharacter->SetCore(Core);
