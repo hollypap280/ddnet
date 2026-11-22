@@ -452,7 +452,7 @@ jobs:
       shell: pwsh
       run: |
         @'
-        from pathlib import Path
+        from pathlib import Path, PurePosixPath
         from zipfile import ZIP_DEFLATED, ZipFile
 
         source_dir = Path("release/artifacts")
