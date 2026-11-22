@@ -611,8 +611,6 @@ void CControls::StopMacroPractice()
 	std::fill(std::begin(m_aMacroPracticeSnapshotInitialized), std::end(m_aMacroPracticeSnapshotInitialized), false);
 	m_MacroPlaybackOwnsDummy = false;
 	m_MacroPlaybackOwnsPractice = false;
-	m_vMacroCorrectionFrames.clear();
-	m_aLoadedMacroName[0] = '\0';
 	m_aRecordingMacroName[0] = '\0';
 	m_MacroPlaybackLive = false;
 	m_MacroPlaybackLastTick = -1;
@@ -1191,7 +1189,6 @@ bool CControls::StartMacroRecording(const char *pName)
 	m_MacroPracticeLastTime = time_get();
 	m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
 	m_vMacroFrames.clear();
-	m_vMacroCorrectionFrames.clear();
 	m_MacroRecording = true;
 
 	char aMessage[128];
@@ -1492,8 +1489,6 @@ bool CControls::PlayMacro(const char *pName)
 	}
 
 	m_vMacroFrames = std::move(Frames);
-	m_vMacroCorrectionFrames.clear();
-	str_copy(m_aLoadedMacroName, pName);
 	// Playback always owns the practice tee, including older files that do not store client IDs.
 	m_MacroPlaybackOwnsDummy = true;
 	m_MacroRecording = false;
