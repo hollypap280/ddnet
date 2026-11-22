@@ -674,8 +674,11 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 
 				if(!aPlaybackName[0])
 					GameClient()->Echo(Localize("Сначала выбери макрос в библиотеке"));
-				else if(!GameClient()->m_Controls.PlayMacro(aPlaybackName))
-					GameClient()->Echo(Localize("Не удалось запустить выбранный макрос. Проверь файл и подключение."));
+				else
+				{
+					RefreshMacroList();
+					GameClient()->m_Controls.PlayMacro(aPlaybackName);
+				}
 			}
 		}
 		Row.VSplitLeft(6.0f, nullptr, &Row);
