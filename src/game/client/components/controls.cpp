@@ -2254,7 +2254,7 @@ int CControls::SnapInput(int *pData)
 			m_MacroPracticeLastTime = CurrentTime;
 			m_MacroPracticeAccumulator += (double)ElapsedTime / (double)time_freq() * MacroPracticeRate();
 			int Steps = 0;
-			const int MaxStepsPerUpdate = std::max(SERVER_TICK_SPEED, MacroPracticeRate());
+			const int MaxStepsPerUpdate = std::max<int>(SERVER_TICK_SPEED, MacroPracticeRate());
 			while(m_MacroPracticeAccumulator >= 1.0 && Steps < MaxStepsPerUpdate)
 			{
 				SimulateMacroPracticeTick(PracticeInput, PracticeDummyInput);
