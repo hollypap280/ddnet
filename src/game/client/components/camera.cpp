@@ -212,6 +212,15 @@ void CCamera::UpdateCamera()
 		return;
 	}
 
+	if(GameClient()->m_Controls.MacroPracticeActive())
+	{
+		m_DyncamTargetCameraOffset = vec2(0.0f, 0.0f);
+		m_LastTargetPos = vec2(0.0f, 0.0f);
+		m_aDyncamCurrentCameraOffset[g_Config.m_ClDummy] = vec2(0.0f, 0.0f);
+		m_CanUseCameraInfo = CanUseCameraInfo;
+		m_UsingAutoSpecCamera = UsingAutoSpecCamera;
+		return;
+	}
 	vec2 TargetPos = CanUseCameraInfo ? GameClient()->m_CursorInfo.Target() : GameClient()->m_Controls.m_aMousePos[g_Config.m_ClDummy];
 	int Smoothness = CanUseCameraInfo ? 50 : g_Config.m_ClDyncamSmoothness;
 	int Stabilizing = CanUseCameraInfo ? 50 : g_Config.m_ClDyncamStabilizing;

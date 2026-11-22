@@ -139,11 +139,6 @@ bool CBinds::OnInput(const IInput::CEvent &Event)
 			const auto &&OnKeyPress = [&](int Mask) {
 				// Have to copy bind because it can unbind itself during ExecuteLineStroked
 				const std::string BindCopy = m_aapKeyBindings[Mask][Event.m_Key];
-				if(GameClient()->m_Controls.MacroPracticeActive() && !GameClient()->m_Controls.IsMacroPracticeBindSafe(BindCopy.c_str()))
-				{
-					GameClient()->Echo("Команда бинда отключена в тренировке: здесь разрешены только игровые кнопки и переключение дамми.");
-					return;
-				}
 				Console()->ExecuteLineStroked(1, BindCopy.c_str(), IConsole::CLIENT_ID_UNSPECIFIED);
 				m_vActiveBinds.emplace_back(Event.m_Key, Mask);
 			};
@@ -194,8 +189,6 @@ bool CBinds::OnInput(const IInput::CEvent &Event)
 			}
 			// Have to copy bind because it can unbind itself during ExecuteLineStroked
 			const std::string BindCopy = m_aapKeyBindings[Bind.m_ModifierMask][Bind.m_Key];
-			if(GameClient()->m_Controls.MacroPracticeActive() && !GameClient()->m_Controls.IsMacroPracticeBindSafe(BindCopy.c_str()))
-				return;
 			Console()->ExecuteLineStroked(0, BindCopy.c_str(), IConsole::CLIENT_ID_UNSPECIFIED);
 		};
 

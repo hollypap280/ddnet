@@ -12,6 +12,7 @@
 #include <engine/ghost.h>
 #include <engine/graphics.h>
 #include <engine/shared/config.h>
+#include <engine/textrender.h>
 #include <engine/storage.h>
 
 #include <game/client/components/menus.h>
@@ -389,6 +390,25 @@ void CGhost::OnRender()
 			CTeeRenderInfo RenderInfo = m_apMacroPracticeRenderInfo[ClientId]->TeeRenderInfo();
 			GameClient()->m_Players.RenderHook(ScreenRect, &m_aMacroPracticePrev[ClientId], &m_aMacroPracticeCurrent[ClientId], &RenderInfo, -3, 1.0f);
 			GameClient()->m_Players.RenderPlayer(ScreenRect, &m_aMacroPracticePrev[ClientId], &m_aMacroPracticeCurrent[ClientId], &RenderInfo, -3, 1.0f);
+
+			char aFreezeStatus[64];
+			if(m_aMacroPracticeFreezeTicks[ClientId] > 0)
+				str_format(aFreezeStatus, sizeof(aFreezeStatus), "%d тиков", m_aMacroPracticeFreezeTicks[ClientId]);
+			else if(m_aMacroPracticeFreezeTicks[ClientId] < 0)
+				str_copy(aFreezeStatus, "ГЛУБОКИЙ ФРИЗ");
+			else if(m_aMacroPracticeUnfreezeUntil[ClientId] >= GameClient()->m_Controls.MacroPracticeTick())
+				str_copy(aFreezeStatus, "АНФРИЗ!");
+			else
+				continue;
+			const float FontSize = 11.0f;
+			const float Width = TextRender()->TextWidth(FontSize, aFreezeStatus);
+			const float X = m_aMacroPracticeCurrent[ClientId].m_X - Width * 0.5f;
+			const float Y = m_aMacroPracticeCurrent[ClientId].m_Y - 57.0f;
+			TextRender()->TextColor(ColorRGBA(0.45f, 0.9f, 1.0f, 1.0f));
+			TextRender()->TextOutlineColor(ColorRGBA(0.0f, 0.0f, 0.0f, 0.9f));
+			TextRender()->Text(X, Y, FontSize, aFreezeStatus);
+			TextRender()->TextColor(ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f));
+			TextRender()->TextOutlineColor(ColorRGBA(0.0f, 0.0f, 0.0f, 0.3f));
 		}
 	}
 }
@@ -427,11 +447,20 @@ void CGhost::SetMacroPracticeWorld(CGameWorld *pWorld)
 		CTeeRenderInfo RenderInfo = m_apMacroPracticeRenderInfo[ClientId]->TeeRenderInfo();
 		RenderInfo.m_TeeRenderFlags = 0;
 		const CCharacterCore &Core = *pCharacter->Core();
-		const bool Frozen = pCharacter->m_FreezeTime > 0 || Core.m_DeepFrozen || Core.m_LiveFrozen;
+		const int PracticeTick = pWorld->GameTick();
+		const int CoreFreezeTicks = Core.m_FreezeEnd > PracticeTick ? Core.m_FreezeEnd - PracticeTick : 0;
+		const bool Frozen = pCharacter->m_FreezeTime > 0 || Core.m_FreezeEnd != 0 ||
+			Core.m_DeepFrozen || Core.m_LiveFrozen;
+		m_aMacroPracticeFreezeTicks[ClientId] =
+			(Core.m_DeepFrozen || Core.m_LiveFrozen || Core.m_FreezeEnd < 0) ? -1 :
+			(pCharacter->m_FreezeTime > 0 ? pCharacter->m_FreezeTime : CoreFreezeTicks);
+		if(m_aMacroPracticeWasFrozen[ClientId] && !Frozen)
+			m_aMacroPracticeUnfreezeUntil[ClientId] = PracticeTick + SERVER_TICK_SPEED;
+		m_aMacroPracticeWasFrozen[ClientId] = Frozen;
 		if(Frozen)
 		{
 			RenderInfo.m_TeeRenderFlags |= TEE_EFFECT_FROZEN;
-			if(pCharacter->m_FreezeTime > 0 || Core.m_DeepFrozen)
+			if(pCharacter->m_FreezeTime > 0 || Core.m_FreezeEnd != 0 || Core.m_DeepFrozen)
 				RenderInfo.m_TeeRenderFlags |= TEE_NO_WEAPON;
 			if(g_Config.m_ClShowNinja && !GameClient()->m_GameInfo.m_NoSkinChangeForFrozen)
 			{
@@ -466,6 +495,9 @@ void CGhost::SetMacroPracticeWorld(CGameWorld *pWorld)
 void CGhost::ClearMacroPracticeCharacter()
 {
 	std::fill(std::begin(m_aMacroPracticeVisible), std::end(m_aMacroPracticeVisible), false);
+	std::fill(std::begin(m_aMacroPracticeFreezeTicks), std::end(m_aMacroPracticeFreezeTicks), 0);
+	std::fill(std::begin(m_aMacroPracticeWasFrozen), std::end(m_aMacroPracticeWasFrozen), false);
+	std::fill(std::begin(m_aMacroPracticeUnfreezeUntil), std::end(m_aMacroPracticeUnfreezeUntil), 0);
 	std::fill(std::begin(m_apMacroPracticeRenderInfo), std::end(m_apMacroPracticeRenderInfo), nullptr);
 }
 

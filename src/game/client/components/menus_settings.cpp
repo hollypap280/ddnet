@@ -436,6 +436,7 @@ void CMenus::RenderSettingsGame(CUIRect MainView)
 	static CButtonContainer s_AutoHook, s_Angle, s_Radius, s_Avoid, s_Edge;
 	static CButtonContainer s_Gun, s_Shotgun, s_Grenade, s_Laser;
 	static CButtonContainer s_AutoTriplefly, s_AutoUnfreeze, s_EdgeHook, s_DummyFlight;
+	static CButtonContainer s_AutoUnfreezeTrain, s_AutoUnfreezeAI, s_ClearAutoUnfreeze;
 	MainView.HSplitTop(24.0f, &Row, &MainView);
 	if(DoButton_CheckBox(&g_Config.m_ClAutoHook, Localize("Автохук"), g_Config.m_ClAutoHook, &Row))
 		g_Config.m_ClAutoHook ^= 1;
@@ -505,6 +506,29 @@ void CMenus::RenderSettingsGame(CUIRect MainView)
 	if(DoButton_CheckBox(&g_Config.m_ClDummyHammer, Localize("Полёт дамми (обычный хаммерфлай)"), g_Config.m_ClDummyHammer, &Row))
 		g_Config.m_ClDummyHammer ^= 1;
 	Ui()->DoToolTip(&s_DummyFlight, &Row, Localize("Использует обычный ввод хаммерфлая для дамми"));
+
+	MainView.HSplitTop(22.0f, &Row, &MainView);
+	Ui()->DoLabel(&Row, Localize("ОБУЧЕНИЕ АВТОАНФРИЗА"), 14.0f, TEXTALIGN_ML);
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	if(DoButton_CheckBox(&s_AutoUnfreezeTrain, Localize("Записывать мои успешные разморозки лазером"),
+		g_Config.m_ClAutoUnfreezeTraining, &Row))
+		g_Config.m_ClAutoUnfreezeTraining ^= 1;
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	if(DoButton_CheckBox(&s_AutoUnfreezeAI, Localize("Включить обученный автоанфриз"),
+		g_Config.m_ClAutoUnfreezeAI, &Row))
+		g_Config.m_ClAutoUnfreezeAI ^= 1;
+	MainView.HSplitTop(22.0f, &Row, &MainView);
+	char aTrainingStatus[128];
+	str_format(aTrainingStatus, sizeof(aTrainingStatus), "Подтверждённых разморозок: %d/3  |  примеров: %d",
+		GameClient()->m_Controls.AutoUnfreezeTrainingEpisodeCount(),
+		GameClient()->m_Controls.AutoUnfreezeTrainingSampleCount());
+	Ui()->DoLabel(&Row, aTrainingStatus, 12.0f, TEXTALIGN_ML);
+	MainView.HSplitTop(24.0f, &Row, &MainView);
+	if(DoButton_Menu(&s_ClearAutoUnfreeze, Localize("Сбросить обучение автоанфриза"), 0, &Row))
+	{
+		GameClient()->m_Controls.ClearAutoUnfreezeTraining();
+		GameClient()->Echo(Localize("Обучение автоанфриза сброшено"));
+	}
 }
 
 void CMenus::RenderSettingsMacros(CUIRect MainView)
@@ -547,10 +571,8 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		for(const CControls::SMacroInfo &Info : s_vMacros)
 			if(str_comp(s_aSelectedMacro, Info.m_aName) == 0)
 				SelectedExists = true;
-		// Keep the last chosen/saved name when storage temporarily returns an
-		// empty listing; PlayMacro will validate the file before starting it.
-		if(!SelectedExists && !s_vMacros.empty())
-			s_aSelectedMacro[0] = '\0';
+		if(!s_vMacros.empty() && (!s_aSelectedMacro[0] || !SelectedExists))
+			str_copy(s_aSelectedMacro, s_vMacros.front().m_aName);
 	};
 	if(!s_MacroListLoaded)
 		RefreshMacroList();
@@ -658,6 +680,8 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 					str_copy(aPlaybackName, s_MacroName.GetString());
 				else if(s_aRecordingMacroName[0])
 					str_copy(aPlaybackName, s_aRecordingMacroName);
+				else if(!s_vMacros.empty())
+					str_copy(aPlaybackName, s_vMacros.front().m_aName);
 
 				if(!aPlaybackName[0])
 					GameClient()->Echo(Localize("Введи название макроса или выбери его в библиотеке"));
@@ -665,11 +689,15 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 				{
 					// One last fallback: the typed name may refer to the last
 					// recording while a stale highlighted entry still exists.
-					if(s_MacroName.IsEmpty() || str_comp(aPlaybackName, s_MacroName.GetString()) == 0 ||
-						!GameClient()->m_Controls.PlayMacro(s_MacroName.GetString()))
+					bool Started = false;
+					if(!s_MacroName.IsEmpty() && str_comp(aPlaybackName, s_MacroName.GetString()) != 0)
+						Started = GameClient()->m_Controls.PlayMacro(s_MacroName.GetString());
+					if(!Started && !s_vMacros.empty() && str_comp(aPlaybackName, s_vMacros.front().m_aName) != 0)
+						Started = GameClient()->m_Controls.PlayMacro(s_vMacros.front().m_aName);
+					if(!Started)
 						GameClient()->Echo(Localize("Не удалось запустить макрос. Проверь название и файл."));
-					else
-						str_copy(s_aSelectedMacro, s_MacroName.GetString());
+					else if(!s_vMacros.empty())
+						str_copy(s_aSelectedMacro, s_vMacros.front().m_aName);
 				}
 			}
 		}
@@ -871,44 +899,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			Ui()->DoScrollbarOption(&g_Config.m_ClMacroSlowFactor, &g_Config.m_ClMacroSlowFactor,
 				&SlowRow, Localize("Замедление при удержании клавиши"), 2, 10);
 
-		AddSection("ОБУЧЕНИЕ АВТОАНФРИЗА");
-		CUIRect TrainRow;
-		if(AddSettingRow(30.0f, TrainRow) &&
-			DoButton_CheckBox(&s_AutoUnfreezeTrain, Localize("Тренировать автоанфриз на моих успешных разморозках"),
-				g_Config.m_ClAutoUnfreezeTraining, &TrainRow))
-			g_Config.m_ClAutoUnfreezeTraining ^= 1;
-
-		CUIRect AIRow;
-		if(AddSettingRow(30.0f, AIRow) &&
-			DoButton_CheckBox(&s_AutoUnfreezeAI, Localize("Включить обученный автоанфриз"),
-				g_Config.m_ClAutoUnfreezeAI, &AIRow))
-			g_Config.m_ClAutoUnfreezeAI ^= 1;
-
-		CUIRect SamplesRow;
-		if(AddSettingRow(22.0f, SamplesRow))
-		{
-			char aSamples[128];
-			str_format(aSamples, sizeof(aSamples), "Примеров: %d  |  успешных анфризов: %d/3",
-				GameClient()->m_Controls.AutoUnfreezeTrainingSampleCount(),
-				GameClient()->m_Controls.AutoUnfreezeTrainingEpisodeCount());
-			Ui()->DoLabel(&SamplesRow, aSamples, 12.0f, TEXTALIGN_ML);
-		}
-
-		CUIRect ClearRow;
-		if(AddSettingRow(28.0f, ClearRow) &&
-			DoButton_Menu(&s_ClearAutoUnfreeze, Localize("Очистить обучение"), 0, &ClearRow))
-		{
-			GameClient()->m_Controls.ClearAutoUnfreezeTraining();
-			GameClient()->Echo(Localize("Примеры обучения автоанфриза очищены"));
-		}
-
-		CUIRect TrainingInfo;
-		if(AddSettingRow(54.0f, TrainingInfo))
-			Ui()->DoLabel(&TrainingInfo,
-				Localize("Включи обучение и успешно разморозься вручную 3 раза. После этого модель начнёт подбирать похожие действия и пробовать зеркальный вариант по горизонтали. Это обучение на примерах, а не полноценная нейросеть."),
-				12.0f, TEXTALIGN_ML);
-
-		AddSection("КОМАНДЫ В ТРЕНИРОВКЕ");
+		AddSection("КОМАНДЫ В ТРЕНИРОВКЕ");		AddSection("КОМАНДЫ В ТРЕНИРОВКЕ");
 		CUIRect InfoRow;
 		if(AddSettingRow(48.0f, InfoRow))
 			Ui()->DoLabel(&InfoRow,
