@@ -496,9 +496,52 @@ bool CControls::StartMacroPractice()
 	m_MacroPracticeHasRenderChar = false;
 
 	CCharacter *pPracticeChar = m_MacroPracticeWorld.GetCharacterById(LocalId);
+	m_MacroPracticeStartTick = m_MacroPracticeWorld.GameTick();
+	pPracticeChar->Core()->Write(&m_MacroPracticeStartCore);
+	m_MacroPracticeStartWeapon = pPracticeChar->GetActiveWeapon();
+	m_MacroPracticeStartFreezeTime = pPracticeChar->m_FreezeTime;
+	m_MacroPracticeStartFrozenLastTick = pPracticeChar->m_FrozenLastTick;
 	UpdateMacroPracticeGhost(pPracticeChar);
 	GameClient()->Echo("Тренировка началась. Серверный тии неподвижен, тренировочный тии существует только локально.");
 	return true;
+}
+
+void CControls::ResetMacroPracticeCharacter()
+{
+	if(!m_MacroPracticeActive)
+		return;
+
+	CCharacter *pCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId);
+	if(!pCharacter)
+		return;
+
+	CCharacterCore Core = pCharacter->GetCore();
+	Core.Read(&m_MacroPracticeStartCore);
+	if(Core.m_FreezeEnd > m_MacroPracticeStartTick)
+		Core.m_FreezeEnd = m_MacroPracticeWorld.GameTick() + (Core.m_FreezeEnd - m_MacroPracticeStartTick);
+	Core.m_Vel = vec2(0.0f, 0.0f);
+	Core.m_HookState = HOOK_IDLE;
+	Core.m_HookedPlayer = -1;
+	Core.m_HookPos = Core.m_Pos;
+	Core.m_HookDir = vec2(0.0f, 0.0f);
+	pCharacter->SetCore(Core);
+	pCharacter->m_Pos = Core.m_Pos;
+	pCharacter->m_PrevPos = Core.m_Pos;
+	pCharacter->m_PrevPrevPos = Core.m_Pos;
+	pCharacter->SetActiveWeapon(m_MacroPracticeStartWeapon);
+	pCharacter->m_FreezeTime = m_MacroPracticeStartFreezeTime;
+	pCharacter->m_FrozenLastTick = m_MacroPracticeStartFrozenLastTick;
+	pCharacter->m_IsMacroPracticeStatic = false;
+	pCharacter->ReleaseHook();
+
+	m_MacroPracticePendingJump = false;
+	m_MacroPracticePendingHook = false;
+	m_MacroPracticePendingDirectionLeft = false;
+	m_MacroPracticePendingDirectionRight = false;
+	m_MacroPracticePendingFireTransitions = 0;
+	m_MacroPracticeFireCounter = m_aInputData[g_Config.m_ClDummy].m_Fire & INPUT_STATE_MASK;
+	UpdateMacroPracticeGhost(pCharacter);
+	GameClient()->Echo("Тренировочный тии возвращён в начальную точку. Серверный персонаж не затронут.");
 }
 
 void CControls::StopMacroPractice()
