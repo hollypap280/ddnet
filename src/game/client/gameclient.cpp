@@ -3358,7 +3358,13 @@ void CGameClient::ConTeam(IConsole::IResult *pResult, void *pUserData)
 
 void CGameClient::ConKill(IConsole::IResult *pResult, void *pUserData)
 {
-	((CGameClient *)pUserData)->SendKill();
+	CGameClient *pSelf = static_cast<CGameClient *>(pUserData);
+	if(pSelf->m_Controls.MacroPracticeActive())
+	{
+		pSelf->m_Controls.ResetMacroPracticeCharacter();
+		return;
+	}
+	pSelf->SendKill();
 }
 
 void CGameClient::ConReadyChange7(IConsole::IResult *pResult, void *pUserData)
