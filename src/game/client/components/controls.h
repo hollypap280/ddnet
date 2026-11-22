@@ -65,7 +65,9 @@ public:
 	bool MacroRecording() const { return m_MacroRecording; }
 	bool MacroPlaying() const { return m_MacroPlaying; }
 	bool MacroPlaybackLive() const { return m_MacroPlaybackLive; }
+	bool MacroPaused() const { return m_MacroPlaybackPaused; }
 	int MacroPosition() const { return m_MacroRecording ? (int)m_vMacroFrames.size() : m_MacroPlaying ? m_MacroDisplayedTick : (int)m_MacroPlaybackIndex; }
+	void ToggleMacroPause();
 	int MacroFrameCount() const { return (int)m_vMacroFrames.size(); }
 	const char *MacroRecordingName() const { return m_aRecordingMacroName; }
 	struct SMacroInfo
@@ -96,6 +98,7 @@ public:
 	bool DeleteMacro(const char *pName);
 
 private:
+	enum class EMacroFrameMode { PAUSE = 0, STEP = 1, RESTORE_PAUSED = 2, STOP = 3 };
 	static void ConKeyInputState(IConsole::IResult *pResult, void *pUserData);
 	static void ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData);
 	static void ConKeyInputSet(IConsole::IResult *pResult, void *pUserData);
@@ -119,6 +122,26 @@ private:
 		// Tee controlled in this private-world frame, or -1 in older macros.
 		int m_ClientId = -1;
 		// Freeze state is separate from CCharacterCore and must be replayed too.
+		int m_PreFreezeTime = 0;
+		int m_FreezeTime = 0;
+		int m_PreFrozenLastTick = 0;
+		int m_FrozenLastTick = 0;
+		int m_PreAttackTick = 0;
+		int m_HasDDNetState = 0;
+		CNetObj_DDNetCharacter m_PreDDNetCharacter{};
+	};
+	struct SMacroFrameV6
+	{
+		CNetObj_PlayerInput m_Input{};
+		CNetObj_CharacterCore m_PreCore{};
+		CNetObj_CharacterCore m_Core{};
+		CNetObj_Character m_Character{};
+		int m_PreWeapon = WEAPON_HAMMER;
+		int m_Weapon = WEAPON_HAMMER;
+		int m_AttackTick = 0;
+		int m_Tick = 0;
+		int m_HasCoordinates = 1;
+		int m_ClientId = -1;
 		int m_PreFreezeTime = 0;
 		int m_FreezeTime = 0;
 		int m_PreFrozenLastTick = 0;
@@ -171,6 +194,7 @@ private:
 	bool m_MacroRecording = false;
 	bool m_MacroPlaying = false;
 	bool m_MacroPlaybackLive = false;
+	bool m_MacroPlaybackPaused = false;
 	bool m_MacroPlaybackOwnsDummy = false;
 	bool m_MacroPlaybackOwnsPractice = false;
 	int m_MacroPlaybackLastTick = -1;
@@ -235,6 +259,7 @@ private:
 	void PopulateMacroPracticeWorld();
 	bool SwitchMacroPracticeCharacter(int ClientId);
 	static void ConMacroPractice(IConsole::IResult *pResult, void *pUserData);
+	static void ConMacroPause(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroRecord(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroStop(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroSave(IConsole::IResult *pResult, void *pUserData);
@@ -257,6 +282,9 @@ private:
 		EMacroPracticeDummyAction m_Action;
 	};
 	static void ConMacroPracticeDummyInput(IConsole::IResult *pResult, void *pUserData);
+	static void ConMacroPracticeInput(IConsole::IResult *pResult, void *pUserData);
+	void SendMacroFrame(int Index, EMacroFrameMode Mode);
+	void SendMacroFrameControl(EMacroFrameMode Mode);
 	void SendPracticeTeleport(vec2 Pos, int Conn);
 	void SendPracticeTeleportToCursor(int Conn);
 };
