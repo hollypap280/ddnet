@@ -686,12 +686,10 @@ void CControls::PopulateMacroPracticeWorld()
 			pPracticeCharacter->m_IsLocal = false;
 			m_MacroPracticeWorld.InsertEntity(pPracticeCharacter);
 		}
-		const bool IsFlightDummy = !m_MacroPlaying &&
-			ClientId == GameClient()->m_aLocalIds[!g_Config.m_ClDummy] &&
-			(g_Config.m_ClDummyHammer || g_Config.m_ClDummyControl || g_Config.m_ClDummyCopyMoves);
-		if(IsFlightDummy && !pPracticeCharacter->m_IsMacroPracticeStatic)
-			pPracticeCharacter->m_IsMacroPracticeStatic = false;
-		else if(!pPracticeCharacter->m_IsMacroPracticeStatic)
+		// Import each tee from the live snapshot only once. After that the
+		// private clone owns its position even if dummy-copy/fly binds are
+		// toggled on or off; never snap it back to the server's old position.
+		if(!pPracticeCharacter->m_IsMacroPracticeStatic)
 		{
 			pPracticeCharacter->Read(&GameClient()->m_Snap.m_aCharacters[ClientId].m_Cur,
 				Info.m_HasExtendedData ? &GameClient()->m_Snap.m_aCharacters[ClientId].m_ExtendedData : nullptr, false);
