@@ -516,11 +516,10 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	static std::vector<CButtonContainer> s_vMacroButtons;
 	static bool s_MacroListLoaded = false;
 	static char s_aSelectedMacro[64]{};
-	static char s_aRecordingMacroName[64]{};
 	static int s_MacroSubPage = 0;
 	static CButtonContainer s_MacroTab, s_SettingsTab;
-	static CButtonContainer s_PracticeToggle, s_ShowOthers;
-	static CButtonContainer s_RecordToggle, s_Save;
+	static CButtonContainer s_ShowOthers;
+	static CButtonContainer s_RecordToggle;
 	static CButtonContainer s_PlayToggle, s_Delete, s_Refresh;
 	static CButtonContainer s_MacroLoop;
 	static CScrollRegion s_MacroListScrollRegion;
@@ -550,17 +549,6 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	if(!s_MacroListLoaded)
 		RefreshMacroList();
 
-	auto SaveCapturedMacro = [&](const char *pName) {
-		if(pName && pName[0] && GameClient()->m_Controls.SaveMacro(pName))
-		{
-			GameClient()->Echo(Localize("Макрос сохранён"));
-			str_copy(s_aSelectedMacro, pName);
-			RefreshMacroList();
-			return true;
-		}
-		GameClient()->Echo(Localize("Не удалось сохранить макрос. Проверь название."));
-		return false;
-	};
 
 	if(s_MacroSubPage == 0)
 	{
@@ -599,53 +587,37 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 
 		const bool Recording = GameClient()->m_Controls.MacroRecording();
 		const bool Playing = GameClient()->m_Controls.MacroPlaying();
-		const bool PendingSave = !Recording && !Playing && s_aRecordingMacroName[0] &&
-			GameClient()->m_Controls.MacroFrameCount() > 0;
+		const bool PracticeActive = GameClient()->m_Controls.MacroPracticeActive();
 
 		CUIRect RecordingRow;
 		MainView.HSplitTop(28.0f, &RecordingRow, &MainView);
 		RecordingRow.VSplitLeft(142.0f, &Button, &Row);
-		const char *pRecordLabel = Recording ? Localize("Остановить запись") :
-			PendingSave ? Localize("Сохранить запись") :
-			Playing ? Localize("Сначала останови макрос") : Localize("Начать запись");
-		if(DoButton_Menu(&s_RecordToggle, pRecordLabel, Recording || PendingSave, &Button))
+		const char *pRecordLabel = Recording ? Localize("Завершить и сохранить") :
+			Playing ? Localize("Сначала останови макрос") : Localize("Начать макрос");
+		if(DoButton_Menu(&s_RecordToggle, pRecordLabel, Recording, &Button))
 		{
-			if(Recording || PendingSave)
+			if(Recording)
 			{
-				if(Recording)
-					GameClient()->m_Controls.StopMacroRecording();
-				if(SaveCapturedMacro(s_aRecordingMacroName))
-					s_aRecordingMacroName[0] = '\0';
+				char aCompletedMacroName[64]{};
+				str_copy(aCompletedMacroName, GameClient()->m_Controls.MacroRecordingName());
+				GameClient()->m_Controls.StopMacroRecording();
+				if(aCompletedMacroName[0])
+					str_copy(s_aSelectedMacro, aCompletedMacroName);
+				RefreshMacroList();
 			}
 			else if(Playing)
 			{
 				GameClient()->Echo(Localize("Сначала останови воспроизведение"));
 			}
-			else if(s_MacroName.IsEmpty())
-			{
-				GameClient()->Echo(Localize("Сначала введи название макроса"));
-			}
 			else
 			{
-				str_copy(s_aRecordingMacroName, s_MacroName.GetString());
-				GameClient()->m_Controls.StartMacroRecording();
-				if(!GameClient()->m_Controls.MacroRecording())
-					s_aRecordingMacroName[0] = '\0';
+				const char *pName = s_MacroName.IsEmpty() ? nullptr : s_MacroName.GetString();
+				GameClient()->m_Controls.StartMacroRecording(pName);
 			}
 		}
-		Row.VSplitLeft(6.0f, nullptr, &Row);
-		Row.VSplitLeft(112.0f, &Button, nullptr);
-		if(DoButton_Menu(&s_Save, Localize("Сохранить вручную"), 0, &Button))
-		{
-			if(s_MacroName.IsEmpty() || !GameClient()->m_Controls.SaveMacro(s_MacroName.GetString()))
-				GameClient()->Echo(Localize("Не удалось сохранить. Сначала останови запись."));
-			else
-			{
-				GameClient()->Echo(Localize("Макрос сохранён"));
-				str_copy(s_aSelectedMacro, s_MacroName.GetString());
-				RefreshMacroList();
-			}
-		}
+		const char *pPracticeHint = Recording ? GameClient()->m_Controls.MacroRecordingName() :
+			PracticeActive ? Localize("FP-тренировка активна") : Localize("Настоящий тии остаётся неподвижен на сервере");
+		Ui()->DoLabel(&Row, pPracticeHint, 11.0f, TEXTALIGN_ML);
 
 		CUIRect PlaybackRow;
 		MainView.HSplitTop(28.0f, &PlaybackRow, &MainView);
@@ -807,37 +779,19 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		if(AddSettingRow(27.0f, Header))
 			Ui()->DoLabel(&Header, Localize("Настройки тренировочного мира"), 17.0f, TEXTALIGN_ML);
 
-		AddSection("ТРЕНИРОВОЧНЫЙ МИР");
+		AddSection("FP-ПРАКТИКА");
 		const bool PracticeActive = GameClient()->m_Controls.MacroPracticeActive();
 		CUIRect PracticeStatus;
 		if(AddSettingRow(21.0f, PracticeStatus))
 			Ui()->DoLabel(&PracticeStatus,
-				PracticeActive ? Localize("Состояние: тренировка включена") : Localize("Состояние: тренировка выключена"),
+				PracticeActive ? Localize("Состояние: FP-тренировка включена") : Localize("Состояние: FP-тренировка выключена"),
 				12.0f, TEXTALIGN_ML);
 
-		CUIRect PracticeButtonRow;
-		if(AddSettingRow(28.0f, PracticeButtonRow) &&
-			DoButton_Menu(&s_PracticeToggle,
-				PracticeActive ? Localize("Завершить тренировку") : Localize("Начать тренировку"),
-				PracticeActive, &PracticeButtonRow))
-		{
-			if(PracticeActive)
-			{
-				if(GameClient()->m_Controls.MacroRecording())
-				{
-					GameClient()->m_Controls.StopMacroRecording();
-					if(SaveCapturedMacro(s_aRecordingMacroName))
-						s_aRecordingMacroName[0] = '\0';
-				}
-				else if(GameClient()->m_Controls.MacroPlaying())
-				{
-					GameClient()->m_Controls.StopMacroRecording();
-				}
-				GameClient()->m_Controls.StopMacroPractice();
-			}
-			else
-				GameClient()->m_Controls.StartMacroPractice();
-		}
+		CUIRect PracticeInfo;
+		if(AddSettingRow(44.0f, PracticeInfo))
+			Ui()->DoLabel(&PracticeInfo,
+				Localize("Нажми «Начать макрос» во вкладке Макрос: игра переключится на локальную тренировочную копию, а настоящий персонаж останется неподвижен на сервере. При завершении запись сохранится автоматически, а копия исчезнет."),
+				11.0f, TEXTALIGN_ML);
 
 		CUIRect ShowOthersRow;
 		if(AddSettingRow(29.0f, ShowOthersRow) &&
@@ -881,7 +835,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		CUIRect InfoRow;
 		if(AddSettingRow(48.0f, InfoRow))
 			Ui()->DoLabel(&InfoRow,
-				Localize("Обычные бинды продолжают работать. Во время воспроизведения движение и прицел тренировочной копии берутся только из записи; на сервер отправляется нейтральный ввод."),
+				Localize("Обычные бинды работают в FP-тренировке. Движение выполняется в локальном мире с выбранной скоростью; на сервер отправляется только нейтральный ввод."),
 				12.0f, TEXTALIGN_ML);
 
 		s_MacroSettingsScrollRegion.End();
