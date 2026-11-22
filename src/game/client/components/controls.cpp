@@ -65,13 +65,6 @@ void CControls::OnReset()
 	std::fill(std::begin(m_aAutoHookFireActive), std::end(m_aAutoHookFireActive), false);
 	std::fill(std::begin(m_aAutoAvoidActive), std::end(m_aAutoAvoidActive), false);
 	std::fill(std::begin(m_aAutoEdgeHookActive), std::end(m_aAutoEdgeHookActive), false);
-	m_vAutoUnfreezeEpisode.clear();
-	m_AutoUnfreezePendingTargetId = -1;
-	m_AutoUnfreezePendingTick = -1;
-	m_AutoUnfreezePendingFreezeTicks = 0;
-	m_AutoUnfreezeLastAttackTick = -1;
-	m_AutoUnfreezePendingSample = {};
-	std::fill(std::begin(m_aAutoUnfreezeAIActive), std::end(m_aAutoUnfreezeAIActive), false);
 }
 
 void CControls::ResetInput(int Dummy)
@@ -91,10 +84,6 @@ void CControls::ResetInput(int Dummy)
 void CControls::OnPlayerDeath()
 {
 	std::fill(std::begin(m_aAmmoCount), std::end(m_aAmmoCount), 0);
-	m_vAutoUnfreezeEpisode.clear();
-	m_AutoUnfreezePendingTargetId = -1;
-	m_AutoUnfreezePendingTick = -1;
-	m_AutoUnfreezePendingFreezeTicks = 0;
 }
 
 struct CInputState
@@ -491,13 +480,6 @@ void CControls::StopMacroPractice()
 	m_MacroPracticePendingHook = false;
 	m_MacroPracticeHasRenderChar = false;
 	m_MacroPlaybackIndex = 0;
-	m_vAutoUnfreezeEpisode.clear();
-	m_AutoUnfreezePendingTargetId = -1;
-	m_AutoUnfreezePendingTick = -1;
-	m_AutoUnfreezePendingFreezeTicks = 0;
-	m_AutoUnfreezeLastAttackTick = -1;
-	m_AutoUnfreezePendingSample = {};
-	std::fill(std::begin(m_aAutoUnfreezeAIActive), std::end(m_aAutoUnfreezeAIActive), false);
 	m_MacroPracticeWorld.Clear();
 	if(GameClient())
 		GameClient()->m_Ghost.ClearMacroPracticeCharacter();
@@ -553,7 +535,8 @@ void CControls::PopulateMacroPracticeWorld()
 			pPracticeCharacter->m_IsLocal = false;
 			m_MacroPracticeWorld.InsertEntity(pPracticeCharacter);
 		}
-		const bool IsFlightDummy = ClientId == GameClient()->m_aLocalIds[!g_Config.m_ClDummy] &&
+		const bool IsFlightDummy = !m_MacroPlaying &&
+			ClientId == GameClient()->m_aLocalIds[!g_Config.m_ClDummy] &&
 			(g_Config.m_ClDummyHammer || g_Config.m_ClDummyControl || g_Config.m_ClDummyCopyMoves);
 		if(IsFlightDummy)
 			pPracticeCharacter->m_IsMacroPracticeStatic = false;
@@ -638,7 +621,7 @@ bool CControls::SwitchMacroPracticeCharacter(int ClientId)
 	{
 		pOldCharacter->SetInput(&IdleInput);
 		pOldCharacter->m_IsLocal = false;
-		pOldCharacter->m_IsMacroPracticeStatic =
+		pOldCharacter->m_IsMacroPracticeStatic = m_MacroPlaying ||
 			!(pOldCharacter->GetCid() == GameClient()->m_aLocalIds[!g_Config.m_ClDummy] &&
 				(g_Config.m_ClDummyHammer || g_Config.m_ClDummyControl || g_Config.m_ClDummyCopyMoves));
 	}
@@ -693,13 +676,32 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 
 	if(m_MacroPlaying && m_MacroPlaybackOwnsDummy && m_MacroPlaybackIndex < m_vMacroFrames.size())
 	{
-		const int RecordedClientId = m_vMacroFrames[m_MacroPlaybackIndex].m_ClientId;
-		if(RecordedClientId >= 0 && RecordedClientId != m_MacroPracticeLocalId &&
-			!SwitchMacroPracticeCharacter(RecordedClientId))
+		const SMacroFrame &NextFrame = m_vMacroFrames[m_MacroPlaybackIndex];
+		const int RecordedClientId = NextFrame.m_ClientId;
+		if(RecordedClientId >= 0 && RecordedClientId != m_MacroPracticeLocalId)
 		{
-			GameClient()->Echo("Не удалось переключить тренировочного тии по записи макроса.");
-			StopMacroRecording();
-			return;
+			if(!SwitchMacroPracticeCharacter(RecordedClientId))
+			{
+				GameClient()->Echo("Не удалось переключить тренировочного тии по записи макроса.");
+				StopMacroRecording();
+				return;
+			}
+			if(NextFrame.m_HasCoordinates)
+			{
+				if(CCharacter *pRecordedCharacter = m_MacroPracticeWorld.GetCharacterById(RecordedClientId))
+				{
+					CCharacterCore RecordedStart = pRecordedCharacter->GetCore();
+					RecordedStart.Read(&NextFrame.m_PreCore);
+					pRecordedCharacter->SetCore(RecordedStart);
+					pRecordedCharacter->m_Pos = RecordedStart.m_Pos;
+					pRecordedCharacter->m_PrevPos = RecordedStart.m_Pos;
+					pRecordedCharacter->m_PrevPrevPos = RecordedStart.m_Pos;
+					pRecordedCharacter->SetActiveWeapon(NextFrame.m_PreWeapon);
+					pRecordedCharacter->m_FreezeTime = NextFrame.m_PreFreezeTime;
+					pRecordedCharacter->m_FrozenLastTick = NextFrame.m_PreFrozenLastTick != 0;
+					UpdateMacroPracticeGhost(pRecordedCharacter);
+				}
+			}
 		}
 	}
 
@@ -711,8 +713,11 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		return;
 	}
 
-	CNetObj_PlayerInput TickInput = LiveInput;
+	CNetObj_PlayerInput TickInput{};
+	if(!m_MacroPlaying)
+		TickInput = LiveInput;
 	TickInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+	TickInput.m_TargetX = 1;
 	bool ReplayRecordedFrame = false;
 
 	if(m_MacroPlaying)
@@ -848,7 +853,7 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 	pCharacter->OnPredictedInput(&TickInput);
 	const int OtherLocalId = GameClient()->m_aLocalIds[!g_Config.m_ClDummy];
 	CCharacter *pPracticeDummy = m_MacroPracticeWorld.GetCharacterById(OtherLocalId);
-	if(pPracticeDummy && pPracticeDummy != pCharacter &&
+	if(!m_MacroPlaying && pPracticeDummy && pPracticeDummy != pCharacter &&
 		(g_Config.m_ClDummyHammer || g_Config.m_ClDummyControl || g_Config.m_ClDummyCopyMoves))
 	{
 		CNetObj_PlayerInput DummyTickInput = DummyInput;
@@ -913,9 +918,6 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		}
 	}
 
-	if(!m_MacroRecording && !m_MacroPlaying)
-		UpdateAutoUnfreezeTraining(g_Config.m_ClDummy, *pCharacter->Core(), pCharacter->Core()->m_Pos,
-			pCharacter->GetAttackTick(), m_MacroPracticeWorld.GameTick());
 	UpdateMacroPracticeGhost(pCharacter);
 }
 
@@ -1335,388 +1337,11 @@ void CControls::SetMacroSeekStep(int Step)
 	g_Config.m_ClMacroRewindStep = std::clamp(Step, 1, 18000);
 }
 
-bool CControls::IsMacroPracticeBindSafe(const char *pBind) const
-{
-	if(!m_MacroPracticeActive)
-		return true;
-	if(!pBind || !pBind[0])
-		return false;
-
-	bool HasCommand = false;
-	const char *p = pBind;
-	while(*p)
-	{
-		while(*p && (std::isspace((unsigned char)*p) || *p == ';'))
-			++p;
-		if(!*p)
-			break;
-
-		const char *pCommandStart = p;
-		while(*p && !std::isspace((unsigned char)*p) && *p != ';')
-			++p;
-		const size_t CommandLength = (size_t)(p - pCommandStart);
-		if(CommandLength == 0 || CommandLength >= 64)
-			return false;
-
-		char aCommand[64];
-		str_copy(aCommand, pCommandStart, CommandLength + 1);
-		const char *pName = aCommand;
-		if(*pName == '+' || *pName == '-')
-			++pName;
-
-		// Custom binds continue to work in the private world. Only commands
-		// that would change the real server session are blocked.
-		const bool IsLiveServerCommand =
-			str_comp(pName, "connect") == 0 ||
-			str_comp(pName, "disconnect") == 0 ||
-			str_comp(pName, "quit") == 0 ||
-			str_comp(pName, "kill") == 0 ||
-			str_comp(pName, "team") == 0 ||
-			str_comp(pName, "join") == 0 ||
-			str_comp(pName, "spectate") == 0 ||
-			str_comp(pName, "rcon") == 0 ||
-			str_comp(pName, "vote") == 0 ||
-			str_comp(pName, "timeout") == 0 ||
-			str_comp(pName, "ready") == 0;
-		if(IsLiveServerCommand)
-			return false;
-
-		HasCommand = true;
-		while(*p && *p != ';')
-			++p;
-		if(*p == ';')
-			++p;
-	}
-	return HasCommand;
-}
-
-namespace
-{
-	constexpr uint32_t AUTO_UNFREEZE_MAGIC = 0x414E4652;
-	constexpr uint32_t AUTO_UNFREEZE_VERSION = 3;
-	constexpr uint32_t AUTO_UNFREEZE_MAX_SAMPLES = 50000;
-	const char *AUTO_UNFREEZE_FILE = "auto_unfreeze_training.dat";
-}
-
-void CControls::LoadAutoUnfreezeTraining()
-{
-	if(m_AutoUnfreezeTrainingLoaded)
-		return;
-	m_AutoUnfreezeTrainingLoaded = true;
-	IOHANDLE File = Storage()->OpenFile(AUTO_UNFREEZE_FILE, IOFLAG_READ, IStorage::TYPE_SAVE);
-	if(!File)
-		return;
-	uint32_t Magic = 0, Version = 0, Count = 0, Episodes = 0;
-	const bool HeaderValid =
-		io_read(File, &Magic, sizeof(Magic)) == sizeof(Magic) &&
-		io_read(File, &Version, sizeof(Version)) == sizeof(Version) &&
-		io_read(File, &Count, sizeof(Count)) == sizeof(Count) &&
-		Magic == AUTO_UNFREEZE_MAGIC && Version == AUTO_UNFREEZE_VERSION &&
-		Count <= AUTO_UNFREEZE_MAX_SAMPLES &&
-		io_read(File, &Episodes, sizeof(Episodes)) == sizeof(Episodes);
-	if(HeaderValid)
-	{
-		m_vAutoUnfreezeSamples.resize(Count);
-		if(io_read(File, m_vAutoUnfreezeSamples.data(), Count * sizeof(SAutoUnfreezeSample)) !=
-			(int64_t)Count * sizeof(SAutoUnfreezeSample))
-			m_vAutoUnfreezeSamples.clear();
-		else
-			m_AutoUnfreezeCompletedEpisodes = (int)Episodes;
-	}
-	else
-	{
-		// Old learner versions could count a natural thaw of the player's own tee.
-		// Ignore those samples rather than using false positives.
-		m_vAutoUnfreezeSamples.clear();
-		m_AutoUnfreezeCompletedEpisodes = 0;
-	}
-	io_close(File);
-}
-
-void CControls::SaveAutoUnfreezeTraining()
-{
-	if(m_vAutoUnfreezeSamples.empty())
-		return;
-	IOHANDLE File = Storage()->OpenFile(AUTO_UNFREEZE_FILE, IOFLAG_WRITE, IStorage::TYPE_SAVE);
-	if(!File)
-		return;
-	const uint32_t Magic = AUTO_UNFREEZE_MAGIC;
-	const uint32_t Version = AUTO_UNFREEZE_VERSION;
-	const uint32_t Count = (uint32_t)std::min<std::size_t>(m_vAutoUnfreezeSamples.size(), AUTO_UNFREEZE_MAX_SAMPLES);
-	const uint32_t Episodes = (uint32_t)std::max(0, m_AutoUnfreezeCompletedEpisodes);
-	const bool Written =
-		io_write(File, &Magic, sizeof(Magic)) == sizeof(Magic) &&
-		io_write(File, &Version, sizeof(Version)) == sizeof(Version) &&
-		io_write(File, &Count, sizeof(Count)) == sizeof(Count) &&
-		io_write(File, &Episodes, sizeof(Episodes)) == sizeof(Episodes) &&
-		io_write(File, m_vAutoUnfreezeSamples.data(), Count * sizeof(SAutoUnfreezeSample)) ==
-			(int64_t)Count * sizeof(SAutoUnfreezeSample);
-	io_close(File);
-	if(!Written)
-		GameClient()->Echo("Не удалось сохранить обучение автоанфриза.");
-}
-
-int CControls::AutoUnfreezeTrainingSampleCount()
-{
-	LoadAutoUnfreezeTraining();
-	return (int)m_vAutoUnfreezeSamples.size();
-}
-
-int CControls::AutoUnfreezeTrainingEpisodeCount()
-{
-	LoadAutoUnfreezeTraining();
-	return m_AutoUnfreezeCompletedEpisodes;
-}
-
-void CControls::ClearAutoUnfreezeTraining()
-{
-	LoadAutoUnfreezeTraining();
-	m_vAutoUnfreezeSamples.clear();
-	m_vAutoUnfreezeEpisode.clear();
-	m_AutoUnfreezeCompletedEpisodes = 0;
-	m_AutoUnfreezePendingTargetId = -1;
-	m_AutoUnfreezePendingTick = -1;
-	m_AutoUnfreezePendingFreezeTicks = 0;
-	m_AutoUnfreezeLastAttackTick = -1;
-	m_AutoUnfreezePendingSample = {};
-	std::fill(std::begin(m_aAutoUnfreezeAIActive), std::end(m_aAutoUnfreezeAIActive), false);
-	Storage()->RemoveFile(AUTO_UNFREEZE_FILE, IStorage::TYPE_SAVE);
-}
-
-bool CControls::FindFrozenTeammate(int Dummy, vec2 Position, vec2 Aim, bool RequireAim,
-	int *pTargetId, vec2 *pTargetDelta, int *pFreezeTicks)
-{
-	const int LocalId = GameClient()->m_aLocalIds[Dummy];
-	if(LocalId < 0 || LocalId >= MAX_CLIENTS)
-		return false;
-	const float AimLength = length(Aim);
-	const vec2 AimDirection = AimLength > 1.0f ? Aim / AimLength : vec2(0.0f, 0.0f);
-	const int Tick = m_MacroPracticeActive ? m_MacroPracticeWorld.GameTick() : Client()->PredGameTick(Dummy);
-	const int TuneZone = Collision()->IsTune(Collision()->GetMapIndex(Position));
-	const float LaserReach = std::clamp((float)GameClient()->GetTuning(TuneZone)->m_LaserReach, 32.0f, 1200.0f);
-	float BestDistance = LaserReach * LaserReach;
-	int BestId = -1;
-	vec2 BestDelta(0.0f, 0.0f);
-	int BestFreezeTicks = 0;
-	for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
-	{
-		if(ClientId == LocalId || !GameClient()->m_Snap.m_aCharacters[ClientId].m_Active ||
-			GameClient()->IsOtherTeam(ClientId) || GameClient()->m_aClients[ClientId].m_LaserHitDisabled)
-			continue;
-		bool Frozen = false;
-		int FreezeTicks = 0;
-		vec2 TargetPos;
-		if(m_MacroPracticeActive)
-		{
-			const CCharacter *pTarget = m_MacroPracticeWorld.GetCharacterById(ClientId);
-			if(!pTarget)
-				continue;
-			const CCharacterCore &TargetCore = *pTarget->Core();
-			Frozen = pTarget->m_FreezeTime > 0 || TargetCore.m_DeepFrozen ||
-				TargetCore.m_LiveFrozen || TargetCore.m_FreezeEnd != 0;
-			FreezeTicks = (TargetCore.m_DeepFrozen || TargetCore.m_LiveFrozen || TargetCore.m_FreezeEnd < 0) ?
-				-1 : (pTarget->m_FreezeTime > 0 ? pTarget->m_FreezeTime : std::max(0, TargetCore.m_FreezeEnd - Tick));
-			TargetPos = TargetCore.m_Pos;
-		}
-		else
-		{
-			const auto &TargetInfo = GameClient()->m_Snap.m_aCharacters[ClientId];
-			const auto &ClientData = GameClient()->m_aClients[ClientId];
-			const int FreezeEnd = ClientData.m_FreezeEnd;
-			const int ExtendedFreezeEnd = TargetInfo.m_HasExtendedData ? TargetInfo.m_ExtendedData.m_FreezeEnd : 0;
-			Frozen = ClientData.m_DeepFrozen || ClientData.m_LiveFrozen || FreezeEnd == -1 ||
-				FreezeEnd > Tick || ExtendedFreezeEnd == -1 || ExtendedFreezeEnd > Tick;
-			FreezeTicks = (ClientData.m_DeepFrozen || ClientData.m_LiveFrozen || FreezeEnd == -1 || ExtendedFreezeEnd == -1) ?
-				-1 : std::max(0, std::max(FreezeEnd, ExtendedFreezeEnd) - Tick);
-			TargetPos = vec2((float)TargetInfo.m_Cur.m_X, (float)TargetInfo.m_Cur.m_Y);
-		}
-		if(!Frozen)
-			continue;
-		const vec2 Delta = TargetPos - Position;
-		const float DistanceSquared = dot(Delta, Delta);
-		if(DistanceSquared < 1.0f || DistanceSquared > BestDistance)
-			continue;
-		if(RequireAim && (AimLength < 1.0f || dot(AimDirection, normalize(Delta)) < 0.985f))
-			continue;
-		vec2 CollisionPos, BeforeCollision;
-		if(Collision()->IntersectLine(Position, TargetPos, &CollisionPos, &BeforeCollision) != 0)
-			continue;
-		BestDistance = DistanceSquared;
-		BestId = ClientId;
-		BestDelta = Delta;
-		BestFreezeTicks = FreezeTicks;
-	}
-	if(BestId < 0)
-		return false;
-	if(pTargetId) *pTargetId = BestId;
-	if(pTargetDelta) *pTargetDelta = BestDelta;
-	if(pFreezeTicks) *pFreezeTicks = BestFreezeTicks;
-	return true;
-}
-
-void CControls::UpdateAutoUnfreezeTraining(int Dummy, const CCharacterCore &Core, vec2 Position, int AttackTick, int Tick)
-{
-	LoadAutoUnfreezeTraining();
-	if(m_MacroRecording || m_MacroPlaying)
-	{
-		m_AutoUnfreezePendingTargetId = -1;
-		m_AutoUnfreezePendingTick = -1;
-		return;
-	}
-	if(m_AutoUnfreezePendingTargetId >= 0)
-	{
-		const int TargetId = m_AutoUnfreezePendingTargetId;
-		bool StillFrozen = false;
-		if(m_MacroPracticeActive)
-		{
-			if(const CCharacter *pTarget = m_MacroPracticeWorld.GetCharacterById(TargetId))
-			{
-				const CCharacterCore &TargetCore = *pTarget->Core();
-				StillFrozen = pTarget->m_FreezeTime > 0 || TargetCore.m_DeepFrozen ||
-					TargetCore.m_LiveFrozen || TargetCore.m_FreezeEnd != 0;
-			}
-		}
-		else if(TargetId >= 0 && TargetId < MAX_CLIENTS)
-		{
-			const auto &TargetInfo = GameClient()->m_Snap.m_aCharacters[TargetId];
-			const auto &ClientData = GameClient()->m_aClients[TargetId];
-			const int FreezeEnd = ClientData.m_FreezeEnd;
-			const int ExtendedFreezeEnd = TargetInfo.m_HasExtendedData ? TargetInfo.m_ExtendedData.m_FreezeEnd : 0;
-			StillFrozen = TargetInfo.m_Active && (ClientData.m_DeepFrozen || ClientData.m_LiveFrozen ||
-				FreezeEnd == -1 || FreezeEnd > Tick || ExtendedFreezeEnd == -1 || ExtendedFreezeEnd > Tick);
-		}
-		const int ShotAge = Tick - m_AutoUnfreezePendingTick;
-		if(!StillFrozen && ShotAge >= 1 && ShotAge <= SERVER_TICK_SPEED / 5 &&
-			(m_AutoUnfreezePendingFreezeTicks < 0 || m_AutoUnfreezePendingFreezeTicks > SERVER_TICK_SPEED * 2))
-		{
-			if(m_vAutoUnfreezeSamples.size() < AUTO_UNFREEZE_MAX_SAMPLES)
-			{
-				m_vAutoUnfreezeSamples.push_back(m_AutoUnfreezePendingSample);
-				++m_AutoUnfreezeCompletedEpisodes;
-				SaveAutoUnfreezeTraining();
-				char aMessage[160];
-				str_format(aMessage, sizeof(aMessage), "Подтверждённых лазерных разморозок: %d, примеров %d",
-					m_AutoUnfreezeCompletedEpisodes, (int)m_vAutoUnfreezeSamples.size());
-				GameClient()->Echo(aMessage);
-			}
-			m_AutoUnfreezePendingTargetId = -1;
-			m_AutoUnfreezePendingTick = -1;
-			m_AutoUnfreezePendingFreezeTicks = 0;
-			m_AutoUnfreezePendingSample = {};
-			return;
-		}
-		if(StillFrozen && ShotAge <= SERVER_TICK_SPEED / 5)
-			return;
-		m_AutoUnfreezePendingTargetId = -1;
-		m_AutoUnfreezePendingTick = -1;
-		m_AutoUnfreezePendingFreezeTicks = 0;
-		m_AutoUnfreezePendingSample = {};
-	}
-	if(!g_Config.m_ClAutoUnfreezeTraining || g_Config.m_ClAutoUnfreezeAI ||
-		m_aAutoHookActive[Dummy] || m_aAutoHookFireActive[Dummy] ||
-		Core.m_ActiveWeapon != WEAPON_LASER || !(m_aInputData[Dummy].m_Fire & 1) ||
-		AttackTick < 0 || AttackTick == m_AutoUnfreezeLastAttackTick)
-		return;
-	m_AutoUnfreezeLastAttackTick = AttackTick;
-
-	int TargetId = -1, FreezeTicks = 0;
-	vec2 TargetDelta;
-	const vec2 Aim((float)m_aInputData[Dummy].m_TargetX, (float)m_aInputData[Dummy].m_TargetY);
-	if(!FindFrozenTeammate(Dummy, Position, Aim, true, &TargetId, &TargetDelta, &FreezeTicks) ||
-		(FreezeTicks >= 0 && FreezeTicks <= SERVER_TICK_SPEED * 2))
-		return;
-
-	SAutoUnfreezeSample Sample;
-	Sample.m_MapIndex = Collision()->GetMapIndex(Position);
-	Sample.m_VelX = round_to_int(Core.m_Vel.x / 2.0f);
-	Sample.m_VelY = round_to_int(Core.m_Vel.y / 2.0f);
-	Sample.m_FreezeTicks = FreezeTicks;
-	Sample.m_Weapon = WEAPON_LASER;
-	Sample.m_Direction = m_aInputData[Dummy].m_Direction;
-	Sample.m_Jump = m_aInputData[Dummy].m_Jump;
-	Sample.m_Hook = m_aInputData[Dummy].m_Hook;
-	Sample.m_Fire = 1;
-	Sample.m_WantedWeapon = WEAPON_LASER + 1;
-	Sample.m_TargetX = m_aInputData[Dummy].m_TargetX;
-	Sample.m_TargetY = m_aInputData[Dummy].m_TargetY;
-	m_AutoUnfreezePendingSample = Sample;
-	m_AutoUnfreezePendingTargetId = TargetId;
-	m_AutoUnfreezePendingTick = Tick;
-	m_AutoUnfreezePendingFreezeTicks = FreezeTicks;
-}
-
-bool CControls::ApplyTrainedAutoUnfreeze(int Dummy, const CCharacterCore &Core, vec2 Position)
-{
-	LoadAutoUnfreezeTraining();
-	if(!g_Config.m_ClAutoUnfreezeAI || m_MacroRecording || m_MacroPlaying ||
-		m_AutoUnfreezeCompletedEpisodes < 3 || m_vAutoUnfreezeSamples.empty())
-	{
-		if(m_aAutoUnfreezeAIActive[Dummy])
-		{
-			if(m_aInputData[Dummy].m_Fire & 1) ++m_aInputData[Dummy].m_Fire;
-			if(m_aInputData[Dummy].m_WantedWeapon == WEAPON_LASER + 1)
-				m_aInputData[Dummy].m_WantedWeapon = 0;
-			m_aAutoUnfreezeAIActive[Dummy] = false;
-		}
-		return false;
-	}
-	const int MapIndex = Collision()->GetMapIndex(Position);
-	const int VelX = round_to_int(Core.m_Vel.x / 2.0f);
-	const int VelY = round_to_int(Core.m_Vel.y / 2.0f);
-	const SAutoUnfreezeSample *pBest = nullptr;
-	int BestScore = std::numeric_limits<int>::max();
-	bool BestMirrored = false;
-	for(const SAutoUnfreezeSample &Sample : m_vAutoUnfreezeSamples)
-	{
-		for(int Mirror = 0; Mirror < 2; ++Mirror)
-		{
-			const int SampleVelX = Mirror ? -Sample.m_VelX : Sample.m_VelX;
-			const int LocationPenalty = std::min(std::abs(Sample.m_MapIndex - MapIndex), 48) * 3;
-			const int Score = LocationPenalty + std::abs(SampleVelX - VelX) * 3 +
-				std::abs(Sample.m_VelY - VelY) * 3 + (Sample.m_Weapon == WEAPON_LASER ? 0 : 100);
-			if(Score < BestScore)
-			{
-				BestScore = Score;
-				pBest = &Sample;
-				BestMirrored = Mirror != 0;
-			}
-		}
-	}
-	if(!pBest || BestScore > 360)
-		return false;
-
-	int TargetId = -1, FreezeTicks = 0;
-	vec2 TargetDelta;
-	if(!FindFrozenTeammate(Dummy, Position, vec2(1.0f, 0.0f), false, &TargetId, &TargetDelta, &FreezeTicks))
-	{
-		if(m_aAutoUnfreezeAIActive[Dummy])
-		{
-			if(m_aInputData[Dummy].m_Fire & 1) ++m_aInputData[Dummy].m_Fire;
-			if(m_aInputData[Dummy].m_WantedWeapon == WEAPON_LASER + 1)
-				m_aInputData[Dummy].m_WantedWeapon = 0;
-			m_aAutoUnfreezeAIActive[Dummy] = false;
-		}
-		return false;
-	}
-	if(!Core.m_aWeapons[WEAPON_LASER].m_Got ||
-		(!GameClient()->m_GameInfo.m_UnlimitedAmmo && Core.m_aWeapons[WEAPON_LASER].m_Ammo == 0))
-		return false;
-
-	m_aInputData[Dummy].m_Direction = BestMirrored ? -pBest->m_Direction : pBest->m_Direction;
-	m_aInputData[Dummy].m_TargetX = round_to_int(TargetDelta.x);
-	m_aInputData[Dummy].m_TargetY = round_to_int(TargetDelta.y);
-	if(m_aInputData[Dummy].m_TargetX == 0 && m_aInputData[Dummy].m_TargetY == 0)
-		m_aInputData[Dummy].m_TargetX = 1;
-	m_aInputData[Dummy].m_WantedWeapon = WEAPON_LASER + 1;
-	if((m_aInputData[Dummy].m_Fire & 1) == 0)
-		++m_aInputData[Dummy].m_Fire;
-	m_aAutoUnfreezeAIActive[Dummy] = true;
-	return true;
-}
-
 void CControls::OnMacroPracticeDummySwap()
 {
 	if(!m_MacroPracticeActive)
+		return;
+	if(m_MacroPlaying && m_MacroPlaybackOwnsDummy)
 		return;
 	m_MacroPlaybackOwnsDummy = false;
 	const int RequestedLocalId = GameClient()->m_aLocalIds[g_Config.m_ClDummy];
@@ -1788,6 +1413,9 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 
 bool CControls::OnInput(const IInput::CEvent &Event)
 {
+	// Arrow keys remain available to user binds during macro playback.
+	if(m_MacroPlaying)
+		return false;
 	if((!m_MacroPracticeActive && !m_MacroPlaybackLive) || m_MacroRecording || m_vMacroFrames.empty() ||
 		GameClient()->m_Chat.IsActive() || GameClient()->m_Menus.IsActive() ||
 		!(Event.m_Flags & IInput::FLAG_PRESS))
@@ -1799,7 +1427,6 @@ bool CControls::OnInput(const IInput::CEvent &Event)
 		return SeekMacro(MacroSeekStep());
 	return false;
 }
-
 void CControls::OnMessage(int Msg, void *pRawMsg)
 {
 	if(Msg == NETMSGTYPE_SV_WEAPONPICKUP)
@@ -1920,66 +1547,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 		m_aAutoHookActive[Dummy] = false;
 	}
 
-	// Auto unfreeze uses the active tee's actual laser inventory and the
-	// mirrored frozen teammate positions when running in macro practice.
 	int AutoWeapon = -1;
-	if(g_Config.m_ClAutoUnfreezeLaser)
-	{
-		if(LocalCore.m_aWeapons[WEAPON_LASER].m_Got &&
-			(GameClient()->m_GameInfo.m_UnlimitedAmmo || LocalCore.m_aWeapons[WEAPON_LASER].m_Ammo != 0))
-		{
-			const int TuneZone = Collision()->IsTune(Collision()->GetMapIndex(LocalPos));
-			const float LaserRange = std::max(32.0f, static_cast<float>(GameClient()->GetTuning(TuneZone)->m_LaserReach));
-			const float Range = std::clamp(LaserRange, 32.0f, 1200.0f);
-			float BestFrozenDistance = Range * Range;
-			const int GameTick = Client()->GameTick(g_Config.m_ClDummy);
-			for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
-			{
-				if(ClientId == LocalId || !GameClient()->m_Snap.m_aCharacters[ClientId].m_Active ||
-					GameClient()->IsOtherTeam(ClientId) || GameClient()->m_aClients[ClientId].m_LaserHitDisabled)
-					continue;
-
-				const CCharacter *pPracticeTarget = PracticeActive ? m_MacroPracticeWorld.GetCharacterById(ClientId) : nullptr;
-				if(PracticeActive && !pPracticeTarget)
-					continue;
-
-				const auto &TargetInfo = GameClient()->m_Snap.m_aCharacters[ClientId];
-				const int FreezeEnd = GameClient()->m_aClients[ClientId].m_FreezeEnd;
-				const int ExtendedFreezeEnd = TargetInfo.m_HasExtendedData ? TargetInfo.m_ExtendedData.m_FreezeEnd : 0;
-				const bool Frozen = pPracticeTarget ?
-					(pPracticeTarget->m_FreezeTime > 0 || pPracticeTarget->Core()->m_DeepFrozen || pPracticeTarget->Core()->m_LiveFrozen) :
-					(GameClient()->m_aClients[ClientId].m_DeepFrozen || GameClient()->m_aClients[ClientId].m_LiveFrozen ||
-						FreezeEnd == -1 || FreezeEnd > GameTick || ExtendedFreezeEnd == -1 || ExtendedFreezeEnd > GameTick);
-				if(!Frozen)
-					continue;
-
-				const vec2 TargetPos = pPracticeTarget ? pPracticeTarget->Core()->m_Pos :
-					vec2((float)TargetInfo.m_Cur.m_X, (float)TargetInfo.m_Cur.m_Y);
-				const vec2 Delta = TargetPos - LocalPos;
-				const float DistanceSquared = dot(Delta, Delta);
-				if(DistanceSquared < 1.0f || DistanceSquared > BestFrozenDistance)
-					continue;
-
-				vec2 CollisionPos;
-				vec2 BeforeCollision;
-				if(Collision()->IntersectLine(LocalPos, TargetPos, &CollisionPos, &BeforeCollision) != 0)
-					continue;
-
-				BestFrozenDistance = DistanceSquared;
-				BestTarget = Delta;
-				FoundTarget = true;
-				AutoWeapon = WEAPON_LASER;
-			}
-			if(AutoWeapon == WEAPON_LASER)
-			{
-				m_aInputData[Dummy].m_Hook = ManualHook ? 1 : 0;
-				m_aAutoHookActive[Dummy] = false;
-				m_aInputData[Dummy].m_TargetX = round_to_int(BestTarget.x);
-				m_aInputData[Dummy].m_TargetY = round_to_int(BestTarget.y);
-			}
-		}
-	}
-
 	// Optional weapon fire is aimed at the same selected tee. Use the private
 	// tee's weapon state while practicing, never the stationary server tee.
 	if(AutoWeapon < 0 && FoundTarget && !ManualHook)
@@ -2249,11 +1817,12 @@ int CControls::SnapInput(int *pData)
 		if(!m_aInputDirectionLeft[Dummy] && m_aInputDirectionRight[Dummy])
 			m_aInputData[Dummy].m_Direction = 1;
 
-		ApplyHookAutomation(Dummy);
-		ApplyEdgeAssist(Dummy);
-		ApplyEdgeHook(Dummy);
-		if(const CCharacter *pPracticeLocal = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId))
-			ApplyTrainedAutoUnfreeze(Dummy, *pPracticeLocal->Core(), pPracticeLocal->Core()->m_Pos);
+		if(!m_MacroPlaying)
+		{
+			ApplyHookAutomation(Dummy);
+			ApplyEdgeAssist(Dummy);
+			ApplyEdgeHook(Dummy);
+		}
 
 		CNetObj_PlayerInput PracticeInput = m_aInputData[Dummy];
 		PracticeInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
@@ -2469,17 +2038,7 @@ int CControls::SnapInput(int *pData)
 			ApplyHookAutomation(g_Config.m_ClDummy);
 			ApplyEdgeAssist(g_Config.m_ClDummy);
 			ApplyEdgeHook(g_Config.m_ClDummy);
-			const int LocalIdForAI = GameClient()->m_Snap.m_LocalClientId;
-			if(LocalIdForAI >= 0 && LocalIdForAI < MAX_CLIENTS)
-			{
-				const CCharacter *pLocal = GameClient()->m_PredictedWorld.GetCharacterById(LocalIdForAI);
-				const CCharacterCore &Core = GameClient()->m_PredictedChar;
-				const int AttackTick = pLocal ? pLocal->GetAttackTick() :
-					(GameClient()->m_Snap.m_pLocalCharacter ? GameClient()->m_Snap.m_pLocalCharacter->m_AttackTick : -1);
-				UpdateAutoUnfreezeTraining(g_Config.m_ClDummy, Core, Core.m_Pos, AttackTick,
-					Client()->PredGameTick(g_Config.m_ClDummy));
-				ApplyTrainedAutoUnfreeze(g_Config.m_ClDummy, Core, Core.m_Pos);
-			}
+
 		}
 
 		// dummy copy moves
