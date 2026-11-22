@@ -698,10 +698,11 @@ void CControls::PopulateMacroPracticeWorld()
 		const bool IsFlightDummy = !m_MacroPlaying &&
 			ClientId == GameClient()->m_aLocalIds[!g_Config.m_ClDummy] &&
 			(g_Config.m_ClDummyHammer || g_Config.m_ClDummyControl || g_Config.m_ClDummyCopyMoves);
+		const bool WasMovingDummy = m_aMacroPracticeSnapshotInitialized[ClientId] &&
+			!pPracticeCharacter->m_IsMacroPracticeStatic;
 
 		// Only the first import may read the server snapshot. Keep the moving
-		// dummy's copied prediction state when fly is enabled, and when fly is
-		// later disabled freeze it in place without reloading stale coordinates.
+		// dummy's copied prediction state when fly is enabled.
 		if(!m_aMacroPracticeSnapshotInitialized[ClientId])
 		{
 			if(!IsFlightDummy)
@@ -718,6 +719,23 @@ void CControls::PopulateMacroPracticeWorld()
 				pPracticeCharacter->SetInput(&IdleInput);
 			}
 			m_aMacroPracticeSnapshotInitialized[ClientId] = true;
+		}
+
+		// When fly/copy-moves is turned off, stop the cloned dummy at the
+		// position it reached locally. Do not import its old server position.
+		if(WasMovingDummy && !IsFlightDummy)
+		{
+			CCharacterCore StoppedCore = pPracticeCharacter->GetCore();
+			StoppedCore.m_Vel = vec2(0.0f, 0.0f);
+			pPracticeCharacter->SetCore(StoppedCore);
+			pPracticeCharacter->m_Pos = StoppedCore.m_Pos;
+			pPracticeCharacter->m_PrevPos = StoppedCore.m_Pos;
+			pPracticeCharacter->m_PrevPrevPos = StoppedCore.m_Pos;
+			pPracticeCharacter->ReleaseHook();
+			CNetObj_PlayerInput IdleInput{};
+			IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+			IdleInput.m_TargetX = 1;
+			pPracticeCharacter->SetInput(&IdleInput);
 		}
 
 		pPracticeCharacter->m_IsMacroPracticeStatic = !IsFlightDummy;
