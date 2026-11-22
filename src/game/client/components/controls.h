@@ -205,6 +205,11 @@ private:
 	bool m_MacroPracticePendingHook = false;
 	bool m_MacroPracticePendingDirectionLeft = false;
 	bool m_MacroPracticePendingDirectionRight = false;
+	bool m_MacroPracticeDirectionLeft = false;
+	bool m_MacroPracticeDirectionRight = false;
+	bool m_MacroPracticeFirePressed = false;
+	bool m_MacroPracticeNextWeaponPressed = false;
+	bool m_MacroPracticePrevWeaponPressed = false;
 	CGameWorld m_MacroPracticeWorld;
 	CNetObj_Character m_MacroPracticeRenderChar{};
 	bool m_MacroPracticeHasRenderChar = false;
@@ -229,6 +234,7 @@ private:
 	void UpdateMacroPracticeGhost(CCharacter *pCharacter);
 	void PopulateMacroPracticeWorld();
 	bool SwitchMacroPracticeCharacter(int ClientId);
+	static void ConMacroPractice(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroRecord(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroStop(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroSave(IConsole::IResult *pResult, void *pUserData);
