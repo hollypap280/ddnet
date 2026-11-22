@@ -734,9 +734,13 @@ void CControls::PopulateMacroPracticeWorld()
 				m_MacroPracticeLocalId = RequestedLocalId;
 				m_MacroPracticeWorld.m_LocalClientId = RequestedLocalId;
 				m_MacroPracticePendingFireTransitions = 0;
+				m_MacroPracticePendingNextWeaponTransitions = 0;
+				m_MacroPracticePendingPrevWeaponTransitions = 0;
+				m_MacroPracticePendingWantedWeapon = 0;
 				m_MacroPracticePendingJump = false;
 				m_MacroPracticePendingHook = false;
 				m_MacroPracticeFireCounter = m_aInputData[g_Config.m_ClDummy].m_Fire & INPUT_STATE_MASK;
+				m_MacroPracticeInput = m_aInputData[g_Config.m_ClDummy];
 				m_MacroPracticeAccumulator = 0.0f;
 				m_MacroPracticeLastTime = time_get();
 			}
@@ -2108,6 +2112,11 @@ int CControls::SnapInput(int *pData)
 
 		CNetObj_PlayerInput PracticeInput = m_aInputData[Dummy];
 		PracticeInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+		// Direct weapon binds are edge-triggered. Keep the captured value in
+		// PracticeInput and its pending queue, then clear the live staging field
+		// so a short tap cannot stick across multiple slowed practice ticks.
+		if(!m_MacroPlaying)
+			m_aInputData[Dummy].m_WantedWeapon = 0;
 		CNetObj_PlayerInput PracticeDummyInput = GameClient()->m_DummyInput;
 		PracticeDummyInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
 		if(g_Config.m_ClDummyHammer)
