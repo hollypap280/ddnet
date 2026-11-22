@@ -850,6 +850,8 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 		Core.Read(&Frame.m_Core);
 		pCharacter->SetCore(Core);
 		pCharacter->m_Pos = Core.m_Pos;
+		pCharacter->m_PrevPos = Core.m_Pos;
+		pCharacter->m_PrevPrevPos = Core.m_Pos;
 		pCharacter->SetActiveWeapon(Frame.m_Weapon);
 		pCharacter->m_FreezeTime = Frame.m_FreezeTime;
 		pCharacter->m_FrozenLastTick = Frame.m_FrozenLastTick != 0;
@@ -1325,7 +1327,10 @@ bool CControls::PlayMacro(const char *pName)
 
 	char aRecordedMapName[64]{};
 	if(Valid && Version >= 3)
+	{
 		Valid = io_read(File, aRecordedMapName, sizeof(aRecordedMapName)) == sizeof(aRecordedMapName);
+		aRecordedMapName[sizeof(aRecordedMapName) - 1] = '\0';
+	}
 
 	const int64_t HeaderBytes = (int64_t)sizeof(Magic) + sizeof(Version) + sizeof(Count) +
 		(Version >= 3 ? (int64_t)sizeof(aRecordedMapName) : 0);
@@ -1660,8 +1665,9 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 	if((!m_MacroPracticeActive && !m_MacroPlaybackLive) || m_MacroRecording || m_vMacroFrames.empty())
 		return false;
 
-	const int Current = std::clamp(m_MacroHasCurrentFrame ? (int)m_MacroPlaybackIndex - 1 : (int)m_MacroPlaybackIndex,
-		0, (int)m_vMacroFrames.size() - 1);
+	const int CurrentIndex = m_MacroDisplayedTick > 0 ? m_MacroDisplayedTick - 1 :
+		(m_MacroHasCurrentFrame ? (int)m_MacroPlaybackIndex - 1 : (int)m_MacroPlaybackIndex);
+	const int Current = std::clamp(CurrentIndex, 0, (int)m_vMacroFrames.size() - 1);
 	const int Target = std::clamp(Current + Offset, 0, (int)m_vMacroFrames.size() - 1);
 	if(m_MacroPlaybackLive)
 	{
