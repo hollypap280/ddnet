@@ -391,7 +391,8 @@ void CGhost::OnRender()
 			CTeeRenderInfo RenderInfo = m_apMacroPracticeRenderInfo[ClientId]->TeeRenderInfo();
 			GameClient()->m_Players.RenderHook(ScreenRect, &m_aMacroPracticePrev[ClientId], &m_aMacroPracticeCurrent[ClientId], &RenderInfo, -3, 1.0f);
 
-			bool IsInteracting = m_aMacroPracticeCurrent[ClientId].m_HookState == HOOK_GRABBED;
+			bool IsInteracting = m_aMacroPracticeCurrent[ClientId].m_HookState != HOOK_IDLE ||
+				m_aMacroPracticeCurrent[ClientId].m_VelX != 0 || m_aMacroPracticeCurrent[ClientId].m_VelY != 0;
 			for(int OtherId = 0; OtherId < MAX_CLIENTS && !IsInteracting; ++OtherId)
 			{
 				if(OtherId == ClientId || !m_aMacroPracticeVisible[OtherId])
@@ -460,8 +461,8 @@ void CGhost::SetMacroPracticeWorld(CGameWorld *pWorld)
 		const CCharacterCore &Core = *pCharacter->Core();
 		const int PracticeTick = pWorld->GameTick();
 		const int CoreFreezeTicks = Core.m_FreezeEnd > PracticeTick ? Core.m_FreezeEnd - PracticeTick : 0;
-		const bool Frozen = pCharacter->m_FreezeTime > 0 || Core.m_FreezeEnd != 0 ||
-			Core.m_DeepFrozen || Core.m_LiveFrozen;
+		const bool Frozen = pCharacter->m_FreezeTime > 0 || Core.m_FreezeEnd > PracticeTick ||
+			Core.m_FreezeEnd < 0 || Core.m_DeepFrozen || Core.m_LiveFrozen;
 		m_aMacroPracticeFreezeTicks[ClientId] =
 			(Core.m_DeepFrozen || Core.m_LiveFrozen || Core.m_FreezeEnd < 0) ? -1 :
 			(pCharacter->m_FreezeTime > 0 ? pCharacter->m_FreezeTime : CoreFreezeTicks);
@@ -471,7 +472,8 @@ void CGhost::SetMacroPracticeWorld(CGameWorld *pWorld)
 		if(Frozen)
 		{
 			RenderInfo.m_TeeRenderFlags |= TEE_EFFECT_FROZEN;
-			if(pCharacter->m_FreezeTime > 0 || Core.m_FreezeEnd != 0 || Core.m_DeepFrozen)
+			if(pCharacter->m_FreezeTime > 0 || Core.m_FreezeEnd > PracticeTick ||
+				Core.m_FreezeEnd < 0 || Core.m_DeepFrozen || Core.m_LiveFrozen)
 				RenderInfo.m_TeeRenderFlags |= TEE_NO_WEAPON;
 			if(g_Config.m_ClShowNinja && !GameClient()->m_GameInfo.m_NoSkinChangeForFrozen)
 			{
