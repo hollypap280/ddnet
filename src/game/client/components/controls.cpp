@@ -437,6 +437,20 @@ bool CControls::StartMacroPractice()
 
 	m_MacroPracticeLocalId = LocalId;
 	m_MacroPracticeWorld.CopyWorld(&GameClient()->m_PredictedWorld);
+
+	// Fast Practice must simulate the same local gameplay as the normal
+	// prediction world, even when the server does not request client prediction.
+	// These flags affect only the private copy; the real server tee still gets
+	// neutral input while practice is active.
+	m_MacroPracticeWorld.m_WorldConfig = GameClient()->m_GameWorld.m_WorldConfig;
+	m_MacroPracticeWorld.m_WorldConfig.m_PredictWeapons = true;
+	m_MacroPracticeWorld.m_WorldConfig.m_PredictFreeze = true;
+	m_MacroPracticeWorld.m_WorldConfig.m_PredictTiles = true;
+	m_MacroPracticeWorld.m_WorldConfig.m_PredictDDRace = true;
+	m_MacroPracticeWorld.m_WorldConfig.m_PredictEvents = true;
+	m_MacroPracticeWorld.m_WorldConfig.m_UseTuneZones = true;
+	m_MacroPracticeWorld.m_Teams = GameClient()->m_Teams;
+
 	PopulateMacroPracticeWorld();
 	if(!m_MacroPracticeWorld.GetCharacterById(LocalId))
 	{
