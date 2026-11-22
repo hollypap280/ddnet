@@ -94,6 +94,8 @@ struct CInputState
 	bool m_IsHookAction = false;
 	bool m_IsJumpAction = false;
 	bool m_IsFireAction = false;
+	bool m_IsDirectionLeft = false;
+	bool m_IsDirectionRight = false;
 };
 
 void CControls::ConKeyInputState(IConsole::IResult *pResult, void *pUserData)
@@ -105,6 +107,13 @@ void CControls::ConKeyInputState(IConsole::IResult *pResult, void *pUserData)
 
 	const int Stroke = pResult->GetInteger(0);
 	*pState->m_apVariables[g_Config.m_ClDummy] = Stroke;
+	if(Stroke != 0 && pState->m_pControls->m_MacroPracticeActive)
+	{
+		if(pState->m_IsDirectionLeft)
+			pState->m_pControls->m_MacroPracticePendingDirectionLeft = true;
+		if(pState->m_IsDirectionRight)
+			pState->m_pControls->m_MacroPracticePendingDirectionRight = true;
+	}
 	if(pState->m_IsHookAction)
 	{
 		pState->m_pControls->m_aManualHook[g_Config.m_ClDummy] = Stroke != 0;
@@ -166,10 +175,12 @@ void CControls::OnConsoleInit()
 	// game commands
 	{
 		static CInputState s_State = {this, {&m_aInputDirectionLeft[0], &m_aInputDirectionLeft[1]}, false};
+		s_State.m_IsDirectionLeft = true;
 		Console()->Register("+left", "", CFGFLAG_CLIENT, ConKeyInputState, &s_State, "Move left");
 	}
 	{
 		static CInputState s_State = {this, {&m_aInputDirectionRight[0], &m_aInputDirectionRight[1]}, false};
+		s_State.m_IsDirectionRight = true;
 		Console()->Register("+right", "", CFGFLAG_CLIENT, ConKeyInputState, &s_State, "Move right");
 	}
 	{
@@ -480,6 +491,8 @@ bool CControls::StartMacroPractice()
 	m_MacroPracticeFireCounter = m_aInputData[g_Config.m_ClDummy].m_Fire & INPUT_STATE_MASK;
 	m_MacroPracticePendingJump = false;
 	m_MacroPracticePendingHook = false;
+	m_MacroPracticePendingDirectionLeft = false;
+	m_MacroPracticePendingDirectionRight = false;
 	m_MacroPracticeHasRenderChar = false;
 
 	CCharacter *pPracticeChar = m_MacroPracticeWorld.GetCharacterById(LocalId);
@@ -528,6 +541,8 @@ void CControls::StopMacroPractice()
 	m_MacroPracticePendingFireTransitions = 0;
 	m_MacroPracticePendingJump = false;
 	m_MacroPracticePendingHook = false;
+	m_MacroPracticePendingDirectionLeft = false;
+	m_MacroPracticePendingDirectionRight = false;
 	m_MacroPracticeHasRenderChar = false;
 	m_MacroPlaybackIndex = 0;
 	m_MacroPracticeWorld.Clear();
@@ -871,6 +886,18 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 
 	if(!ReplayRecordedFrame)
 	{
+		// Direction presses shorter than the slowed practice interval must not
+		// disappear between private-world ticks.
+		if(TickInput.m_Direction == 0)
+		{
+			if(m_MacroPracticePendingDirectionLeft && !m_MacroPracticePendingDirectionRight)
+				TickInput.m_Direction = -1;
+			else if(!m_MacroPracticePendingDirectionLeft && m_MacroPracticePendingDirectionRight)
+				TickInput.m_Direction = 1;
+		}
+		m_MacroPracticePendingDirectionLeft = false;
+		m_MacroPracticePendingDirectionRight = false;
+
 		if(m_MacroPracticePendingJump)
 		{
 			TickInput.m_Jump = 1;
