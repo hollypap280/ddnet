@@ -89,6 +89,7 @@ public:
 	bool MacroPracticeWaiting() const { return m_MacroPracticeWaiting; }
 	bool StartMacroPractice();
 	void StopMacroPractice();
+	void ResetMacroPracticeCharacter();
 	bool StartMacroRecording(const char *pName = nullptr);
 	void StopMacroRecording();
 	bool SaveMacro(const char *pName);
@@ -187,6 +188,11 @@ private:
 	int64_t m_MacroPracticeLastTime = 0;
 	int m_MacroPracticeTick = 0;
 	int m_MacroPracticeLocalId = -1;
+	int m_MacroPracticeStartTick = 0;
+	CNetObj_CharacterCore m_MacroPracticeStartCore{};
+	int m_MacroPracticeStartWeapon = WEAPON_HAMMER;
+	int m_MacroPracticeStartFreezeTime = 0;
+	bool m_MacroPracticeStartFrozenLastTick = false;
 	CNetObj_PlayerInput m_MacroPracticeInput{};
 	int m_MacroPracticePendingFireTransitions = 0;
 	int m_MacroPracticeFireCounter = 0;
