@@ -827,6 +827,8 @@ bool CControls::SwitchMacroPracticeCharacter(int ClientId)
 	m_MacroPracticePendingWantedWeapon = 0;
 	m_MacroPracticePendingJump = false;
 	m_MacroPracticePendingHook = false;
+	m_MacroPracticePendingDirectionLeft = false;
+	m_MacroPracticePendingDirectionRight = false;
 	m_MacroPracticeFireCounter = m_aInputData[g_Config.m_ClDummy].m_Fire & INPUT_STATE_MASK;
 	m_MacroPracticeInput = m_aInputData[g_Config.m_ClDummy];
 	UpdateMacroPracticeGhost(pNewCharacter);
