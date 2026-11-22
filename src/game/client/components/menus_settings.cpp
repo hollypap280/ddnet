@@ -594,7 +594,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		// library below is scrollable, so its length cannot hide Stop.
 		CUIRect Header;
 		MainView.HSplitTop(24.0f, &Header, &MainView);
-		Ui()->DoLabel(&Header, Localize("Запись и воспроизведение"), 17.0f, TEXTALIGN_ML);
+		Ui()->DoLabel(&Header, Localize("Клиент 1 — запись и воспроизведение"), 17.0f, TEXTALIGN_ML);
 
 		CUIRect NameRow;
 		MainView.HSplitTop(27.0f, &NameRow, &MainView);
