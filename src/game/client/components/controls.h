@@ -165,6 +165,7 @@ private:
 	std::vector<SMacroFrame> m_vMacroCorrectionFrames;
 	std::size_t m_MacroPlaybackIndex = 0;
 	int m_MacroStartFrameIndex = 0;
+	int m_MacroDisplayedTick = 0;
 	SMacroFrame m_MacroCurrentFrame{};
 	bool m_MacroHasCurrentFrame = false;
 	bool m_MacroHoldCurrentFrame = false;
