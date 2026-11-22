@@ -330,7 +330,9 @@ void CControls::SendPracticeTeleportToCursor(int Conn)
 namespace
 {
 	constexpr uint32_t MACRO_FILE_MAGIC = 0x444D4143;
-	constexpr uint32_t MACRO_FILE_VERSION = 5;
+	// Version 6 adds the private freeze fields to each stored frame.
+	// Version 5 files may still use the previous, smaller frame layout.
+	constexpr uint32_t MACRO_FILE_VERSION = 6;
 	constexpr uint32_t MACRO_MAX_FRAMES = 18000;
 }
 
@@ -1263,15 +1265,52 @@ bool CControls::PlayMacro(const char *pName)
 
 	const int64_t RemainingBytes = Valid ? io_length(File) - io_tell(File) : 0;
 	const int64_t CurrentFrameBytes = (int64_t)Count * sizeof(SMacroFrame);
+	const int64_t Version5FrameBytes = (int64_t)Count * sizeof(SMacroFrameV4);
 	const int64_t Version4FrameBytes = (int64_t)Count * sizeof(SMacroFrameV4);
 	const int64_t Version3FrameBytes = (int64_t)Count * sizeof(SMacroFrameV3);
 	const int64_t LegacyFrameBytes = (int64_t)Count * sizeof(SMacroFrameV1);
 	std::vector<SMacroFrame> Frames;
-	if(Valid && Version >= 5)
+	auto CopyVersion5Frames = [&](const std::vector<SMacroFrameV4> &OldFrames) {
+		Frames.resize(Count);
+		for(uint32_t i = 0; i < Count; ++i)
+		{
+			Frames[i].m_Input = OldFrames[i].m_Input;
+			Frames[i].m_PreCore = OldFrames[i].m_PreCore;
+			Frames[i].m_Core = OldFrames[i].m_Core;
+			Frames[i].m_Character = OldFrames[i].m_Character;
+			Frames[i].m_PreWeapon = OldFrames[i].m_PreWeapon;
+			Frames[i].m_Weapon = OldFrames[i].m_Weapon;
+			Frames[i].m_AttackTick = OldFrames[i].m_AttackTick;
+			Frames[i].m_Tick = OldFrames[i].m_Tick;
+			Frames[i].m_HasCoordinates = OldFrames[i].m_HasCoordinates;
+			Frames[i].m_ClientId = OldFrames[i].m_ClientId;
+		}
+	};
+	if(Valid && Version >= 6)
 	{
 		Frames.resize(Count);
 		Valid = RemainingBytes == CurrentFrameBytes &&
 			io_read(File, Frames.data(), CurrentFrameBytes) == CurrentFrameBytes;
+	}
+	else if(Valid && Version == 5)
+	{
+		// Some early Version 5 builds wrote the old frame size, while later
+		// builds appended freeze fields without changing the file version.
+		// Detect both layouts by the exact payload length and migrate the old one.
+		if(RemainingBytes == CurrentFrameBytes)
+		{
+			Frames.resize(Count);
+			Valid = io_read(File, Frames.data(), CurrentFrameBytes) == CurrentFrameBytes;
+		}
+		else if(RemainingBytes == Version5FrameBytes)
+		{
+			std::vector<SMacroFrameV4> OldFrames(Count);
+			Valid = io_read(File, OldFrames.data(), Version5FrameBytes) == Version5FrameBytes;
+			if(Valid)
+				CopyVersion5Frames(OldFrames);
+		}
+		else
+			Valid = false;
 	}
 	else if(Valid && Version == 4)
 	{
@@ -1279,22 +1318,7 @@ bool CControls::PlayMacro(const char *pName)
 		Valid = RemainingBytes == Version4FrameBytes &&
 			io_read(File, OldFrames.data(), Version4FrameBytes) == Version4FrameBytes;
 		if(Valid)
-		{
-			Frames.resize(Count);
-			for(uint32_t i = 0; i < Count; ++i)
-			{
-				Frames[i].m_Input = OldFrames[i].m_Input;
-				Frames[i].m_PreCore = OldFrames[i].m_PreCore;
-				Frames[i].m_Core = OldFrames[i].m_Core;
-				Frames[i].m_Character = OldFrames[i].m_Character;
-				Frames[i].m_PreWeapon = OldFrames[i].m_PreWeapon;
-				Frames[i].m_Weapon = OldFrames[i].m_Weapon;
-				Frames[i].m_AttackTick = OldFrames[i].m_AttackTick;
-				Frames[i].m_Tick = OldFrames[i].m_Tick;
-				Frames[i].m_HasCoordinates = OldFrames[i].m_HasCoordinates;
-				Frames[i].m_ClientId = OldFrames[i].m_ClientId;
-			}
-		}
+			CopyVersion5Frames(OldFrames);
 	}
 	else if(Valid && (Version >= 2 || (Version == 1 && RemainingBytes == Version3FrameBytes)))
 	{
@@ -1350,8 +1374,9 @@ bool CControls::PlayMacro(const char *pName)
 	{
 		char aMessage[192];
 		str_format(aMessage, sizeof(aMessage),
-			"Файл макроса «%s» повреждён или имеет несовместимый формат (версия %u, кадров %u, осталось %lld байт; ожидалось %lld).",
-			pName, Version, Count, (long long)RemainingBytes, (long long)CurrentFrameBytes);
+			"Файл макроса «%s» имеет несовместимый формат (версия %u, кадров %u, осталось %lld байт; размеры кадров: %lld или %lld байт).",
+			pName, Version, Count, (long long)RemainingBytes,
+			(long long)CurrentFrameBytes, (long long)Version5FrameBytes);
 		GameClient()->Echo(aMessage);
 		return false;
 	}
