@@ -148,6 +148,47 @@ void CControls::ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData)
 	*pVariable &= INPUT_STATE_MASK;
 }
 
+void CControls::ConMacroPracticeDummyInput(IConsole::IResult *pResult, void *pUserData)
+{
+	SMacroPracticeDummyBind *pBind = (SMacroPracticeDummyBind *)pUserData;
+	CControls *pSelf = pBind->m_pControls;
+	const bool Pressed = pResult->GetInteger(0) != 0;
+	if(!pSelf->m_MacroPracticeActive || pSelf->m_MacroPlaying)
+		return;
+
+	if(Pressed && !pSelf->m_MacroPracticeDummyEnabled)
+	{
+		pSelf->m_MacroPracticeDummyEnabled = true;
+		pSelf->m_MacroPracticeDummyInput = {};
+		pSelf->m_MacroPracticeDummyInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+		pSelf->m_MacroPracticeDummyInput.m_TargetX = 1;
+		pSelf->m_MacroPracticeDummyInput.m_WantedWeapon = WEAPON_HAMMER + 1;
+	}
+
+	switch(pBind->m_Action)
+	{
+	case EMacroPracticeDummyAction::LEFT:
+		pSelf->m_MacroPracticeDummyLeft = Pressed;
+		break;
+	case EMacroPracticeDummyAction::RIGHT:
+		pSelf->m_MacroPracticeDummyRight = Pressed;
+		break;
+	case EMacroPracticeDummyAction::JUMP:
+		pSelf->m_MacroPracticeDummyInput.m_Jump = Pressed ? 1 : 0;
+		break;
+	case EMacroPracticeDummyAction::HOOK:
+		pSelf->m_MacroPracticeDummyInput.m_Hook = Pressed ? 1 : 0;
+		break;
+	case EMacroPracticeDummyAction::FIRE:
+	{
+		int &Fire = pSelf->m_MacroPracticeDummyInput.m_Fire;
+		if((Fire & 1) != (Pressed ? 1 : 0))
+			Fire = (Fire + 1) & INPUT_STATE_MASK;
+		break;
+	}
+	}
+}
+
 struct CInputSet
 {
 	CControls *m_pControls;
@@ -268,6 +309,18 @@ void CControls::OnConsoleInit()
 	Console()->Register("macro_delete", "s[name]", CFGFLAG_CLIENT, ConMacroDelete, this, "Delete a saved player input macro");
 	Console()->Register("+macro_rewind", "", CFGFLAG_CLIENT, ConMacroRewind, this, "Hold to rewind a macro; repeat speed increases while held");
 	Console()->Register("+macro_seek", "", CFGFLAG_CLIENT, ConMacroSeek, this, "Jump forward by the configured number of macro ticks");
+	Console()->Register("macro_goto", "i[tick]", CFGFLAG_CLIENT, ConMacroGoto, this, "Jump to an exact macro tick");
+
+	static const SMacroPracticeDummyBind s_DummyLeft{this, EMacroPracticeDummyAction::LEFT};
+	static const SMacroPracticeDummyBind s_DummyRight{this, EMacroPracticeDummyAction::RIGHT};
+	static const SMacroPracticeDummyBind s_DummyJump{this, EMacroPracticeDummyAction::JUMP};
+	static const SMacroPracticeDummyBind s_DummyHook{this, EMacroPracticeDummyAction::HOOK};
+	static const SMacroPracticeDummyBind s_DummyFire{this, EMacroPracticeDummyAction::FIRE};
+	Console()->Register("+macro_dummy_left", "", CFGFLAG_CLIENT, ConMacroPracticeDummyInput, (void *)&s_DummyLeft, "Move the practice dummy left");
+	Console()->Register("+macro_dummy_right", "", CFGFLAG_CLIENT, ConMacroPracticeDummyInput, (void *)&s_DummyRight, "Move the practice dummy right");
+	Console()->Register("+macro_dummy_jump", "", CFGFLAG_CLIENT, ConMacroPracticeDummyInput, (void *)&s_DummyJump, "Make the practice dummy jump");
+	Console()->Register("+macro_dummy_hook", "", CFGFLAG_CLIENT, ConMacroPracticeDummyInput, (void *)&s_DummyHook, "Make the practice dummy hook");
+	Console()->Register("+macro_dummy_fire", "", CFGFLAG_CLIENT, ConMacroPracticeDummyInput, (void *)&s_DummyFire, "Make the practice dummy fire");
 }
 
 void CControls::ConTpToCursor(IConsole::IResult *pResult, void *pUserData)
@@ -480,14 +533,14 @@ bool CControls::StartMacroPractice()
 	// prediction world, even when the server does not request client prediction.
 	// These flags affect only the private copy; the real server tee still gets
 	// neutral input while practice is active.
-	m_MacroPracticeWorld.m_WorldConfig = GameClient()->m_GameWorld.m_WorldConfig;
+	m_MacroPracticeWorld.m_WorldConfig = GameClient()->m_PredictedWorld.m_WorldConfig;
 	m_MacroPracticeWorld.m_WorldConfig.m_PredictWeapons = true;
 	m_MacroPracticeWorld.m_WorldConfig.m_PredictFreeze = true;
 	m_MacroPracticeWorld.m_WorldConfig.m_PredictTiles = true;
 	m_MacroPracticeWorld.m_WorldConfig.m_PredictDDRace = true;
 	m_MacroPracticeWorld.m_WorldConfig.m_PredictEvents = true;
 	m_MacroPracticeWorld.m_WorldConfig.m_UseTuneZones = true;
-	m_MacroPracticeWorld.m_Teams = GameClient()->m_Teams;
+	// CopyWorld already cloned the prediction world's team collision rules.
 
 	PopulateMacroPracticeWorld();
 	if(!m_MacroPracticeWorld.GetCharacterById(LocalId))
@@ -520,6 +573,12 @@ bool CControls::StartMacroPractice()
 	m_MacroPracticePendingWantedWeapon = 0;
 	m_MacroPracticeFireCounter = m_aInputData[g_Config.m_ClDummy].m_Fire & INPUT_STATE_MASK;
 	m_MacroPracticeInput = m_aInputData[g_Config.m_ClDummy];
+	m_MacroPracticeDummyInput = {};
+	m_MacroPracticeDummyInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+	m_MacroPracticeDummyInput.m_TargetX = 1;
+	m_MacroPracticeDummyEnabled = false;
+	m_MacroPracticeDummyLeft = false;
+	m_MacroPracticeDummyRight = false;
 	m_MacroPracticePendingJump = false;
 	m_MacroPracticePendingHook = false;
 	m_MacroPracticePendingDirectionLeft = false;
@@ -622,6 +681,10 @@ void CControls::StopMacroPractice()
 	m_MacroPracticePendingPrevWeaponTransitions = 0;
 	m_MacroPracticePendingWantedWeapon = 0;
 	m_MacroPracticeInput = {};
+	m_MacroPracticeDummyInput = {};
+	m_MacroPracticeDummyEnabled = false;
+	m_MacroPracticeDummyLeft = false;
+	m_MacroPracticeDummyRight = false;
 	m_MacroPracticePendingJump = false;
 	m_MacroPracticePendingHook = false;
 	m_MacroPracticePendingDirectionLeft = false;
@@ -694,7 +757,7 @@ void CControls::PopulateMacroPracticeWorld()
 
 		const bool IsFlightDummy = !m_MacroPlaying &&
 			ClientId == GameClient()->m_aLocalIds[!g_Config.m_ClDummy] &&
-			(g_Config.m_ClDummyHammer || g_Config.m_ClDummyControl || g_Config.m_ClDummyCopyMoves);
+			(m_MacroPracticeDummyEnabled || g_Config.m_ClDummyControl || g_Config.m_ClDummyCopyMoves);
 		const bool WasMovingDummy = m_aMacroPracticeSnapshotInitialized[ClientId] &&
 			!pPracticeCharacter->m_IsMacroPracticeStatic;
 
@@ -1051,10 +1114,22 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 	const int OtherLocalId = GameClient()->m_aLocalIds[!g_Config.m_ClDummy];
 	CCharacter *pPracticeDummy = m_MacroPracticeWorld.GetCharacterById(OtherLocalId);
 	if(!m_MacroPlaying && pPracticeDummy && pPracticeDummy != pCharacter &&
-		(g_Config.m_ClDummyHammer || g_Config.m_ClDummyControl || g_Config.m_ClDummyCopyMoves))
+		(m_MacroPracticeDummyEnabled || g_Config.m_ClDummyControl || g_Config.m_ClDummyCopyMoves))
 	{
 		CNetObj_PlayerInput DummyTickInput = DummyInput;
 		DummyTickInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+		if(m_MacroPracticeDummyEnabled)
+		{
+			DummyTickInput = m_MacroPracticeDummyInput;
+			DummyTickInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+			DummyTickInput.m_Direction = m_MacroPracticeDummyLeft == m_MacroPracticeDummyRight ? 0 :
+				(m_MacroPracticeDummyLeft ? -1 : 1);
+			const vec2 Aim = pCharacter->Core()->m_Pos - pPracticeDummy->Core()->m_Pos;
+			DummyTickInput.m_TargetX = round_to_int(Aim.x);
+			DummyTickInput.m_TargetY = round_to_int(Aim.y);
+			if(DummyTickInput.m_TargetX == 0 && DummyTickInput.m_TargetY == 0)
+				DummyTickInput.m_TargetX = 1;
+		}
 		pPracticeDummy->m_IsMacroPracticeStatic = false;
 		pPracticeDummy->OnDirectInput(&DummyTickInput);
 		pPracticeDummy->OnPredictedInput(&DummyTickInput);
@@ -1624,6 +1699,23 @@ void CControls::ConMacroSeek(IConsole::IResult *pResult, void *pUserData)
 	pSelf->SeekMacro(pSelf->MacroSeekStep(), true, true);
 }
 
+void CControls::ConMacroGoto(IConsole::IResult *pResult, void *pUserData)
+{
+	CControls *pSelf = (CControls *)pUserData;
+	if(pSelf->GameClient()->m_Chat.IsActive() || pSelf->GameClient()->m_Menus.IsActive())
+		return;
+
+	const int TargetTick = pResult->GetInteger(0);
+	if(TargetTick < 1)
+	{
+		pSelf->GameClient()->Echo("Укажи номер тика от 1 до длины макроса.");
+		return;
+	}
+	const int CurrentTick = pSelf->m_MacroDisplayedTick > 0 ? pSelf->m_MacroDisplayedTick :
+		(int)pSelf->m_MacroPlaybackIndex;
+	pSelf->SeekMacro(TargetTick - CurrentTick, true, true);
+}
+
 int CControls::MacroSeekStep() const
 {
 	return g_Config.m_ClMacroRewindStep;
@@ -1657,7 +1749,7 @@ vec2 CControls::MacroPracticePosition()
 
 int CControls::MacroPracticeRate() const
 {
-	return SERVER_TICK_SPEED;
+	return std::clamp(g_Config.m_ClMacroPracticeRate, 1, 250);
 }
 
 bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
@@ -1701,20 +1793,10 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 	return true;
 }
 
-bool CControls::OnInput(const IInput::CEvent &Event)
+bool CControls::OnInput(const IInput::CEvent &)
 {
-	// Arrow keys remain available to user binds during macro playback.
-	if(m_MacroPlaying)
-		return false;
-	if((!m_MacroPracticeActive && !m_MacroPlaybackLive) || m_MacroRecording || m_vMacroFrames.empty() ||
-		GameClient()->m_Chat.IsActive() || GameClient()->m_Menus.IsActive() ||
-		!(Event.m_Flags & IInput::FLAG_PRESS))
-		return false;
-
-	if(Event.m_Key == KEY_LEFT)
-		return SeekMacro(-MacroSeekStep());
-	if(Event.m_Key == KEY_RIGHT)
-		return SeekMacro(MacroSeekStep());
+	// Never consume gameplay keys here. Macro seek/rewind is handled by
+	// explicit bindable commands so movement binds keep working in practice.
 	return false;
 }
 void CControls::OnMessage(int Msg, void *pRawMsg)
@@ -2123,29 +2205,23 @@ int CControls::SnapInput(int *pData)
 			m_aInputData[Dummy].m_WantedWeapon = 0;
 		CNetObj_PlayerInput PracticeDummyInput = GameClient()->m_DummyInput;
 		PracticeDummyInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
-		if(g_Config.m_ClDummyHammer)
+		if(m_MacroPracticeDummyEnabled)
 		{
-			if(GameClient()->m_DummyFire % 25 == 0)
+			PracticeDummyInput = m_MacroPracticeDummyInput;
+			PracticeDummyInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+			PracticeDummyInput.m_Direction = m_MacroPracticeDummyLeft == m_MacroPracticeDummyRight ? 0 :
+				(m_MacroPracticeDummyLeft ? -1 : 1);
+			if(const CCharacter *pPracticeDummy = m_MacroPracticeWorld.GetCharacterById(GameClient()->m_aLocalIds[!Dummy]))
 			{
-				++GameClient()->m_DummyFire;
-				GameClient()->m_HammerInput.m_Fire = (GameClient()->m_HammerInput.m_Fire + 1) | 1;
-				GameClient()->m_HammerInput.m_WantedWeapon = WEAPON_HAMMER + 1;
-				if(!g_Config.m_ClDummyRestoreWeapon)
-					GameClient()->m_DummyInput.m_WantedWeapon = WEAPON_HAMMER + 1;
-				if(const CCharacter *pPracticeDummy = m_MacroPracticeWorld.GetCharacterById(GameClient()->m_aLocalIds[!Dummy]))
+				if(const CCharacter *pPracticeLocal = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId))
 				{
-					if(const CCharacter *pPracticeLocal = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId))
-					{
-						const vec2 Dir = pPracticeLocal->Core()->m_Pos - pPracticeDummy->Core()->m_Pos;
-						GameClient()->m_HammerInput.m_TargetX = round_to_int(Dir.x);
-						GameClient()->m_HammerInput.m_TargetY = round_to_int(Dir.y);
-					}
+					const vec2 Dir = pPracticeLocal->Core()->m_Pos - pPracticeDummy->Core()->m_Pos;
+					PracticeDummyInput.m_TargetX = round_to_int(Dir.x);
+					PracticeDummyInput.m_TargetY = round_to_int(Dir.y);
 				}
 			}
-			else
-				++GameClient()->m_DummyFire;
-			PracticeDummyInput = GameClient()->m_HammerInput;
-			PracticeDummyInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+			if(PracticeDummyInput.m_TargetX == 0 && PracticeDummyInput.m_TargetY == 0)
+				PracticeDummyInput.m_TargetX = 1;
 		}
 		else if(g_Config.m_ClDummyCopyMoves)
 		{
@@ -2176,9 +2252,10 @@ int CControls::SnapInput(int *pData)
 				m_MacroPracticeLastTime = CurrentTime;
 			const int64_t ElapsedTime = std::max<int64_t>(0, CurrentTime - m_MacroPracticeLastTime);
 			m_MacroPracticeLastTime = CurrentTime;
-			m_MacroPracticeAccumulator += (float)ElapsedTime / (float)time_freq() * MacroPracticeRate();
+			m_MacroPracticeAccumulator += (double)ElapsedTime / (double)time_freq() * MacroPracticeRate();
 			int Steps = 0;
-			while(m_MacroPracticeAccumulator >= 1.0f && Steps < SERVER_TICK_SPEED)
+			const int MaxStepsPerUpdate = std::max(SERVER_TICK_SPEED, MacroPracticeRate());
+			while(m_MacroPracticeAccumulator >= 1.0 && Steps < MaxStepsPerUpdate)
 			{
 				SimulateMacroPracticeTick(PracticeInput, PracticeDummyInput);
 				m_MacroPracticeAccumulator -= 1.0f;
@@ -2521,14 +2598,15 @@ void CControls::RenderMacroHud()
 
 	char aTickLabel[128];
 	if(m_MacroRecording)
-		str_format(aTickLabel, sizeof(aTickLabel), "МАКРОС  |  ТИК %d  |  %d ТИК = 1С",
-			(int)m_vMacroFrames.size(), SERVER_TICK_SPEED);
+		str_format(aTickLabel, sizeof(aTickLabel), "МАКРОС  |  ТИК %d  |  %d ТИК/С",
+			(int)m_vMacroFrames.size(), MacroPracticeRate());
 	else if(m_MacroPlaying)
-		str_format(aTickLabel, sizeof(aTickLabel), "МАКРОС  |  ТИК %d / %d  |  %d ТИК = 1С",
+		str_format(aTickLabel, sizeof(aTickLabel), "МАКРОС  |  ТИК %d / %d  |  %d ТИК/С",
 			std::clamp(m_MacroDisplayedTick, 1, (int)m_vMacroFrames.size()),
-			(int)m_vMacroFrames.size(), SERVER_TICK_SPEED);
+			(int)m_vMacroFrames.size(), MacroPracticeRate());
 	else
-		str_format(aTickLabel, sizeof(aTickLabel), "FP-ТРЕНИРОВКА  |  ТИК %d", m_MacroPracticeTick);
+		str_format(aTickLabel, sizeof(aTickLabel), "FP-ТРЕНИРОВКА  |  ТИК %d  |  %d ТИК/С",
+			m_MacroPracticeTick, MacroPracticeRate());
 
 	const float BoxWidth = std::min(640.0f, ScreenWidth - 32.0f);
 	const float BoxHeight = 92.0f;

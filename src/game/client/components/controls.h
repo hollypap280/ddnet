@@ -83,7 +83,7 @@ public:
 	vec2 MacroPracticePosition();
 	void OnMacroPracticeDummySwap();
 	CGameWorld *MacroPracticeWorld() { return m_MacroPracticeActive ? &m_MacroPracticeWorld : nullptr; }
-	float MacroPracticeTickFraction() const { return m_MacroPracticeAccumulator; }
+	float MacroPracticeTickFraction() const { return (float)m_MacroPracticeAccumulator; }
 	bool MacroPracticeWaiting() const { return m_MacroPracticeWaiting; }
 	void RenderMacroHud();
 	bool StartMacroPractice();
@@ -182,7 +182,7 @@ private:
 	int m_MacroLivePrevWeaponOffset = 0;
 	bool m_MacroPracticeActive = false;
 	bool m_MacroPracticeWaiting = false;
-	float m_MacroPracticeAccumulator = 0.0f;
+	double m_MacroPracticeAccumulator = 0.0;
 	int64_t m_MacroPracticeLastTime = 0;
 	int m_MacroPracticeTick = 0;
 	int m_MacroPracticeLocalId = -1;
@@ -192,6 +192,10 @@ private:
 	int m_MacroPracticeStartFreezeTime = 0;
 	bool m_MacroPracticeStartFrozenLastTick = false;
 	CNetObj_PlayerInput m_MacroPracticeInput{};
+	CNetObj_PlayerInput m_MacroPracticeDummyInput{};
+	bool m_MacroPracticeDummyEnabled = false;
+	bool m_MacroPracticeDummyLeft = false;
+	bool m_MacroPracticeDummyRight = false;
 	int m_MacroPracticePendingFireTransitions = 0;
 	int m_MacroPracticePendingNextWeaponTransitions = 0;
 	int m_MacroPracticePendingPrevWeaponTransitions = 0;
@@ -232,6 +236,21 @@ private:
 	static void ConMacroDelete(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroRewind(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroSeek(IConsole::IResult *pResult, void *pUserData);
+	static void ConMacroGoto(IConsole::IResult *pResult, void *pUserData);
+	enum class EMacroPracticeDummyAction
+	{
+		LEFT,
+		RIGHT,
+		JUMP,
+		HOOK,
+		FIRE,
+	};
+	struct SMacroPracticeDummyBind
+	{
+		CControls *m_pControls;
+		EMacroPracticeDummyAction m_Action;
+	};
+	static void ConMacroPracticeDummyInput(IConsole::IResult *pResult, void *pUserData);
 	void SendPracticeTeleport(vec2 Pos, int Conn);
 	void SendPracticeTeleportToCursor(int Conn);
 };
