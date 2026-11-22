@@ -83,7 +83,6 @@ public:
 	int MacroPracticeTick() const { return m_MacroPracticeTick; }
 	vec2 MacroPracticePosition();
 	void OnMacroPracticeDummySwap();
-	bool IsMacroPracticeBindSafe(const char *pBind) const;
 	CGameWorld *MacroPracticeWorld() { return m_MacroPracticeActive ? &m_MacroPracticeWorld : nullptr; }
 	float MacroPracticeTickFraction() const { return m_MacroPracticeAccumulator; }
 	bool MacroPracticeWaiting() const { return m_MacroPracticeWaiting; }
@@ -94,9 +93,6 @@ public:
 	bool SaveMacro(const char *pName);
 	bool PlayMacro(const char *pName);
 	bool DeleteMacro(const char *pName);
-	int AutoUnfreezeTrainingSampleCount();
-	int AutoUnfreezeTrainingEpisodeCount();
-	void ClearAutoUnfreezeTraining();
 
 private:
 	static void ConKeyInputState(IConsole::IResult *pResult, void *pUserData);
@@ -106,21 +102,8 @@ private:
 	static void ConTpToCursor(IConsole::IResult *pResult, void *pUserData);
 	static void ConTpDummyToCursor(IConsole::IResult *pResult, void *pUserData);
 	vec2 CursorWorldPos() const;
-	struct SAutoUnfreezeSample
-	{
-		int m_MapIndex = -1;
-		int m_VelX = 0;
-		int m_VelY = 0;
-		int m_FreezeTicks = 0;
-		int m_Weapon = WEAPON_HAMMER;
-		int m_Direction = 0;
-		int m_Jump = 0;
-		int m_Hook = 0;
-		int m_Fire = 0;
-		int m_WantedWeapon = 0;
-		int m_TargetX = 1;
-		int m_TargetY = 0;
-	};
+
+;
 	struct SMacroFrame
 	{
 		CNetObj_PlayerInput m_Input{};
@@ -179,16 +162,6 @@ private:
 	};
 	std::vector<SMacroFrame> m_vMacroFrames;
 	std::vector<SMacroFrame> m_vMacroCorrectionFrames;
-	std::vector<SAutoUnfreezeSample> m_vAutoUnfreezeSamples;
-	std::vector<SAutoUnfreezeSample> m_vAutoUnfreezeEpisode;
-	int m_AutoUnfreezeCompletedEpisodes = 0;
-	bool m_AutoUnfreezeTrainingLoaded = false;
-	int m_AutoUnfreezePendingTargetId = -1;
-	int m_AutoUnfreezePendingTick = -1;
-	int m_AutoUnfreezePendingFreezeTicks = 0;
-	int m_AutoUnfreezeLastAttackTick = -1;
-	SAutoUnfreezeSample m_AutoUnfreezePendingSample{};
-	bool m_aAutoUnfreezeAIActive[NUM_DUMMIES]{};
 	std::size_t m_MacroPlaybackIndex = 0;
 	SMacroFrame m_MacroCurrentFrame{};
 	bool m_MacroHasCurrentFrame = false;
@@ -238,11 +211,6 @@ private:
 	bool RestoreMacroPracticeFrame(int Index);
 	void UpdateMacroPracticeGhost(CCharacter *pCharacter);
 	void PopulateMacroPracticeWorld();
-	void LoadAutoUnfreezeTraining();
-	void SaveAutoUnfreezeTraining();
-	bool FindFrozenTeammate(int Dummy, vec2 Position, vec2 Aim, bool RequireAim, int *pTargetId, vec2 *pTargetDelta, int *pFreezeTicks);
-	void UpdateAutoUnfreezeTraining(int Dummy, const CCharacterCore &Core, vec2 Position, int AttackTick, int Tick);
-	bool ApplyTrainedAutoUnfreeze(int Dummy, const CCharacterCore &Core, vec2 Position);
 	bool SwitchMacroPracticeCharacter(int ClientId);
 	static void ConMacroRecord(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroStop(IConsole::IResult *pResult, void *pUserData);
