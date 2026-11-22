@@ -238,6 +238,11 @@ void CControls::OnConsoleInit()
 void CControls::ConTpToCursor(IConsole::IResult *pResult, void *pUserData)
 {
 	CControls *pSelf = (CControls *)pUserData;
+	if(pSelf->m_MacroPracticeActive)
+	{
+		pSelf->TeleportMacroPracticeCharacter(pSelf->m_MacroPracticeLocalId, pSelf->CursorWorldPos());
+		return;
+	}
 	if(pSelf->Client()->State() != IClient::STATE_ONLINE)
 		return;
 
@@ -247,6 +252,11 @@ void CControls::ConTpToCursor(IConsole::IResult *pResult, void *pUserData)
 void CControls::ConTpDummyToCursor(IConsole::IResult *pResult, void *pUserData)
 {
 	CControls *pSelf = (CControls *)pUserData;
+	if(pSelf->m_MacroPracticeActive)
+	{
+		pSelf->TeleportMacroPracticeCharacter(pSelf->GameClient()->m_aLocalIds[!g_Config.m_ClDummy], pSelf->CursorWorldPos());
+		return;
+	}
 	if(pSelf->Client()->State() != IClient::STATE_ONLINE)
 		return;
 
@@ -265,6 +275,31 @@ vec2 CControls::CursorWorldPos() const
 	const vec2 Center = GameClient()->m_Camera.m_Center;
 	const vec2 TargetPos = m_aTargetPos[g_Config.m_ClDummy];
 	return Center + (TargetPos - Center) * GameClient()->m_Camera.m_Zoom;
+}
+
+
+void CControls::TeleportMacroPracticeCharacter(int ClientId, vec2 Pos)
+{
+	if(!m_MacroPracticeActive || ClientId < 0 || ClientId >= MAX_CLIENTS)
+		return;
+
+	CCharacter *pCharacter = m_MacroPracticeWorld.GetCharacterById(ClientId);
+	if(!pCharacter)
+	{
+		GameClient()->Echo("Тренировочный тии для телепорта не найден.");
+		return;
+	}
+
+	CCharacterCore Core = pCharacter->GetCore();
+	Core.m_Pos = Pos;
+	Core.m_Vel = vec2(0.0f, 0.0f);
+	pCharacter->SetCore(Core);
+	pCharacter->ReleaseHook();
+	pCharacter->m_Pos = Pos;
+	pCharacter->m_PrevPos = Pos;
+	pCharacter->m_PrevPrevPos = Pos;
+	pCharacter->m_IsMacroPracticeStatic = false;
+	UpdateMacroPracticeGhost(pCharacter);
 }
 
 void CControls::SendPracticeTeleport(vec2 Pos, int Conn)
@@ -713,11 +748,8 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		return;
 	}
 
-	CNetObj_PlayerInput TickInput{};
-	if(!m_MacroPlaying)
-		TickInput = LiveInput;
+	CNetObj_PlayerInput TickInput = LiveInput;
 	TickInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
-	TickInput.m_TargetX = 1;
 	bool ReplayRecordedFrame = false;
 
 	if(m_MacroPlaying)
@@ -812,6 +844,14 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 			TickInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
 			ReplayRecordedFrame = true;
 		}
+	}
+
+	if(m_MacroPlaying && ReplayRecordedFrame)
+	{
+		// Movement/weapon actions stay deterministic, but the cursor remains free
+		// so the player can aim left, right, up, and down while the macro runs.
+		TickInput.m_TargetX = LiveInput.m_TargetX;
+		TickInput.m_TargetY = LiveInput.m_TargetY;
 	}
 
 	if(!ReplayRecordedFrame)
@@ -1049,10 +1089,18 @@ bool CControls::PlayMacro(const char *pName)
 	}
 	char aPath[128];
 	if(!MacroFilePath(pName, aPath, sizeof(aPath)))
+	{
+		GameClient()->Echo("Недопустимое имя макроса. Используй буквы, цифры, пробел, дефис или подчёркивание.");
 		return false;
+	}
 	IOHANDLE File = Storage()->OpenFile(aPath, IOFLAG_READ, IStorage::TYPE_SAVE);
 	if(!File)
+	{
+		char aMessage[160];
+		str_format(aMessage, sizeof(aMessage), "Файл macros/%s.dmacro не найден в папке сохранений.", pName);
+		GameClient()->Echo(aMessage);
 		return false;
+	}
 
 	uint32_t Magic = 0;
 	uint32_t Version = 0;
@@ -1152,10 +1200,23 @@ bool CControls::PlayMacro(const char *pName)
 	else
 		Valid = false;
 	io_close(File);
-	if(!Valid || Client()->State() != IClient::STATE_ONLINE ||
-		GameClient()->m_Snap.m_LocalClientId < 0 || !GameClient()->m_Snap.m_pLocalCharacter)
+	if(!Valid)
 	{
-		GameClient()->Echo("Не удалось запустить макрос: проверь файл и подключение к серверу.");
+		char aMessage[192];
+		str_format(aMessage, sizeof(aMessage),
+			"Файл макроса «%s» повреждён или имеет несовместимый формат (версия %u, кадров %u, осталось %lld байт; ожидалось %lld).",
+			pName, Version, Count, (long long)RemainingBytes, (long long)CurrentFrameBytes);
+		GameClient()->Echo(aMessage);
+		return false;
+	}
+	if(Client()->State() != IClient::STATE_ONLINE)
+	{
+		GameClient()->Echo("Для запуска макроса сначала подключись к серверу.");
+		return false;
+	}
+	if(GameClient()->m_Snap.m_LocalClientId < 0 || !GameClient()->m_Snap.m_pLocalCharacter)
+	{
+		GameClient()->Echo("Сервер ещё не прислал локального тии. Подожди появления персонажа и запусти макрос снова.");
 		return false;
 	}
 	if(m_MacroRecording)
@@ -1168,9 +1229,12 @@ bool CControls::PlayMacro(const char *pName)
 	if(!m_MacroPracticeActive && !StartMacroPractice())
 		return false;
 
+	m_MacroPlaybackOwnsDummy = true;
 	if(Frames[0].m_ClientId >= 0 && !SwitchMacroPracticeCharacter(Frames[0].m_ClientId))
 	{
-		GameClient()->Echo("Не удалось выбрать начального тии из записи.");
+		char aMessage[128];
+		str_format(aMessage, sizeof(aMessage), "Не найден тренировочный тии из первого кадра записи (ID %d). Проверь подключение дамми.", Frames[0].m_ClientId);
+		GameClient()->Echo(aMessage);
 		StopMacroPractice();
 		return false;
 	}
@@ -1185,7 +1249,8 @@ bool CControls::PlayMacro(const char *pName)
 	m_vMacroFrames = std::move(Frames);
 	m_vMacroCorrectionFrames.clear();
 	str_copy(m_aLoadedMacroName, pName);
-	m_MacroPlaybackOwnsDummy = std::any_of(m_vMacroFrames.begin(), m_vMacroFrames.end(), [](const SMacroFrame &Frame) { return Frame.m_ClientId >= 0; });
+	// Playback always owns the practice tee, including older files that do not store client IDs.
+	m_MacroPlaybackOwnsDummy = true;
 	m_MacroRecording = false;
 	m_MacroPlaybackLive = false;
 	m_MacroPlaybackOwnsPractice = true;
@@ -1341,7 +1406,7 @@ void CControls::OnMacroPracticeDummySwap()
 {
 	if(!m_MacroPracticeActive)
 		return;
-	if(m_MacroPlaying && m_MacroPlaybackOwnsDummy)
+	if(m_MacroPlaying)
 		return;
 	m_MacroPlaybackOwnsDummy = false;
 	const int RequestedLocalId = GameClient()->m_aLocalIds[g_Config.m_ClDummy];
@@ -2239,15 +2304,17 @@ void CControls::OnRender()
 		Graphics()->MapScreenToSize(Graphics()->ScreenWidth(), Graphics()->ScreenHeight());
 		char aTickLabel[96];
 		if(m_MacroRecording)
-			str_format(aTickLabel, sizeof(aTickLabel), "ЗАПИСЬ  |  %d тиков", (int)m_vMacroFrames.size());
+			str_format(aTickLabel, sizeof(aTickLabel), "ЗАПИСЬ  |  %d ТИКОВ", (int)m_vMacroFrames.size());
 		else if(m_MacroPlaying)
-			str_format(aTickLabel, sizeof(aTickLabel), "ВОСПРОИЗВЕДЕНИЕ  |  %d / %d тиков",
-				(int)m_MacroPlaybackIndex, (int)m_vMacroFrames.size());
+			str_format(aTickLabel, sizeof(aTickLabel), "МАКРОС  |  %d / %d ТИКОВ%s",
+				(int)m_MacroPlaybackIndex, (int)m_vMacroFrames.size(),
+				m_MacroPracticeWaiting ? "  |  ОЖИДАНИЕ ПОЗИЦИИ" : "");
 		else
-			str_format(aTickLabel, sizeof(aTickLabel), "ТРЕНИРОВКА  |  %d тиков", m_MacroPracticeTick);
-		const float Width = TextRender()->TextWidth(14.0f, aTickLabel);
+			str_format(aTickLabel, sizeof(aTickLabel), "ТРЕНИРОВКА  |  %d ТИКОВ", m_MacroPracticeTick);
+		const float FontSize = 18.0f;
+		const float Width = TextRender()->TextWidth(FontSize, aTickLabel);
 		TextRender()->TextColor(0.55f, 0.9f, 1.0f, 1.0f);
-		TextRender()->Text((Graphics()->ScreenWidth() - Width) * 0.5f, 12.0f, 14.0f, aTickLabel);
+		TextRender()->Text((Graphics()->ScreenWidth() - Width) * 0.5f, 14.0f, FontSize, aTickLabel);
 		TextRender()->TextColor(TextRender()->DefaultTextColor());
 		Graphics()->MapScreen(PreviousScreen);
 	}
