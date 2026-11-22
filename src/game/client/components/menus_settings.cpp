@@ -522,7 +522,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	static CButtonContainer s_MacroTab, s_SettingsTab;
 	static CButtonContainer s_ShowOthers;
 	static CButtonContainer s_RecordToggle;
-	static CButtonContainer s_PlayToggle, s_Delete, s_Refresh;
+	static CButtonContainer s_PlayToggle, s_Delete, s_Refresh, s_PauseToggle;
 	static CButtonContainer s_MacroLoop;
 	static CScrollRegion s_MacroListScrollRegion;
 	static CScrollRegion s_MacroSettingsScrollRegion;
@@ -664,6 +664,16 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 					GameClient()->m_Controls.PlayMacro(aPlaybackName);
 			}
 		}
+		if(Playing)
+		{
+			CUIRect PauseRow;
+			MainView.HSplitTop(26.0f, &PauseRow, &MainView);
+			PauseRow.VSplitLeft(142.0f, &Button, nullptr);
+			const bool Paused = GameClient()->m_Controls.MacroPaused();
+			if(DoButton_Menu(&s_PauseToggle, Paused ? Localize("Продолжить") : Localize("Пауза"), Paused, &Button))
+				GameClient()->m_Controls.ToggleMacroPause();
+		}
+
 		Row.VSplitLeft(6.0f, nullptr, &Row);
 		Row.VSplitLeft(112.0f, &Button, nullptr);
 		if(DoButton_Menu(&s_Delete, Localize("Удалить выбранный"), 0, &Button) && s_aSelectedMacro[0])
@@ -686,7 +696,8 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		if(GameClient()->m_Controls.MacroRecording())
 			str_format(aStatus, sizeof(aStatus), "ЗАПИСЬ  |  %d тиков", GameClient()->m_Controls.MacroFrameCount());
 		else if(GameClient()->m_Controls.MacroPlaying())
-			str_format(aStatus, sizeof(aStatus), "ВОСПРОИЗВЕДЕНИЕ  |  %d / %d тиков",
+			str_format(aStatus, sizeof(aStatus), "%s  |  %d / %d тиков",
+				GameClient()->m_Controls.MacroPaused() ? "ПАУЗА" : "ВОСПРОИЗВЕДЕНИЕ",
 				GameClient()->m_Controls.MacroPosition(), GameClient()->m_Controls.MacroFrameCount());
 		else
 			str_format(aStatus, sizeof(aStatus), "ГОТОВО  |  %d тиков", GameClient()->m_Controls.MacroFrameCount());
@@ -800,8 +811,9 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			g_Config.m_ClMacroPracticeShowOthers ^= 1;
 
 		CUIRect PracticeRateRow;
-		if(AddSettingRow(24.0f, PracticeRateRow))
-			Ui()->DoLabel(&PracticeRateRow, Localize("Скорость: 50 тиков/с (одна секунда = 50 тиков)"), 12.0f, TEXTALIGN_ML);
+		if(AddSettingRow(28.0f, PracticeRateRow))
+			Ui()->DoScrollbarOption(&g_Config.m_ClMacroPracticeRate, &g_Config.m_ClMacroPracticeRate,
+				&PracticeRateRow, Localize("Скорость воспроизведения (тиков/с)"), 1, 50);
 
 		AddSection("СТАРТ И ПЕРЕМОТКА МАКРОСА");
 		if(!s_StartTickInitialized)
@@ -850,7 +862,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		CUIRect InfoRow;
 		if(AddSettingRow(48.0f, InfoRow))
 			Ui()->DoLabel(&InfoRow,
-				Localize("Обычные игровые бинды управляют локальной копией. Воспроизведение идёт по 50 тиков/с, а настоящий персонаж на сервере остаётся неподвижным."),
+				Localize("В FP-практике можно использовать обычные игровые бинды или отдельные +macro_left/right/jump/hook/fire. Live-макрос требует /practice и совместимый сервер."),
 				12.0f, TEXTALIGN_ML);
 
 		s_MacroSettingsScrollRegion.End();
@@ -878,6 +890,12 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 		{ "Полёт дамми (хаммерфлай)", "toggle cl_dummy_hammer 0 1" },
 		{ "Перемотка макроса назад (удерживать)", "+macro_rewind" },
 		{ "Перемотка макроса вперёд (нажатие)", "+macro_seek" },
+		{ "Пауза/продолжить макрос", "macro_pause" },
+		{ "FP-макрос: влево", "+macro_left" },
+		{ "FP-макрос: вправо", "+macro_right" },
+		{ "FP-макрос: прыжок", "+macro_jump" },
+		{ "FP-макрос: крюк", "+macro_hook" },
+		{ "FP-макрос: огонь", "+macro_fire" },
 	};
 	static CButtonContainer s_aKeyReaders[std::size(s_aHotkeys)];
 	static CButtonContainer s_aKeyClearButtons[std::size(s_aHotkeys)];
