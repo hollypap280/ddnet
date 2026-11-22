@@ -630,6 +630,8 @@ void CControls::StopMacroPractice()
 	m_MacroPracticePendingDirectionRight = false;
 	m_MacroPracticeHasRenderChar = false;
 	m_MacroPlaybackIndex = 0;
+	m_MacroStartFrameIndex = 0;
+	m_MacroDisplayedTick = 0;
 	m_MacroPracticeWorld.Clear();
 	if(GameClient())
 		GameClient()->m_Ghost.ClearMacroPracticeCharacter();
@@ -859,6 +861,7 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 		UpdateMacroPracticeGhost(pCharacter);
 	}
 	m_MacroPlaybackIndex = (std::size_t)Index + 1;
+	m_MacroDisplayedTick = Index + 1;
 	m_MacroPracticeWaiting = false;
 	return true;
 }
@@ -1178,6 +1181,8 @@ bool CControls::StartMacroRecording(const char *pName)
 	m_MacroPlaying = false;
 	m_MacroPlaybackOwnsDummy = false;
 	m_MacroPlaybackIndex = 0;
+	m_MacroStartFrameIndex = 0;
+	m_MacroDisplayedTick = 0;
 	m_MacroCurrentFrame = {};
 	m_MacroHasCurrentFrame = false;
 	m_MacroHoldCurrentFrame = false;
@@ -1668,6 +1673,7 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 				GameClient()->Echo("Эта старая запись не содержит координат для телепортации.");
 		}
 		m_MacroPlaybackIndex = (std::size_t)Target;
+		m_MacroDisplayedTick = Target + 1;
 		m_MacroHasCurrentFrame = false;
 		m_MacroPlaybackLastTick = -1;
 		m_MacroPracticeWaiting = false;
@@ -2499,45 +2505,50 @@ void CControls::OnRender()
 		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 	}
 
-	if(m_MacroPracticeActive)
-	{
-		const CScreenRect PreviousScreen = Graphics()->GetScreen();
-		const float ScreenWidth = Graphics()->ScreenWidth();
-		const float ScreenHeight = Graphics()->ScreenHeight();
-		Graphics()->MapScreenToSize(ScreenWidth, ScreenHeight);
+}
 
-		char aTickLabel[128];
-		if(m_MacroRecording)
-			str_format(aTickLabel, sizeof(aTickLabel), "МАКРОС  |  ТИК %d  |  %d ТИК = 1С",
-				(int)m_vMacroFrames.size(), SERVER_TICK_SPEED);
-		else if(m_MacroPlaying)
-			str_format(aTickLabel, sizeof(aTickLabel), "МАКРОС  |  ТИК %d / %d  |  %d ТИК = 1С",
-				(int)m_MacroPlaybackIndex, (int)m_vMacroFrames.size(), SERVER_TICK_SPEED);
-		else
-			str_format(aTickLabel, sizeof(aTickLabel), "FP-ТРЕНИРОВКА  |  ТИК %d", m_MacroPracticeTick);
+void CControls::RenderMacroHud()
+{
+	if(!m_MacroPracticeActive)
+		return;
 
-		const float BoxWidth = std::min(640.0f, ScreenWidth - 32.0f);
-		const float BoxHeight = 92.0f;
-		const float BoxX = (ScreenWidth - BoxWidth) * 0.5f;
-		const float BoxY = 76.0f;
-		Graphics()->DrawRect(BoxX, BoxY, BoxWidth, BoxHeight,
-			ColorRGBA(0.0f, 0.0f, 0.0f, 0.82f), IGraphics::CORNER_ALL, 2.0f);
-		Graphics()->DrawRect(BoxX + 4.0f, BoxY + 4.0f, BoxWidth - 8.0f, BoxHeight - 8.0f,
-			ColorRGBA(0.42f, 0.42f, 0.42f, 0.88f), IGraphics::CORNER_ALL, 2.0f);
+	const CScreenRect PreviousScreen = Graphics()->GetScreen();
+	const float ScreenWidth = Graphics()->ScreenWidth();
+	const float ScreenHeight = Graphics()->ScreenHeight();
+	Graphics()->MapScreenToSize(ScreenWidth, ScreenHeight);
 
-		const char *pClientName = "КЛИЕНТ 1";
-		const float ClientFontSize = 15.0f;
-		const float ClientWidth = TextRender()->TextWidth(ClientFontSize, pClientName);
-		TextRender()->TextColor(0.55f, 0.9f, 1.0f, 1.0f);
-		TextRender()->Text((ScreenWidth - ClientWidth) * 0.5f, BoxY + 10.0f, ClientFontSize, pClientName);
+	char aTickLabel[128];
+	if(m_MacroRecording)
+		str_format(aTickLabel, sizeof(aTickLabel), "МАКРОС  |  ТИК %d  |  %d ТИК = 1С",
+			(int)m_vMacroFrames.size(), SERVER_TICK_SPEED);
+	else if(m_MacroPlaying)
+		str_format(aTickLabel, sizeof(aTickLabel), "МАКРОС  |  ТИК %d / %d  |  %d ТИК = 1С",
+			std::clamp(m_MacroDisplayedTick, 1, (int)m_vMacroFrames.size()),
+			(int)m_vMacroFrames.size(), SERVER_TICK_SPEED);
+	else
+		str_format(aTickLabel, sizeof(aTickLabel), "FP-ТРЕНИРОВКА  |  ТИК %d", m_MacroPracticeTick);
 
-		const float FontSize = ScreenWidth < 700.0f ? 22.0f : 30.0f;
-		const float Width = TextRender()->TextWidth(FontSize, aTickLabel);
-		TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
-		TextRender()->Text((ScreenWidth - Width) * 0.5f, BoxY + 42.0f, FontSize, aTickLabel);
-		TextRender()->TextColor(TextRender()->DefaultTextColor());
-		Graphics()->MapScreen(PreviousScreen);
-	}
+	const float BoxWidth = std::min(640.0f, ScreenWidth - 32.0f);
+	const float BoxHeight = 92.0f;
+	const float BoxX = (ScreenWidth - BoxWidth) * 0.5f;
+	const float BoxY = 76.0f;
+	Graphics()->DrawRect(BoxX, BoxY, BoxWidth, BoxHeight,
+		ColorRGBA(0.0f, 0.0f, 0.0f, 0.82f), IGraphics::CORNER_ALL, 2.0f);
+	Graphics()->DrawRect(BoxX + 4.0f, BoxY + 4.0f, BoxWidth - 8.0f, BoxHeight - 8.0f,
+		ColorRGBA(0.42f, 0.42f, 0.42f, 0.88f), IGraphics::CORNER_ALL, 2.0f);
+
+	const char *pClientName = "КЛИЕНТ 1";
+	const float ClientFontSize = 15.0f;
+	const float ClientWidth = TextRender()->TextWidth(ClientFontSize, pClientName);
+	TextRender()->TextColor(0.55f, 0.9f, 1.0f, 1.0f);
+	TextRender()->Text((ScreenWidth - ClientWidth) * 0.5f, BoxY + 10.0f, ClientFontSize, pClientName);
+
+	const float FontSize = ScreenWidth < 700.0f ? 22.0f : 30.0f;
+	const float Width = TextRender()->TextWidth(FontSize, aTickLabel);
+	TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
+	TextRender()->Text((ScreenWidth - Width) * 0.5f, BoxY + 42.0f, FontSize, aTickLabel);
+	TextRender()->TextColor(TextRender()->DefaultTextColor());
+	Graphics()->MapScreen(PreviousScreen);
 }
 
 bool CControls::OnCursorMove(float x, float y, IInput::ECursorType CursorType)
