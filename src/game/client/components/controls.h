@@ -232,7 +232,6 @@ private:
 	static void ConMacroDelete(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroRewind(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroSeek(IConsole::IResult *pResult, void *pUserData);
-	static void ConMacroSlow(IConsole::IResult *pResult, void *pUserData);
 	void SendPracticeTeleport(vec2 Pos, int Conn);
 	void SendPracticeTeleportToCursor(int Conn);
 };
