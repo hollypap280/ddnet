@@ -1466,11 +1466,14 @@ bool CControls::PlayMacro(const char *pName)
 	if(!m_MacroPracticeActive && !StartMacroPractice())
 		return false;
 
+	const int StartFrameIndex = std::clamp(g_Config.m_ClMacroStartTick - 1, 0, (int)Frames.size() - 1);
+	const SMacroFrame &StartFrameBeforeMove = Frames[StartFrameIndex];
 	m_MacroPlaybackOwnsDummy = true;
-	if(Frames[0].m_ClientId >= 0 && !SwitchMacroPracticeCharacter(Frames[0].m_ClientId))
+	if(StartFrameBeforeMove.m_ClientId >= 0 && !SwitchMacroPracticeCharacter(StartFrameBeforeMove.m_ClientId))
 	{
 		char aMessage[128];
-		str_format(aMessage, sizeof(aMessage), "Не найден тренировочный тии из первого кадра записи (ID %d). Проверь подключение дамми.", Frames[0].m_ClientId);
+		str_format(aMessage, sizeof(aMessage), "Не найден тренировочный тии для начального тика %d (ID %d). Проверь подключение дамми.",
+			StartFrameIndex + 1, StartFrameBeforeMove.m_ClientId);
 		GameClient()->Echo(aMessage);
 		StopMacroPractice();
 		return false;
@@ -1492,7 +1495,9 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroPlaybackLive = false;
 	m_MacroPlaybackOwnsPractice = true;
 	m_MacroPlaying = true;
-	m_MacroPlaybackIndex = 0;
+	m_MacroStartFrameIndex = StartFrameIndex;
+	m_MacroPlaybackIndex = (std::size_t)StartFrameIndex;
+	m_MacroDisplayedTick = StartFrameIndex + 1;
 	m_MacroCurrentFrame = {};
 	m_MacroHasCurrentFrame = false;
 	m_MacroHoldCurrentFrame = false;
@@ -1501,22 +1506,22 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroPracticeAccumulator = 0.0f;
 	m_MacroPracticeLastTime = time_get();
 
-	// Restore the first pre-input state in the local-only practice world.
-	// Nothing is teleported or replayed on the server-controlled tee.
-	if(m_vMacroFrames[0].m_HasCoordinates)
+	// Restore the chosen frame's exact pre-input state in a clone of the
+	// currently connected map. The real server tee keeps receiving idle input.
+	const SMacroFrame &StartFrame = m_vMacroFrames[m_MacroPlaybackIndex];
+	if(StartFrame.m_HasCoordinates)
 	{
-		const SMacroFrame &FirstFrame = m_vMacroFrames[0];
 		CCharacterCore Core = pPracticeCharacter->GetCore();
-		Core.Read(&FirstFrame.m_PreCore);
+		Core.Read(&StartFrame.m_PreCore);
 		pPracticeCharacter->SetCore(Core);
 		pPracticeCharacter->m_Pos = Core.m_Pos;
 		pPracticeCharacter->m_PrevPos = Core.m_Pos;
 		pPracticeCharacter->m_PrevPrevPos = Core.m_Pos;
-		pPracticeCharacter->SetActiveWeapon(FirstFrame.m_PreWeapon);
-		pPracticeCharacter->m_FreezeTime = FirstFrame.m_PreFreezeTime;
-		pPracticeCharacter->m_FrozenLastTick = FirstFrame.m_PreFrozenLastTick != 0;
+		pPracticeCharacter->SetActiveWeapon(StartFrame.m_PreWeapon);
+		pPracticeCharacter->m_FreezeTime = StartFrame.m_PreFreezeTime;
+		pPracticeCharacter->m_FrozenLastTick = StartFrame.m_PreFrozenLastTick != 0;
 		pPracticeCharacter->m_IsLocal = true;
-		m_MacroPracticeWorld.m_GameTick = std::max(0, FirstFrame.m_Tick - 1);
+		m_MacroPracticeWorld.m_GameTick = std::max(0, StartFrame.m_Tick - 1);
 		m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
 	}
 
@@ -1524,7 +1529,10 @@ bool CControls::PlayMacro(const char *pName)
 	// informational only; it must not block a local playback attempt.
 
 	UpdateMacroPracticeGhost(pPracticeCharacter);
-	GameClient()->Echo("Макрос запущен в отдельном тренировочном мире. Настоящий тии остаётся неподвижным.");
+	char aStartMessage[160];
+	str_format(aStartMessage, sizeof(aStartMessage), "Макрос «%s» запущен с тика %d / %d в локальной копии текущей карты. Серверный тии стоит неподвижно.",
+		pName, StartFrameIndex + 1, (int)m_vMacroFrames.size());
+	GameClient()->Echo(aStartMessage);
 	return true;
 }
 bool CControls::DeleteMacro(const char *pName)
