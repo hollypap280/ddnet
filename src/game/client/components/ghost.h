@@ -124,7 +124,6 @@ private:
 	int m_aMacroPracticeFreezeTicks[MAX_CLIENTS]{};
 	int m_aMacroPracticeFreezeTotalTicks[MAX_CLIENTS]{};
 	bool m_aMacroPracticeWasFrozen[MAX_CLIENTS]{};
-	int m_aMacroPracticeUnfreezeUntil[MAX_CLIENTS]{};
 	std::shared_ptr<CManagedTeeRenderInfo> m_apMacroPracticeRenderInfo[MAX_CLIENTS];
 
 	static void SetGhostSkinData(CGhostSkin *pSkin, const char *pSkinName, int UseCustomColor, int ColorBody, int ColorFeet);
