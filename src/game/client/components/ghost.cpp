@@ -404,31 +404,18 @@ void CGhost::OnRender()
 			GameClient()->m_Players.RenderPlayer(ScreenRect, &m_aMacroPracticePrev[ClientId], &m_aMacroPracticeCurrent[ClientId],
 				&RenderInfo, -3, 1.0f, (IsOwnTee || !IsInteracting) ? 1.0f : 0.38f);
 
-			// Show a compact bar under the tee instead of a floating tick counter.
-			// The bar drains during a timed freeze and briefly remains after unfreeze.
-			const int PracticeTick = GameClient()->m_Controls.MacroPracticeTick();
+			// Use DDNet's native HUD bar artwork for freeze progress.
+			// It is visible only while the tee is actually frozen and vanishes
+			// immediately when the local core reports an unfreeze.
 			const int FreezeTicks = m_aMacroPracticeFreezeTicks[ClientId];
-			float Progress = -1.0f;
-			if(FreezeTicks < 0)
-				Progress = 1.0f; // deep/live freeze
-			else if(FreezeTicks > 0)
-				Progress = std::clamp(FreezeTicks /
-					(float)std::max(1, m_aMacroPracticeFreezeTotalTicks[ClientId]), 0.0f, 1.0f);
-			else if(m_aMacroPracticeUnfreezeUntil[ClientId] > PracticeTick)
-				Progress = std::clamp((m_aMacroPracticeUnfreezeUntil[ClientId] - PracticeTick) /
-					(float)SERVER_TICK_SPEED, 0.0f, 1.0f);
-
-			if(Progress >= 0.0f)
+			if(FreezeTicks != 0)
 			{
-				const float BarWidth = 48.0f;
-				const float BarHeight = 4.0f;
-				const float X = m_aMacroPracticeCurrent[ClientId].m_X - BarWidth * 0.5f;
-				const float Y = m_aMacroPracticeCurrent[ClientId].m_Y + 36.0f;
-				Graphics()->DrawRect(X, Y, BarWidth, BarHeight,
-					ColorRGBA(0.0f, 0.0f, 0.0f, 0.75f), IGraphics::CORNER_ALL, 1.5f);
-				if(Progress > 0.0f)
-					Graphics()->DrawRect(X + 1.0f, Y + 1.0f, (BarWidth - 2.0f) * Progress, BarHeight - 2.0f,
-						ColorRGBA(0.45f, 0.85f, 1.0f, 0.95f), IGraphics::CORNER_ALL, 1.0f);
+				const float Progress = FreezeTicks < 0 ? 1.0f :
+					std::clamp(FreezeTicks / (float)std::max(1, m_aMacroPracticeFreezeTotalTicks[ClientId]), 0.0f, 1.0f);
+				GameClient()->m_Hud.RenderNinjaBarPos(
+					m_aMacroPracticeCurrent[ClientId].m_X - 3.0f,
+					m_aMacroPracticeCurrent[ClientId].m_Y + 34.0f,
+					6.0f, 24.0f, Progress);
 			}
 		}
 	}
@@ -478,13 +465,10 @@ void CGhost::SetMacroPracticeWorld(CGameWorld *pWorld)
 		if(Frozen && (!m_aMacroPracticeWasFrozen[ClientId] ||
 			m_aMacroPracticeFreezeTicks[ClientId] > m_aMacroPracticeFreezeTotalTicks[ClientId]))
 			m_aMacroPracticeFreezeTotalTicks[ClientId] = std::max(1, m_aMacroPracticeFreezeTicks[ClientId]);
-		if(m_aMacroPracticeWasFrozen[ClientId] && !Frozen)
-			m_aMacroPracticeUnfreezeUntil[ClientId] = PracticeTick + SERVER_TICK_SPEED;
-		if(!Frozen && m_aMacroPracticeUnfreezeUntil[ClientId] <= PracticeTick)
-		{
-			m_aMacroPracticeUnfreezeUntil[ClientId] = 0;
+		// No after-unfreeze timer: clear the bar and frozen state as soon
+		// as the local prediction core has actually unfrozen the tee.
+		if(!Frozen)
 			m_aMacroPracticeFreezeTotalTicks[ClientId] = 0;
-		}
 		m_aMacroPracticeWasFrozen[ClientId] = Frozen;
 		if(Frozen)
 		{
@@ -527,7 +511,6 @@ void CGhost::ClearMacroPracticeCharacter()
 	std::fill(std::begin(m_aMacroPracticeFreezeTicks), std::end(m_aMacroPracticeFreezeTicks), 0);
 	std::fill(std::begin(m_aMacroPracticeFreezeTotalTicks), std::end(m_aMacroPracticeFreezeTotalTicks), 0);
 	std::fill(std::begin(m_aMacroPracticeWasFrozen), std::end(m_aMacroPracticeWasFrozen), false);
-	std::fill(std::begin(m_aMacroPracticeUnfreezeUntil), std::end(m_aMacroPracticeUnfreezeUntil), 0);
 	std::fill(std::begin(m_apMacroPracticeRenderInfo), std::end(m_apMacroPracticeRenderInfo), nullptr);
 }
 
