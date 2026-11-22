@@ -541,8 +541,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 
 		const auto MatchesSearch = [&](const CControls::SMacroInfo &Info) {
 			return s_MacroSearch.IsEmpty() ||
-				str_utf8_find_nocase(Info.m_aName, s_MacroSearch.GetString()) ||
-				str_utf8_find_nocase(Info.m_aMapName, s_MacroSearch.GetString());
+				str_utf8_find_nocase(Info.m_aName, s_MacroSearch.GetString());
 		};
 		bool SelectedIsVisible = false;
 		const CControls::SMacroInfo *pFirstVisible = nullptr;
@@ -574,8 +573,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		for(const CControls::SMacroInfo &Info : s_vMacros)
 		{
 			if(!s_MacroSearch.IsEmpty() &&
-				!str_utf8_find_nocase(Info.m_aName, s_MacroSearch.GetString()) &&
-				!str_utf8_find_nocase(Info.m_aMapName, s_MacroSearch.GetString()))
+				!str_utf8_find_nocase(Info.m_aName, s_MacroSearch.GetString()))
 				continue;
 			if(!pFirstVisibleMacro)
 				pFirstVisibleMacro = &Info;
@@ -739,8 +737,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		{
 			const CControls::SMacroInfo &Info = s_vMacros[i];
 			if(!s_MacroSearch.IsEmpty() &&
-				!str_utf8_find_nocase(Info.m_aName, s_MacroSearch.GetString()) &&
-				!str_utf8_find_nocase(Info.m_aMapName, s_MacroSearch.GetString()))
+				!str_utf8_find_nocase(Info.m_aName, s_MacroSearch.GetString()))
 				continue;
 
 			++VisibleMacroCount;
@@ -749,9 +746,9 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			if(!s_MacroListScrollRegion.AddRect(MacroRow))
 				continue;
 
-			char aEntry[196];
-			str_format(aEntry, sizeof(aEntry), "%s  |  %s  |  %d %s",
-				Info.m_aName, Info.m_aMapName, Info.m_TickCount, Localize("тиков"));
+			char aEntry[128];
+			str_format(aEntry, sizeof(aEntry), "%s  |  %d %s",
+				Info.m_aName, Info.m_TickCount, Localize("тиков"));
 			if(DoButton_Menu(&s_vMacroButtons[i], aEntry,
 				str_comp(s_aSelectedMacro, Info.m_aName) == 0, &MacroRow))
 				str_copy(s_aSelectedMacro, Info.m_aName);
