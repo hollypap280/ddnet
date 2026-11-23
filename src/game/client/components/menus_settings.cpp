@@ -813,7 +813,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		CUIRect PracticeRateRow;
 		if(AddSettingRow(28.0f, PracticeRateRow))
 			Ui()->DoScrollbarOption(&g_Config.m_ClMacroPracticeRate, &g_Config.m_ClMacroPracticeRate,
-				&PracticeRateRow, Localize("Скорость воспроизведения (тиков/с)"), 1, 50);
+				&PracticeRateRow, Localize("Скорость записи (тиков/с)"), 1, 50);
 
 		AddSection("СТАРТ И ПЕРЕМОТКА МАКРОСА");
 		if(!s_StartTickInitialized)
