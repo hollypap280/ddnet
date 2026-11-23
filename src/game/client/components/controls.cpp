@@ -1289,7 +1289,7 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		NewFrame.m_PreFrozenLastTick = pCharacter->m_FrozenLastTick ? 1 : 0;
 		NewFrame.m_PreAttackTick = pCharacter->GetAttackTick();
 		NewFrame.m_HasDDNetState = 1;
-		CCharacterCore &PreCore = *pCharacter->Core();
+		const CCharacterCore &PreCore = *pCharacter->Core();
 		CNetObj_DDNetCharacter &DDNet = NewFrame.m_PreDDNetCharacter;
 		DDNet = {};
 		if(PreCore.m_Solo) DDNet.m_Flags |= CHARACTERFLAG_SOLO;
@@ -1318,7 +1318,7 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		DDNet.m_FreezeEnd = PreCore.m_DeepFrozen ? -1 : PreCore.m_FreezeEnd;
 		DDNet.m_Jumps = PreCore.m_Jumps;
 		DDNet.m_TeleCheckpoint = pCharacter->m_TeleCheckpoint;
-		DDNet.m_StrongWeakId = pCharacter->m_StrongWeakId;
+		DDNet.m_StrongWeakId = pCharacter->GetStrongWeakId();
 		DDNet.m_JumpedTotal = PreCore.m_JumpedTotal;
 		DDNet.m_NinjaActivationTick = PreCore.m_Ninja.m_ActivationTick;
 		DDNet.m_FreezeStart = PreCore.m_FreezeStart;
