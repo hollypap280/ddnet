@@ -506,8 +506,6 @@ void CPlayers::RenderHook(
 		Alpha = g_Config.m_ClRaceGhostAlpha / 100.0f;
 	else if(ClientId == -3) // macro practice copy
 		Alpha = 1.0f;
-	else if(GameClient()->m_Controls.MacroPracticeActive() && ClientId >= 0)
-		Alpha *= 0.18f;
 
 	RenderInfo.m_Size = 64.0f;
 
@@ -598,9 +596,6 @@ void CPlayers::RenderPlayer(
 		Alpha = g_Config.m_ClRaceGhostAlpha / 100.0f;
 	else if(ClientId == -3) // macro practice copy
 		Alpha = 1.0f;
-	else if(GameClient()->m_Controls.MacroPracticeActive() &&
-		(ClientId == GameClient()->m_aLocalIds[0] || ClientId == GameClient()->m_aLocalIds[1]))
-		Alpha *= 0.18f;
 	Alpha *= AlphaMultiplier;
 	// TODO: snd_game_volume_others
 	const float Volume = 1.0f;
