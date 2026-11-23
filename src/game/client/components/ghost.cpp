@@ -391,18 +391,8 @@ void CGhost::OnRender()
 			CTeeRenderInfo RenderInfo = m_apMacroPracticeRenderInfo[ClientId]->TeeRenderInfo();
 			GameClient()->m_Players.RenderHook(ScreenRect, &m_aMacroPracticePrev[ClientId], &m_aMacroPracticeCurrent[ClientId], &RenderInfo, -3, 1.0f);
 
-			bool IsInteracting = m_aMacroPracticeCurrent[ClientId].m_HookState != HOOK_IDLE ||
-				m_aMacroPracticeCurrent[ClientId].m_VelX != 0 || m_aMacroPracticeCurrent[ClientId].m_VelY != 0;
-			for(int OtherId = 0; OtherId < MAX_CLIENTS && !IsInteracting; ++OtherId)
-			{
-				if(OtherId == ClientId || !m_aMacroPracticeVisible[OtherId])
-					continue;
-				const CNetObj_Character &Other = m_aMacroPracticeCurrent[OtherId];
-				IsInteracting = Other.m_HookState == HOOK_GRABBED && Other.m_HookedPlayer == ClientId;
-			}
-			const bool IsOwnTee = ClientId == GameClient()->m_aLocalIds[0] || ClientId == GameClient()->m_aLocalIds[1];
 			GameClient()->m_Players.RenderPlayer(ScreenRect, &m_aMacroPracticePrev[ClientId], &m_aMacroPracticeCurrent[ClientId],
-				&RenderInfo, -3, 1.0f, (IsOwnTee || !IsInteracting) ? 1.0f : 0.38f);
+				&RenderInfo, -3, 1.0f, 1.0f);
 
 		}
 	}

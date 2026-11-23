@@ -1563,7 +1563,7 @@ void CControls::StopMacroRecording()
 
 	// Finishing a recording or stopping playback also ends the private FP
 	// world immediately; the live server tee is already receiving neutral input.
-	if(m_MacroPracticeActive && (WasRecording || WasPlaying || StopOwnedPractice))
+	if(m_MacroPracticeActive && (WasRecording || StopOwnedPractice))
 		StopMacroPractice();
 }
 
@@ -1812,8 +1812,6 @@ bool CControls::PlayMacro(const char *pName)
 	}
 	if(m_MacroPlaying)
 		StopMacroRecording();
-	if(m_MacroPracticeActive)
-		StopMacroPractice();
 
 	const int LocalId = GameClient()->m_aLocalIds[g_Config.m_ClDummy];
 	if(LocalId < 0 || LocalId >= MAX_CLIENTS || !GameClient()->m_Snap.m_pLocalCharacter)
@@ -1850,15 +1848,22 @@ bool CControls::PlayMacro(const char *pName)
 		return false;
 	}
 
+	// Saved playback uses the same isolated local world as recording.
+	// Never send recorded frames to the real server character.
+	const bool OwnsPractice = !m_MacroPracticeActive;
+	if(OwnsPractice && !StartMacroPractice())
+		return false;
+
 	const int StartFrameIndex = std::clamp(g_Config.m_ClMacroStartTick - 1, 0, (int)Frames.size() - 1);
 	m_vMacroFrames = std::move(Frames);
 	m_MacroRecording = false;
-	m_MacroPlaybackLive = true;
-	m_MacroPlaybackOwnsPractice = false;
+	m_MacroPlaybackLive = false;
+	m_MacroPlaybackOwnsPractice = OwnsPractice;
 	m_MacroPlaybackOwnsDummy = false;
 	m_MacroPlaying = true;
 	m_MacroStartFrameIndex = StartFrameIndex;
-	m_MacroPlaybackIndex = (std::size_t)StartFrameIndex + 1;
+	// The practice simulator consumes this frame on its next local tick.
+	m_MacroPlaybackIndex = (std::size_t)StartFrameIndex;
 	m_MacroDisplayedTick = StartFrameIndex + 1;
 	m_MacroCurrentFrame = {};
 	m_MacroHasCurrentFrame = false;
@@ -1867,15 +1872,10 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeAccumulator = 0.0;
 	m_MacroPracticeLastTime = time_get();
-	const SMacroFrame &StartFrame = m_vMacroFrames[StartFrameIndex];
-	m_MacroLiveFireOffset = (m_aInputData[g_Config.m_ClDummy].m_Fire - StartFrame.m_Input.m_Fire) & INPUT_STATE_MASK;
-	m_MacroLiveNextWeaponOffset = (m_aInputData[g_Config.m_ClDummy].m_NextWeapon - StartFrame.m_Input.m_NextWeapon) & INPUT_STATE_MASK;
-	m_MacroLivePrevWeaponOffset = (m_aInputData[g_Config.m_ClDummy].m_PrevWeapon - StartFrame.m_Input.m_PrevWeapon) & INPUT_STATE_MASK;
-	m_MacroPlaybackLastTick = Client()->PredGameTick(g_Config.m_ClDummy);
-	SendMacroFrame(StartFrameIndex, EMacroFrameMode::STEP);
+	m_MacroPlaybackLastTick = -1;
 
 	char aStartMessage[192];
-	str_format(aStartMessage, sizeof(aStartMessage), "Макрос «%s» запущен в серверном мире. Скорость: %d тиков/с. Нужен /practice и сервер с поддержкой макросов.",
+	str_format(aStartMessage, sizeof(aStartMessage), "Макрос «%s» запущен в отдельном тренировочном мире. Скорость: %d тиков/с. /practice не нужен.",
 		pName, MacroPracticeRate());
 	GameClient()->Echo(aStartMessage);
 	return true;
@@ -1994,19 +1994,22 @@ void CControls::ConMacroGoto(IConsole::IResult *pResult, void *pUserData)
 
 void CControls::ToggleMacroPause()
 {
-	if(!m_MacroPlaybackLive || !m_MacroPlaying)
+	if(!m_MacroPlaying || (!m_MacroPracticeActive && !m_MacroPlaybackLive))
 		return;
 
 	m_MacroPlaybackPaused = !m_MacroPlaybackPaused;
+	m_MacroPracticeAccumulator = 0.0;
 	if(m_MacroPlaybackPaused)
 	{
-		SendMacroFrameControl(EMacroFrameMode::PAUSE);
+		if(m_MacroPlaybackLive)
+			SendMacroFrameControl(EMacroFrameMode::PAUSE);
 		GameClient()->Echo("Макрос на паузе.");
 	}
 	else
 	{
-		m_MacroPracticeAccumulator = 0.0;
-		m_MacroPlaybackLastTick = Client()->PredGameTick(g_Config.m_ClDummy);
+		m_MacroPracticeLastTime = time_get();
+		if(m_MacroPlaybackLive)
+			m_MacroPlaybackLastTick = Client()->PredGameTick(g_Config.m_ClDummy);
 		GameClient()->Echo("Воспроизведение макроса продолжено.");
 	}
 }
@@ -2072,8 +2075,13 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 		m_MacroPracticeAccumulator = 0.0;
 		m_MacroPracticeWaiting = false;
 	}
-	else if(!RestoreMacroPracticeFrame(Target))
-		return false;
+	else
+	{
+		if(!RestoreMacroPracticeFrame(Target))
+			return false;
+		m_MacroPracticeAccumulator = 0.0;
+		m_MacroPracticeLastTime = time_get();
+	}
 
 	if(ShowMessage)
 	{
@@ -2544,16 +2552,19 @@ int CControls::SnapInput(int *pData)
 				m_MacroPracticeLastTime = CurrentTime;
 			const int64_t ElapsedTime = std::max<int64_t>(0, CurrentTime - m_MacroPracticeLastTime);
 			m_MacroPracticeLastTime = CurrentTime;
-			m_MacroPracticeAccumulator += (double)ElapsedTime / (double)time_freq() * MacroPracticeRate();
-			int Steps = 0;
-			const int MaxStepsPerUpdate = std::max<int>(SERVER_TICK_SPEED, MacroPracticeRate());
-			while(m_MacroPracticeAccumulator >= 1.0 && Steps < MaxStepsPerUpdate)
+			if(!m_MacroPlaying || !m_MacroPlaybackPaused)
 			{
-				SimulateMacroPracticeTick(PracticeInput, PracticeDummyInput);
-				m_MacroPracticeAccumulator -= 1.0f;
-				++Steps;
-				if(!m_MacroPracticeActive)
-					break;
+				m_MacroPracticeAccumulator += (double)ElapsedTime / (double)time_freq() * MacroPracticeRate();
+				int Steps = 0;
+				const int MaxStepsPerUpdate = std::max<int>(SERVER_TICK_SPEED, MacroPracticeRate());
+				while(m_MacroPracticeAccumulator >= 1.0 && Steps < MaxStepsPerUpdate)
+				{
+					SimulateMacroPracticeTick(PracticeInput, PracticeDummyInput);
+					m_MacroPracticeAccumulator -= 1.0f;
+					++Steps;
+					if(!m_MacroPracticeActive)
+						break;
+				}
 			}
 		}
 

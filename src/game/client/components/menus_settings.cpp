@@ -862,7 +862,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		CUIRect InfoRow;
 		if(AddSettingRow(48.0f, InfoRow))
 			Ui()->DoLabel(&InfoRow,
-				Localize("В FP-практике можно использовать обычные игровые бинды или отдельные +macro_left/right/jump/hook/fire. Live-макрос требует /practice и совместимый сервер."),
+				Localize("В FP-практике можно использовать обычные игровые бинды или отдельные +macro_left/right/jump/hook/fire. Сохранённый макрос запускается в локальном мире; /practice не нужен."),
 				12.0f, TEXTALIGN_ML);
 
 		s_MacroSettingsScrollRegion.End();
@@ -888,14 +888,12 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 		{ "Точная наводка на край", "toggle cl_auto_edge 0 1" },
 		{ "Подхват крюком у края", "toggle cl_auto_edge_hook 0 1" },
 		{ "Полёт дамми (хаммерфлай)", "toggle cl_dummy_hammer 0 1" },
+		{ "Начать запись макроса", "macro_record" },
+		{ "Запустить первый сохранённый макрос", "macro_play" },
+		{ "Остановить макрос", "macro_stop" },
 		{ "Перемотка макроса назад (удерживать)", "+macro_rewind" },
 		{ "Перемотка макроса вперёд (нажатие)", "+macro_seek" },
 		{ "Пауза/продолжить макрос", "macro_pause" },
-		{ "FP-макрос: влево", "+macro_left" },
-		{ "FP-макрос: вправо", "+macro_right" },
-		{ "FP-макрос: прыжок", "+macro_jump" },
-		{ "FP-макрос: крюк", "+macro_hook" },
-		{ "FP-макрос: огонь", "+macro_fire" },
 	};
 	static CButtonContainer s_aKeyReaders[std::size(s_aHotkeys)];
 	static CButtonContainer s_aKeyClearButtons[std::size(s_aHotkeys)];
