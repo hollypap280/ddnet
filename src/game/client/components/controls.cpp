@@ -1340,7 +1340,7 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		DDNet.m_FreezeStart = PreCore.m_FreezeStart;
 		DDNet.m_TargetX = PreCore.m_Input.m_TargetX;
 		DDNet.m_TargetY = PreCore.m_Input.m_TargetY;
-		DDNet.m_TuneZoneOverride = -1;
+		DDNet.m_TuneZoneOverride = pCharacter->GetTuneZoneOverride();
 		NewFrame.m_HasCoordinates = 1;
 		NewFrame.m_ClientId = m_MacroPracticeLocalId;
 	}
