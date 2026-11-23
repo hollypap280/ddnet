@@ -109,11 +109,13 @@ void CControls::ConKeyInputState(IConsole::IResult *pResult, void *pUserData)
 
 	const int Stroke = pResult->GetInteger(0);
 	const int Dummy = g_Config.m_ClDummy;
-	if(pSelf->m_MacroPracticeActive &&
-		(pState->m_IsDirectionLeft || pState->m_IsDirectionRight || pState->m_IsJumpAction || pState->m_IsHookAction))
+
+	// Keep the normal DDNet input path intact during FP practice. The private
+	// world reads the same input buffer; only SnapInput replaces the network
+	// packet with neutral input before it reaches the server.
+	*pState->m_apVariables[Dummy] = Stroke;
+	if(pSelf->m_MacroPracticeActive)
 	{
-		// Keep FP controls out of the normal prediction/server input buffer.
-		// The private world consumes this state in SnapInput().
 		if(pState->m_IsDirectionLeft)
 		{
 			pSelf->m_MacroPracticeDirectionLeft = Stroke != 0;
@@ -126,26 +128,15 @@ void CControls::ConKeyInputState(IConsole::IResult *pResult, void *pUserData)
 			if(Stroke != 0)
 				pSelf->m_MacroPracticePendingDirectionRight = true;
 		}
-		if(pState->m_IsJumpAction)
-		{
-			pSelf->m_MacroPracticeInput.m_Jump = Stroke;
-			if(Stroke != 0)
-				pSelf->m_MacroPracticePendingJump = true;
-		}
+		if(pState->m_IsJumpAction && Stroke != 0)
+			pSelf->m_MacroPracticePendingJump = true;
 		if(pState->m_IsHookAction)
 		{
-			pSelf->m_MacroPracticeInput.m_Hook = Stroke;
 			pSelf->m_aManualHook[Dummy] = Stroke != 0;
 			if(Stroke != 0)
 				pSelf->m_MacroPracticePendingHook = true;
 		}
-
-		if(Stroke != 0 && pState->m_IsMouseAction && g_Config.m_ClSubTickAiming && pSelf->GameClient()->m_Binds.m_HandlingNewBind)
-			pSelf->m_aMouseOnAction[Dummy] = true;
-		return;
 	}
-
-	*pState->m_apVariables[Dummy] = Stroke;
 	if(pState->m_IsHookAction)
 		pSelf->m_aManualHook[Dummy] = Stroke != 0;
 
@@ -163,17 +154,12 @@ void CControls::ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData)
 
 	const int Stroke = pResult->GetInteger(0);
 	const int Dummy = g_Config.m_ClDummy;
-	if(pSelf->m_MacroPracticeActive && pState->m_IsFireAction)
+	if(pSelf->m_MacroPracticeActive && pState->m_IsFireAction &&
+		pSelf->m_MacroPracticeFirePressed != (Stroke != 0))
 	{
-		if(pSelf->m_MacroPracticeFirePressed != (Stroke != 0))
-		{
-			pSelf->m_MacroPracticeFirePressed = Stroke != 0;
-			pSelf->m_MacroPracticePendingFireTransitions =
-				std::min(pSelf->m_MacroPracticePendingFireTransitions + 1, 64);
-		}
-		if(Stroke != 0 && pState->m_IsMouseAction && g_Config.m_ClSubTickAiming && pSelf->GameClient()->m_Binds.m_HandlingNewBind)
-			pSelf->m_aMouseOnAction[Dummy] = true;
-		return;
+		pSelf->m_MacroPracticeFirePressed = Stroke != 0;
+		pSelf->m_MacroPracticePendingFireTransitions =
+			std::min(pSelf->m_MacroPracticePendingFireTransitions + 1, 64);
 	}
 
 	int *pVariable = pState->m_apVariables[Dummy];
@@ -280,10 +266,7 @@ void CControls::ConKeyInputSet(IConsole::IResult *pResult, void *pUserData)
 
 	if(pSet->m_pControls->m_MacroPracticeActive &&
 		pSet->m_apVariables[0] == &pSet->m_pControls->m_aInputData[0].m_WantedWeapon)
-	{
 		pSet->m_pControls->m_MacroPracticePendingWantedWeapon = pSet->m_Value;
-		return;
-	}
 
 	*pSet->m_apVariables[g_Config.m_ClDummy] = pSet->m_Value;
 }
@@ -315,7 +298,6 @@ void CControls::ConKeyInputNextPrevWeapon(IConsole::IResult *pResult, void *pUse
 			*pPressed = Stroke != 0;
 			*pPendingTransitions = std::min(*pPendingTransitions + 1, 64);
 		}
-		return;
 	}
 
 	int *pVariable = pSet->m_apVariables[Dummy];
@@ -1879,7 +1861,7 @@ bool CControls::PlayMacro(const char *pName)
 
 	char aStartMessage[192];
 	str_format(aStartMessage, sizeof(aStartMessage), "Макрос «%s» запущен в отдельном тренировочном мире. Скорость: %d тиков/с. /practice не нужен.",
-		pName, MacroPracticeRate());
+		pName, SERVER_TICK_SPEED);
 	GameClient()->Echo(aStartMessage);
 	return true;
 }
@@ -2487,19 +2469,26 @@ int CControls::SnapInput(int *pData)
 
 		const int Dummy = g_Config.m_ClDummy;
 
-		// Build the same live input that the normal client path would use.
-		// Run automatic assistance before copying it into the private world,
-		// so Auto Hook / Unfreeze / Edge Hook targets are not overwritten by
-		// the raw mouse position afterwards.
-		// The main input buffer remains neutral. All gameplay binds are copied
-		// from their dedicated FP state into this one-tick practice input.
+		// Reuse the normal DDNet controls buffer inside the isolated world.
+		// This keeps every existing +left/+right/+jump/+hook/+fire and weapon
+		// bind working without requiring a second set of FP-only keybinds.
 		m_aInputData[Dummy].m_PlayerFlags = PLAYERFLAG_PLAYING;
-		CNetObj_PlayerInput PracticeInput = m_MacroPracticeInput;
+		CNetObj_PlayerInput PracticeInput = m_aInputData[Dummy];
 		PracticeInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
-		PracticeInput.m_TargetX = (int)m_aMousePos[Dummy].x;
-		PracticeInput.m_TargetY = (int)m_aMousePos[Dummy].y;
-		PracticeInput.m_Direction = m_MacroPracticeDirectionLeft == m_MacroPracticeDirectionRight ? 0 :
-			(m_MacroPracticeDirectionLeft ? -1 : 1);
+		vec2 PracticeAim = m_aMousePos[Dummy];
+		if(g_Config.m_ClSubTickAiming && m_aMousePosOnAction[Dummy] != vec2(0.0f, 0.0f))
+		{
+			PracticeAim = m_aMousePosOnAction[Dummy];
+			m_aMousePosOnAction[Dummy] = vec2(0.0f, 0.0f);
+		}
+		PracticeInput.m_TargetX = (int)PracticeAim.x;
+		PracticeInput.m_TargetY = (int)PracticeAim.y;
+		if(PracticeInput.m_TargetX == 0 && PracticeInput.m_TargetY == 0)
+			PracticeInput.m_TargetX = 1;
+		PracticeInput.m_Direction = m_aInputDirectionLeft[Dummy] == m_aInputDirectionRight[Dummy] ? 0 :
+			(m_aInputDirectionLeft[Dummy] ? -1 : 1);
+		// Weapon selection is edge-queued below so short weapon taps survive
+		// when recording is configured slower than the live game's tick rate.
 		PracticeInput.m_WantedWeapon = 0;
 
 		if(!m_MacroPlaying)
@@ -2565,9 +2554,12 @@ int CControls::SnapInput(int *pData)
 			m_MacroPracticeLastTime = CurrentTime;
 			if(!m_MacroPlaying || !m_MacroPlaybackPaused)
 			{
-				m_MacroPracticeAccumulator += (double)ElapsedTime / (double)time_freq() * MacroPracticeRate();
+				// Recording can be slowed down, but playback always consumes
+				// one recorded frame per normal DDNet tick.
+				const int PracticeRate = m_MacroPlaying ? SERVER_TICK_SPEED : MacroPracticeRate();
+				m_MacroPracticeAccumulator += (double)ElapsedTime / (double)time_freq() * PracticeRate;
 				int Steps = 0;
-				const int MaxStepsPerUpdate = std::max<int>(SERVER_TICK_SPEED, MacroPracticeRate());
+				const int MaxStepsPerUpdate = std::max<int>(SERVER_TICK_SPEED, PracticeRate);
 				while(m_MacroPracticeAccumulator >= 1.0 && Steps < MaxStepsPerUpdate)
 				{
 					SimulateMacroPracticeTick(PracticeInput, PracticeDummyInput);
