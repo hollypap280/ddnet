@@ -52,6 +52,7 @@ public:
 
 	void OnReset() override;
 	void OnRender() override;
+	void OnUpdate() override;
 	void OnMessage(int MsgType, void *pRawMsg) override;
 	bool OnCursorMove(float x, float y, IInput::ECursorType CursorType) override;
 	void OnConsoleInit() override;
