@@ -2580,6 +2580,10 @@ void CControls::OnUpdate()
 			ApplyEdgeHook(Dummy);
 			PracticeInput = m_aInputData[Dummy];
 			m_aInputData[Dummy] = LiveInput;
+			// WantedWeapon is a one-shot selection, unlike the cyclic
+			// NextWeapon/PrevWeapon counters. Consume it after this client update.
+			if(!SlowPracticeInput)
+				m_aInputData[Dummy].m_WantedWeapon = 0;
 		}
 		CNetObj_PlayerInput PracticeDummyInput = GameClient()->m_DummyInput;
 		PracticeDummyInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
