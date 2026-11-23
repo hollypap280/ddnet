@@ -1080,8 +1080,11 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 	{
 		CCharacterCore Core = pCharacter->GetCore();
 		Core.Read(&Frame.m_Core);
-		for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
-			Core.m_aWeapons[Weapon].m_Ammo = Frame.m_aWeaponAmmo[Weapon];
+		if(Frame.m_HasDDNetState)
+		{
+			for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+				Core.m_aWeapons[Weapon].m_Ammo = Frame.m_aWeaponAmmo[Weapon];
+		}
 		pCharacter->SetCore(Core);
 		pCharacter->m_Pos = Core.m_Pos;
 		pCharacter->m_PrevPos = Core.m_Pos;
@@ -1413,8 +1416,11 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		{
 			CCharacterCore RecordedCore = pCharacter->GetCore();
 			RecordedCore.Read(&PlayedFrame.m_Core);
-			for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
-				RecordedCore.m_aWeapons[Weapon].m_Ammo = PlayedFrame.m_aWeaponAmmo[Weapon];
+			if(PlayedFrame.m_HasDDNetState)
+			{
+				for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+					RecordedCore.m_aWeapons[Weapon].m_Ammo = PlayedFrame.m_aWeaponAmmo[Weapon];
+			}
 			pCharacter->SetCore(RecordedCore);
 			pCharacter->m_Pos = RecordedCore.m_Pos;
 			pCharacter->m_PrevPos = RecordedCore.m_Pos;
