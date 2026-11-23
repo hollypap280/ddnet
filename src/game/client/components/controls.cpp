@@ -1193,17 +1193,35 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		// clock to run ahead while the macro input was held back.
 		if(Frame.m_HasCoordinates)
 		{
-			CCharacterCore Core = pCharacter->GetCore();
-			Core.Read(&Frame.m_PreCore);
-			pCharacter->SetCore(Core);
-			pCharacter->m_Pos = Core.m_Pos;
-			pCharacter->m_PrevPos = Core.m_Pos;
-			pCharacter->m_PrevPrevPos = Core.m_Pos;
-			pCharacter->SetActiveWeapon(Frame.m_PreWeapon);
-			pCharacter->m_FreezeTime = Frame.m_PreFreezeTime;
-			pCharacter->m_FrozenLastTick = Frame.m_PreFrozenLastTick != 0;
+			// Restore the complete pre-tick character state, not only the
+			// position/velocity core. The DDNet extension also carries freeze,
+			// jumps, collision flags, weapons and tune-zone state used by FP.
 			m_MacroPracticeWorld.m_GameTick = std::max(0, Frame.m_Tick - 1);
 			m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
+			if(Frame.m_HasDDNetState)
+			{
+				CNetObj_Character PreCharacter{};
+				static_cast<CNetObj_CharacterCore &>(PreCharacter) = Frame.m_PreCore;
+				PreCharacter.m_Weapon = Frame.m_PreWeapon;
+				PreCharacter.m_AttackTick = Frame.m_PreAttackTick;
+				PreCharacter.m_Tick = Frame.m_Tick - 1;
+				CNetObj_DDNetCharacter PreDDNetCharacter = Frame.m_PreDDNetCharacter;
+				pCharacter->Read(&PreCharacter, &PreDDNetCharacter, true);
+				pCharacter->m_Pos = pCharacter->Core()->m_Pos;
+			}
+			else
+			{
+				CCharacterCore Core = pCharacter->GetCore();
+				Core.Read(&Frame.m_PreCore);
+				pCharacter->SetCore(Core);
+				pCharacter->m_Pos = Core.m_Pos;
+				pCharacter->SetActiveWeapon(Frame.m_PreWeapon);
+			}
+			pCharacter->m_Pos = pCharacter->Core()->m_Pos;
+			pCharacter->m_PrevPos = pCharacter->m_Pos;
+			pCharacter->m_PrevPrevPos = pCharacter->m_Pos;
+			pCharacter->m_FreezeTime = Frame.m_PreFreezeTime;
+			pCharacter->m_FrozenLastTick = Frame.m_PreFrozenLastTick != 0;
 		}
 
 		m_MacroPracticeWaiting = false;
@@ -2489,6 +2507,8 @@ int CControls::SnapInput(int *pData)
 			(m_aInputDirectionLeft[Dummy] ? -1 : 1);
 		// Weapon selection is edge-queued below so short weapon taps survive
 		// when recording is configured slower than the live game's tick rate.
+		if(PracticeInput.m_WantedWeapon > 0)
+			m_MacroPracticePendingWantedWeapon = PracticeInput.m_WantedWeapon;
 		PracticeInput.m_WantedWeapon = 0;
 
 		if(!m_MacroPlaying)
