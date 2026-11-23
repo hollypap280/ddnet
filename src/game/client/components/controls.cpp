@@ -177,26 +177,31 @@ void CControls::ConMacroPracticeInput(IConsole::IResult *pResult, void *pUserDat
 	SMacroPracticeDummyBind *pBind = (SMacroPracticeDummyBind *)pUserData;
 	CControls *pSelf = pBind->m_pControls;
 	const bool Pressed = pResult->GetInteger(0) != 0;
+	const int Dummy = g_Config.m_ClDummy;
 	if(!pSelf->m_MacroPracticeActive || pSelf->m_MacroPlaying)
 		return;
 
+	// Compatibility for existing +macro_* binds: feed the same standard
+	// input buffers used by +left/+right/+jump/+hook/+fire.
 	switch(pBind->m_Action)
 	{
 	case EMacroPracticeDummyAction::LEFT:
+		pSelf->m_aInputDirectionLeft[Dummy] = Pressed ? 1 : 0;
 		pSelf->m_MacroPracticeDirectionLeft = Pressed;
 		if(Pressed) pSelf->m_MacroPracticePendingDirectionLeft = true;
 		break;
 	case EMacroPracticeDummyAction::RIGHT:
+		pSelf->m_aInputDirectionRight[Dummy] = Pressed ? 1 : 0;
 		pSelf->m_MacroPracticeDirectionRight = Pressed;
 		if(Pressed) pSelf->m_MacroPracticePendingDirectionRight = true;
 		break;
 	case EMacroPracticeDummyAction::JUMP:
-		pSelf->m_MacroPracticeInput.m_Jump = Pressed ? 1 : 0;
+		pSelf->m_aInputData[Dummy].m_Jump = Pressed ? 1 : 0;
 		if(Pressed) pSelf->m_MacroPracticePendingJump = true;
 		break;
 	case EMacroPracticeDummyAction::HOOK:
-		pSelf->m_MacroPracticeInput.m_Hook = Pressed ? 1 : 0;
-		pSelf->m_aManualHook[g_Config.m_ClDummy] = Pressed;
+		pSelf->m_aInputData[Dummy].m_Hook = Pressed ? 1 : 0;
+		pSelf->m_aManualHook[Dummy] = Pressed;
 		if(Pressed) pSelf->m_MacroPracticePendingHook = true;
 		break;
 	case EMacroPracticeDummyAction::FIRE:
