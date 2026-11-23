@@ -397,6 +397,7 @@ void CControls::OnConsoleInit()
 	Console()->Register("macro_stop", "", CFGFLAG_CLIENT, ConMacroStop, this, "Stop recording or playback of a player input macro");
 	Console()->Register("macro_save", "s[name]", CFGFLAG_CLIENT, ConMacroSave, this, "Save the recorded player input macro");
 	Console()->Register("macro_play", "s[name]", CFGFLAG_CLIENT, ConMacroPlay, this, "Play a saved player input macro");
+	Console()->Register("macro_play_first", "", CFGFLAG_CLIENT, ConMacroPlayFirst, this, "Play the first saved player input macro");
 	Console()->Register("macro_delete", "s[name]", CFGFLAG_CLIENT, ConMacroDelete, this, "Delete a saved player input macro");
 	Console()->Register("+macro_rewind", "", CFGFLAG_CLIENT, ConMacroRewind, this, "Hold to rewind a macro; repeat speed increases while held");
 	Console()->Register("+macro_seek", "", CFGFLAG_CLIENT, ConMacroSeek, this, "Jump forward by the configured number of macro ticks");
@@ -494,6 +495,8 @@ void CControls::TeleportMacroPracticeCharacter(int ClientId, vec2 Pos)
 
 void CControls::SendMacroFrameControl(EMacroFrameMode Mode)
 {
+	if(!m_MacroPlaybackLive)
+		return;
 	CNetMsg_Cl_MacroFrame Msg{};
 	Msg.m_Mode = (int)Mode;
 	const int Conn = g_Config.m_ClDummy ? IClient::CONN_DUMMY : IClient::CONN_MAIN;
@@ -502,7 +505,7 @@ void CControls::SendMacroFrameControl(EMacroFrameMode Mode)
 
 void CControls::SendMacroFrame(int Index, EMacroFrameMode Mode)
 {
-	if(Index < 0 || Index >= (int)m_vMacroFrames.size())
+	if(!m_MacroPlaybackLive || Index < 0 || Index >= (int)m_vMacroFrames.size())
 		return;
 
 	const SMacroFrame &Frame = m_vMacroFrames[Index];
@@ -1930,6 +1933,14 @@ void CControls::ConMacroPlay(IConsole::IResult *pResult, void *pUserData)
 	CControls *pSelf = (CControls *)pUserData;
 	if(!pSelf->PlayMacro(pResult->GetString(0)))
 		pSelf->GameClient()->Echo("Не удалось запустить макрос. Проверьте название и файл.");
+}
+
+void CControls::ConMacroPlayFirst(IConsole::IResult *pResult, void *pUserData)
+{
+	(void)pResult;
+	CControls *pSelf = (CControls *)pUserData;
+	if(!pSelf->PlayMacro(nullptr))
+		pSelf->GameClient()->Echo("Не удалось запустить первый сохранённый макрос. Проверьте, что макрос сохранён.");
 }
 
 void CControls::ConMacroDelete(IConsole::IResult *pResult, void *pUserData)
