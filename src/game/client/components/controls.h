@@ -265,6 +265,7 @@ private:
 	static void ConMacroSave(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroPlay(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroDelete(IConsole::IResult *pResult, void *pUserData);
+	static void ConMacroPlayFirst(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroRewind(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroSeek(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroGoto(IConsole::IResult *pResult, void *pUserData);
