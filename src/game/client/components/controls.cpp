@@ -980,7 +980,7 @@ void CControls::PopulateMacroPracticeWorld()
 	m_MacroPracticeWorld.m_GameTick = PracticeTick;
 
 	// While a macro is replaying, the recorded tee id controls the private world.
-	if(!m_MacroPlaybackOwnsDummy)
+	if(!m_MacroPlaybackOwnsDummy && !m_MacroPlaying)
 	{
 		// The dummy connection can finish switching after OnDummySwap() ran.
 		// Promote it as soon as its character has appeared in the active snapshot,
@@ -1248,54 +1248,75 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 
 	if(!ReplayRecordedFrame)
 	{
-		// Preserve short input taps when the practice clock is running slower
-		// than real input polling. New default is 50 ticks/s, but queues also
-		// make the controls robust if the rate is changed in a future build.
-		if(TickInput.m_Direction == 0)
+		if(MacroPracticeRate() < SERVER_TICK_SPEED)
 		{
-			if(m_MacroPracticePendingDirectionLeft && !m_MacroPracticePendingDirectionRight)
-				TickInput.m_Direction = -1;
-			else if(!m_MacroPracticePendingDirectionLeft && m_MacroPracticePendingDirectionRight)
-				TickInput.m_Direction = 1;
-		}
-		m_MacroPracticePendingDirectionLeft = false;
-		m_MacroPracticePendingDirectionRight = false;
+			// Preserve short input taps when the practice clock is running slower
+			// than real input polling. New default is 50 ticks/s, but queues also
+			// make the controls robust if the rate is changed in a future build.
+			if(TickInput.m_Direction == 0)
+			{
+				if(m_MacroPracticePendingDirectionLeft && !m_MacroPracticePendingDirectionRight)
+					TickInput.m_Direction = -1;
+				else if(!m_MacroPracticePendingDirectionLeft && m_MacroPracticePendingDirectionRight)
+					TickInput.m_Direction = 1;
+			}
+			m_MacroPracticePendingDirectionLeft = false;
+			m_MacroPracticePendingDirectionRight = false;
 
-		if(m_MacroPracticePendingJump)
+			if(m_MacroPracticePendingJump)
+			{
+				TickInput.m_Jump = 1;
+				m_MacroPracticePendingJump = false;
+			}
+			if(m_MacroPracticePendingHook)
+			{
+				TickInput.m_Hook = 1;
+				m_MacroPracticePendingHook = false;
+			}
+			if(m_MacroPracticePendingFireTransitions > 0)
+			{
+				m_MacroPracticeFireCounter = (m_MacroPracticeFireCounter + 1) & INPUT_STATE_MASK;
+				--m_MacroPracticePendingFireTransitions;
+			}
+			TickInput.m_Fire = m_MacroPracticeFireCounter;
+
+			if(m_MacroPracticePendingWantedWeapon > 0)
+			{
+				TickInput.m_WantedWeapon = m_MacroPracticePendingWantedWeapon;
+				m_MacroPracticePendingWantedWeapon = 0;
+			}
+			if(m_MacroPracticePendingNextWeaponTransitions > 0)
+			{
+				m_MacroPracticeInput.m_NextWeapon = (m_MacroPracticeInput.m_NextWeapon + 1) & INPUT_STATE_MASK;
+				--m_MacroPracticePendingNextWeaponTransitions;
+			}
+			if(m_MacroPracticePendingPrevWeaponTransitions > 0)
+			{
+				m_MacroPracticeInput.m_PrevWeapon = (m_MacroPracticeInput.m_PrevWeapon + 1) & INPUT_STATE_MASK;
+				--m_MacroPracticePendingPrevWeaponTransitions;
+			}
+			TickInput.m_NextWeapon = m_MacroPracticeInput.m_NextWeapon;
+			TickInput.m_PrevWeapon = m_MacroPracticeInput.m_PrevWeapon;
+			m_MacroPracticeInput.m_WantedWeapon = TickInput.m_WantedWeapon;
+		}
+		else
 		{
-			TickInput.m_Jump = 1;
+			// At the normal 50 Hz rate, the live DDNet input buffer already
+			// contains the correct press/release counters. Applying the slower
+			// practice tap queue here would add an avoidable extra tick.
+			m_MacroPracticePendingDirectionLeft = false;
+			m_MacroPracticePendingDirectionRight = false;
 			m_MacroPracticePendingJump = false;
-		}
-		if(m_MacroPracticePendingHook)
-		{
-			TickInput.m_Hook = 1;
 			m_MacroPracticePendingHook = false;
-		}
-		if(m_MacroPracticePendingFireTransitions > 0)
-		{
-			m_MacroPracticeFireCounter = (m_MacroPracticeFireCounter + 1) & INPUT_STATE_MASK;
-			--m_MacroPracticePendingFireTransitions;
-		}
-		TickInput.m_Fire = m_MacroPracticeFireCounter;
-
-		if(m_MacroPracticePendingWantedWeapon > 0)
-		{
-			TickInput.m_WantedWeapon = m_MacroPracticePendingWantedWeapon;
+			m_MacroPracticePendingFireTransitions = 0;
+			m_MacroPracticePendingNextWeaponTransitions = 0;
+			m_MacroPracticePendingPrevWeaponTransitions = 0;
 			m_MacroPracticePendingWantedWeapon = 0;
+			m_MacroPracticeFireCounter = TickInput.m_Fire;
+			m_MacroPracticeInput.m_NextWeapon = TickInput.m_NextWeapon;
+			m_MacroPracticeInput.m_PrevWeapon = TickInput.m_PrevWeapon;
+			m_MacroPracticeInput.m_WantedWeapon = TickInput.m_WantedWeapon;
 		}
-		if(m_MacroPracticePendingNextWeaponTransitions > 0)
-		{
-			m_MacroPracticeInput.m_NextWeapon = (m_MacroPracticeInput.m_NextWeapon + 1) & INPUT_STATE_MASK;
-			--m_MacroPracticePendingNextWeaponTransitions;
-		}
-		if(m_MacroPracticePendingPrevWeaponTransitions > 0)
-		{
-			m_MacroPracticeInput.m_PrevWeapon = (m_MacroPracticeInput.m_PrevWeapon + 1) & INPUT_STATE_MASK;
-			--m_MacroPracticePendingPrevWeaponTransitions;
-		}
-		TickInput.m_NextWeapon = m_MacroPracticeInput.m_NextWeapon;
-		TickInput.m_PrevWeapon = m_MacroPracticeInput.m_PrevWeapon;
-		m_MacroPracticeInput.m_WantedWeapon = TickInput.m_WantedWeapon;
 	}
 
 	SMacroFrame NewFrame;
@@ -2509,42 +2530,11 @@ void CControls::ApplyEdgeHook(int Dummy)
 		m_aAutoEdgeHookActive[Dummy] = false;
 	}
 }
-int CControls::SnapInput(int *pData)
+void CControls::OnUpdate()
 {
-	// update player state
-	if(GameClient()->m_Chat.IsActive())
-		m_aInputData[g_Config.m_ClDummy].m_PlayerFlags = PLAYERFLAG_CHATTING;
-	else if(GameClient()->m_Menus.IsActive())
-		m_aInputData[g_Config.m_ClDummy].m_PlayerFlags = PLAYERFLAG_IN_MENU;
-	else
-		m_aInputData[g_Config.m_ClDummy].m_PlayerFlags = PLAYERFLAG_PLAYING;
+	if(!m_MacroPracticeActive)
+		return;
 
-	if(GameClient()->m_Scoreboard.IsActive())
-		m_aInputData[g_Config.m_ClDummy].m_PlayerFlags |= PLAYERFLAG_SCOREBOARD;
-
-	if(Client()->ServerCapAnyPlayerFlag() && GameClient()->m_Controls.m_aShowHookColl[g_Config.m_ClDummy])
-		m_aInputData[g_Config.m_ClDummy].m_PlayerFlags |= PLAYERFLAG_AIM;
-
-	if(Client()->ServerCapAnyPlayerFlag() && GameClient()->m_Camera.CamType() == CCamera::CAMTYPE_SPEC)
-		m_aInputData[g_Config.m_ClDummy].m_PlayerFlags |= PLAYERFLAG_SPEC_CAM;
-
-	switch(m_aMouseInputType[g_Config.m_ClDummy])
-	{
-	case CControls::EMouseInputType::AUTOMATED:
-		m_aInputData[g_Config.m_ClDummy].m_PlayerFlags |= PLAYERFLAG_INPUT_ABSOLUTE;
-		break;
-	case CControls::EMouseInputType::ABSOLUTE:
-		m_aInputData[g_Config.m_ClDummy].m_PlayerFlags |= PLAYERFLAG_INPUT_ABSOLUTE | PLAYERFLAG_INPUT_MANUAL;
-		break;
-	case CControls::EMouseInputType::RELATIVE:
-		m_aInputData[g_Config.m_ClDummy].m_PlayerFlags |= PLAYERFLAG_INPUT_MANUAL;
-		break;
-	}
-
-	// Isolated macro practice: inputs are consumed by a cloned prediction world.
-	// Only neutral input is ever sent to the real server character.
-	if(m_MacroPracticeActive)
-	{
 		// Refresh remote tee copies from the active snapshot. Their physics
 		// then continues independently inside the private practice world.
 		PopulateMacroPracticeWorld();
@@ -2571,9 +2561,13 @@ int CControls::SnapInput(int *pData)
 			(m_aInputDirectionLeft[Dummy] ? -1 : 1);
 		// Weapon selection is edge-queued below so short weapon taps survive
 		// when recording is configured slower than the live game's tick rate.
-		if(PracticeInput.m_WantedWeapon > 0)
-			m_MacroPracticePendingWantedWeapon = PracticeInput.m_WantedWeapon;
-		PracticeInput.m_WantedWeapon = 0;
+		const bool SlowPracticeInput = MacroPracticeRate() < SERVER_TICK_SPEED;
+		if(SlowPracticeInput)
+		{
+			if(PracticeInput.m_WantedWeapon > 0)
+				m_MacroPracticePendingWantedWeapon = PracticeInput.m_WantedWeapon;
+			PracticeInput.m_WantedWeapon = 0;
+		}
 
 		if(!m_MacroPlaying)
 		{
@@ -2655,17 +2649,50 @@ int CControls::SnapInput(int *pData)
 			}
 		}
 
+}
+
+int CControls::SnapInput(int *pData)
+{
+	// update player state
+	if(GameClient()->m_Chat.IsActive())
+		m_aInputData[g_Config.m_ClDummy].m_PlayerFlags = PLAYERFLAG_CHATTING;
+	else if(GameClient()->m_Menus.IsActive())
+		m_aInputData[g_Config.m_ClDummy].m_PlayerFlags = PLAYERFLAG_IN_MENU;
+	else
+		m_aInputData[g_Config.m_ClDummy].m_PlayerFlags = PLAYERFLAG_PLAYING;
+
+	if(GameClient()->m_Scoreboard.IsActive())
+		m_aInputData[g_Config.m_ClDummy].m_PlayerFlags |= PLAYERFLAG_SCOREBOARD;
+
+	if(Client()->ServerCapAnyPlayerFlag() && GameClient()->m_Controls.m_aShowHookColl[g_Config.m_ClDummy])
+		m_aInputData[g_Config.m_ClDummy].m_PlayerFlags |= PLAYERFLAG_AIM;
+
+	if(Client()->ServerCapAnyPlayerFlag() && GameClient()->m_Camera.CamType() == CCamera::CAMTYPE_SPEC)
+		m_aInputData[g_Config.m_ClDummy].m_PlayerFlags |= PLAYERFLAG_SPEC_CAM;
+
+	switch(m_aMouseInputType[g_Config.m_ClDummy])
+	{
+	case CControls::EMouseInputType::AUTOMATED:
+		m_aInputData[g_Config.m_ClDummy].m_PlayerFlags |= PLAYERFLAG_INPUT_ABSOLUTE;
+		break;
+	case CControls::EMouseInputType::ABSOLUTE:
+		m_aInputData[g_Config.m_ClDummy].m_PlayerFlags |= PLAYERFLAG_INPUT_ABSOLUTE | PLAYERFLAG_INPUT_MANUAL;
+		break;
+	case CControls::EMouseInputType::RELATIVE:
+		m_aInputData[g_Config.m_ClDummy].m_PlayerFlags |= PLAYERFLAG_INPUT_MANUAL;
+		break;
+	}
+
+	// Isolated macro practice: inputs are consumed by a cloned prediction world.
+	// Only neutral input is ever sent to the real server character.
+	if(m_MacroPracticeActive)
+	{
+		// The private world advances from the normal client update loop.
+		// SnapInput only sends neutral packets to both real server connections.
+		const int Dummy = g_Config.m_ClDummy;
 		CNetObj_PlayerInput ServerInput{};
-		// The real server-side tee is an idle observer only. Never forward
-		// the practice copy's fire or weapon inputs to the live connection.
 		ServerInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
 		ServerInput.m_TargetX = 1;
-		ServerInput.m_TargetY = 0;
-		ServerInput.m_Fire = 0;
-		ServerInput.m_WantedWeapon = 0;
-		ServerInput.m_NextWeapon = 0;
-		ServerInput.m_PrevWeapon = 0;
-
 		const bool SendNeutral = ServerInput.m_PlayerFlags != m_aLastData[Dummy].m_PlayerFlags ||
 			ServerInput.m_TargetX != m_aLastData[Dummy].m_TargetX ||
 			ServerInput.m_TargetY != m_aLastData[Dummy].m_TargetY ||
