@@ -1248,74 +1248,54 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 
 	if(!ReplayRecordedFrame)
 	{
-		if(MacroPracticeRate() < SERVER_TICK_SPEED)
+		// Carry short press/release events into the next local simulation tick.
+		// At 50 Hz the local world now consumes this queue on schedule instead
+		// of waiting for the server's neutral-input send interval.
+		if(TickInput.m_Direction == 0)
 		{
-			// Preserve short input taps when the practice clock is running slower
-			// than real input polling. New default is 50 ticks/s, but queues also
-			// make the controls robust if the rate is changed in a future build.
-			if(TickInput.m_Direction == 0)
-			{
-				if(m_MacroPracticePendingDirectionLeft && !m_MacroPracticePendingDirectionRight)
-					TickInput.m_Direction = -1;
-				else if(!m_MacroPracticePendingDirectionLeft && m_MacroPracticePendingDirectionRight)
-					TickInput.m_Direction = 1;
-			}
-			m_MacroPracticePendingDirectionLeft = false;
-			m_MacroPracticePendingDirectionRight = false;
-
-			if(m_MacroPracticePendingJump)
-			{
-				TickInput.m_Jump = 1;
-				m_MacroPracticePendingJump = false;
-			}
-			if(m_MacroPracticePendingHook)
-			{
-				TickInput.m_Hook = 1;
-				m_MacroPracticePendingHook = false;
-			}
-			if(m_MacroPracticePendingFireTransitions > 0)
-			{
-				m_MacroPracticeFireCounter = (m_MacroPracticeFireCounter + 1) & INPUT_STATE_MASK;
-				--m_MacroPracticePendingFireTransitions;
-			}
-			TickInput.m_Fire = m_MacroPracticeFireCounter;
-
-			if(m_MacroPracticePendingWantedWeapon > 0)
-			{
-				TickInput.m_WantedWeapon = m_MacroPracticePendingWantedWeapon;
-				m_MacroPracticePendingWantedWeapon = 0;
-			}
-			if(m_MacroPracticePendingNextWeaponTransitions > 0)
-			{
-				m_MacroPracticeInput.m_NextWeapon = (m_MacroPracticeInput.m_NextWeapon + 1) & INPUT_STATE_MASK;
-				--m_MacroPracticePendingNextWeaponTransitions;
-			}
-			if(m_MacroPracticePendingPrevWeaponTransitions > 0)
-			{
-				m_MacroPracticeInput.m_PrevWeapon = (m_MacroPracticeInput.m_PrevWeapon + 1) & INPUT_STATE_MASK;
-				--m_MacroPracticePendingPrevWeaponTransitions;
-			}
-			TickInput.m_NextWeapon = m_MacroPracticeInput.m_NextWeapon;
-			TickInput.m_PrevWeapon = m_MacroPracticeInput.m_PrevWeapon;
-			m_MacroPracticeInput.m_WantedWeapon = TickInput.m_WantedWeapon;
+			if(m_MacroPracticePendingDirectionLeft && !m_MacroPracticePendingDirectionRight)
+				TickInput.m_Direction = -1;
+			else if(!m_MacroPracticePendingDirectionLeft && m_MacroPracticePendingDirectionRight)
+				TickInput.m_Direction = 1;
 		}
-		else
+		m_MacroPracticePendingDirectionLeft = false;
+		m_MacroPracticePendingDirectionRight = false;
+
+		if(m_MacroPracticePendingJump)
 		{
-			// At the normal 50 Hz rate, the live DDNet input buffer already
-			// contains the correct press/release counters. Applying the slower
-			// practice tap queue here would add an avoidable extra tick.
-			m_MacroPracticePendingDirectionLeft = false;
-			m_MacroPracticePendingDirectionRight = false;
+			TickInput.m_Jump = 1;
 			m_MacroPracticePendingJump = false;
+		}
+		if(m_MacroPracticePendingHook)
+		{
+			TickInput.m_Hook = 1;
 			m_MacroPracticePendingHook = false;
-			m_MacroPracticePendingFireTransitions = 0;
-			m_MacroPracticePendingNextWeaponTransitions = 0;
-			m_MacroPracticePendingPrevWeaponTransitions = 0;
+		}
+		if(m_MacroPracticePendingFireTransitions > 0)
+		{
+			m_MacroPracticeFireCounter = (m_MacroPracticeFireCounter + 1) & INPUT_STATE_MASK;
+			--m_MacroPracticePendingFireTransitions;
+		}
+		TickInput.m_Fire = m_MacroPracticeFireCounter;
+
+		if(m_MacroPracticePendingWantedWeapon > 0)
+		{
+			TickInput.m_WantedWeapon = m_MacroPracticePendingWantedWeapon;
 			m_MacroPracticePendingWantedWeapon = 0;
-			m_MacroPracticeFireCounter = TickInput.m_Fire;
-			m_MacroPracticeInput.m_NextWeapon = TickInput.m_NextWeapon;
-			m_MacroPracticeInput.m_PrevWeapon = TickInput.m_PrevWeapon;
-			m_MacroPracticeInput.m_WantedWeapon = TickInput.m_WantedWeapon;
+		}
+		if(m_MacroPracticePendingNextWeaponTransitions > 0)
+		{
+			m_MacroPracticeInput.m_NextWeapon = (m_MacroPracticeInput.m_NextWeapon + 1) & INPUT_STATE_MASK;
+			--m_MacroPracticePendingNextWeaponTransitions;
+		}
+		if(m_MacroPracticePendingPrevWeaponTransitions > 0)
+		{
+			m_MacroPracticeInput.m_PrevWeapon = (m_MacroPracticeInput.m_PrevWeapon + 1) & INPUT_STATE_MASK;
+			--m_MacroPracticePendingPrevWeaponTransitions;
+		}
+		TickInput.m_NextWeapon = m_MacroPracticeInput.m_NextWeapon;
+		TickInput.m_PrevWeapon = m_MacroPracticeInput.m_PrevWeapon;
+		m_MacroPracticeInput.m_WantedWeapon = TickInput.m_WantedWeapon;
 		}
 	}
 
@@ -2559,15 +2539,11 @@ void CControls::OnUpdate()
 			PracticeInput.m_TargetX = 1;
 		PracticeInput.m_Direction = m_aInputDirectionLeft[Dummy] == m_aInputDirectionRight[Dummy] ? 0 :
 			(m_aInputDirectionLeft[Dummy] ? -1 : 1);
-		// Weapon selection is edge-queued below so short weapon taps survive
-		// when recording is configured slower than the live game's tick rate.
-		const bool SlowPracticeInput = MacroPracticeRate() < SERVER_TICK_SPEED;
-		if(SlowPracticeInput)
-		{
-			if(PracticeInput.m_WantedWeapon > 0)
-				m_MacroPracticePendingWantedWeapon = PracticeInput.m_WantedWeapon;
-			PracticeInput.m_WantedWeapon = 0;
-		}
+		// Weapon selection is a one-shot input. Queue it before simulating the
+		// next local tick, then clear the shared buffer to avoid repeating it.
+		if(PracticeInput.m_WantedWeapon > 0)
+			m_MacroPracticePendingWantedWeapon = PracticeInput.m_WantedWeapon;
+		PracticeInput.m_WantedWeapon = 0;
 
 		if(!m_MacroPlaying)
 		{
@@ -2580,10 +2556,7 @@ void CControls::OnUpdate()
 			ApplyEdgeHook(Dummy);
 			PracticeInput = m_aInputData[Dummy];
 			m_aInputData[Dummy] = LiveInput;
-			// WantedWeapon is a one-shot selection, unlike the cyclic
-			// NextWeapon/PrevWeapon counters. Consume it after this client update.
-			if(!SlowPracticeInput)
-				m_aInputData[Dummy].m_WantedWeapon = 0;
+			m_aInputData[Dummy].m_WantedWeapon = 0;
 		}
 		CNetObj_PlayerInput PracticeDummyInput = GameClient()->m_DummyInput;
 		PracticeDummyInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
