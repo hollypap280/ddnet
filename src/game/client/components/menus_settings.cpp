@@ -889,7 +889,7 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 		{ "Подхват крюком у края", "toggle cl_auto_edge_hook 0 1" },
 		{ "Полёт дамми (хаммерфлай)", "toggle cl_dummy_hammer 0 1" },
 		{ "Начать запись макроса", "macro_record" },
-		{ "Запустить первый сохранённый макрос", "macro_play" },
+		{ "Запустить первый сохранённый макрос", "macro_play_first" },
 		{ "Остановить макрос", "macro_stop" },
 		{ "Перемотка макроса назад (удерживать)", "+macro_rewind" },
 		{ "Перемотка макроса вперёд (нажатие)", "+macro_seek" },
