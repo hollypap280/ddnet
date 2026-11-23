@@ -2512,7 +2512,7 @@ void CControls::ApplyEdgeHook(int Dummy)
 void CControls::OnUpdate()
 {
 	if(!m_MacroPracticeActive)
-	return;
+		return;
 
 	// Refresh remote tee copies from the active snapshot. Their physics
 	// then continues independently inside the private practice world.
@@ -2624,7 +2624,6 @@ void CControls::OnUpdate()
 			}
 		}
 	}
-
 }
 
 int CControls::SnapInput(int *pData)
