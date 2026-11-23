@@ -558,7 +558,7 @@ namespace
 	constexpr uint32_t MACRO_FILE_MAGIC = 0x444D4143;
 	// Version 6 writes the current frame layout. Version 5 files are read
 	// using either the current layout or the older version-4-compatible one.
-	constexpr uint32_t MACRO_FILE_VERSION = 7;
+	constexpr uint32_t MACRO_FILE_VERSION = 8;
 	constexpr uint32_t MACRO_MAX_FRAMES = 18000;
 }
 
@@ -1080,6 +1080,8 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 	{
 		CCharacterCore Core = pCharacter->GetCore();
 		Core.Read(&Frame.m_Core);
+		for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+			Core.m_aWeapons[Weapon].m_Ammo = Frame.m_aWeaponAmmo[Weapon];
 		pCharacter->SetCore(Core);
 		pCharacter->m_Pos = Core.m_Pos;
 		pCharacter->m_PrevPos = Core.m_Pos;
@@ -1205,8 +1207,14 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 				PreCharacter.m_Weapon = Frame.m_PreWeapon;
 				PreCharacter.m_AttackTick = Frame.m_PreAttackTick;
 				PreCharacter.m_Tick = Frame.m_Tick - 1;
+				if(Frame.m_PreWeapon >= 0 && Frame.m_PreWeapon < NUM_WEAPONS)
+					PreCharacter.m_AmmoCount = Frame.m_aPreWeaponAmmo[Frame.m_PreWeapon];
 				CNetObj_DDNetCharacter PreDDNetCharacter = Frame.m_PreDDNetCharacter;
 				pCharacter->Read(&PreCharacter, &PreDDNetCharacter, true);
+				CCharacterCore RestoredCore = pCharacter->GetCore();
+				for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+					RestoredCore.m_aWeapons[Weapon].m_Ammo = Frame.m_aPreWeaponAmmo[Weapon];
+				pCharacter->SetCore(RestoredCore);
 				pCharacter->m_Pos = pCharacter->Core()->m_Pos;
 			}
 			else
@@ -1288,6 +1296,8 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		NewFrame.m_Input = TickInput;
 		pCharacter->Core()->Write(&NewFrame.m_PreCore);
 		NewFrame.m_PreWeapon = pCharacter->GetActiveWeapon();
+		for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+			NewFrame.m_aPreWeaponAmmo[Weapon] = pCharacter->Core()->m_aWeapons[Weapon].m_Ammo;
 		NewFrame.m_PreFreezeTime = pCharacter->m_FreezeTime;
 		NewFrame.m_PreFrozenLastTick = pCharacter->m_FrozenLastTick ? 1 : 0;
 		NewFrame.m_PreAttackTick = pCharacter->GetAttackTick();
@@ -1379,6 +1389,8 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		NewFrame.m_Tick = m_MacroPracticeTick;
 		NewFrame.m_FreezeTime = pCharacter->m_FreezeTime;
 		NewFrame.m_FrozenLastTick = pCharacter->m_FrozenLastTick ? 1 : 0;
+		for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+			NewFrame.m_aWeaponAmmo[Weapon] = pCharacter->Core()->m_aWeapons[Weapon].m_Ammo;
 		static_cast<CNetObj_CharacterCore &>(NewFrame.m_Character) = NewFrame.m_Core;
 		NewFrame.m_Character.m_Weapon = NewFrame.m_Weapon;
 		NewFrame.m_Character.m_AttackTick = NewFrame.m_AttackTick;
@@ -1401,6 +1413,8 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		{
 			CCharacterCore RecordedCore = pCharacter->GetCore();
 			RecordedCore.Read(&PlayedFrame.m_Core);
+			for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+				RecordedCore.m_aWeapons[Weapon].m_Ammo = PlayedFrame.m_aWeaponAmmo[Weapon];
 			pCharacter->SetCore(RecordedCore);
 			pCharacter->m_Pos = RecordedCore.m_Pos;
 			pCharacter->m_PrevPos = RecordedCore.m_Pos;
@@ -1645,12 +1659,43 @@ bool CControls::PlayMacro(const char *pName)
 	if(Valid && FileLength < HeaderBytes)
 		Valid = false;
 	const int64_t CurrentFrameBytes = (int64_t)Count * sizeof(SMacroFrame);
+	const int64_t Version7FrameBytes = (int64_t)Count * sizeof(SMacroFrameV7);
 	const int64_t Version6FrameBytes = (int64_t)Count * sizeof(SMacroFrameV6);
 	const int64_t Version5FrameBytes = (int64_t)Count * sizeof(SMacroFrameV4);
 	const int64_t Version4FrameBytes = (int64_t)Count * sizeof(SMacroFrameV4);
 	const int64_t Version3FrameBytes = (int64_t)Count * sizeof(SMacroFrameV3);
 	const int64_t LegacyFrameBytes = (int64_t)Count * sizeof(SMacroFrameV1);
 	std::vector<SMacroFrame> Frames;
+	auto CopyVersion7Frames = [&](const std::vector<SMacroFrameV7> &OldFrames) {
+		Frames.resize(Count);
+		for(uint32_t i = 0; i < Count; ++i)
+		{
+			Frames[i].m_Input = OldFrames[i].m_Input;
+			Frames[i].m_PreCore = OldFrames[i].m_PreCore;
+			Frames[i].m_Core = OldFrames[i].m_Core;
+			Frames[i].m_Character = OldFrames[i].m_Character;
+			Frames[i].m_PreWeapon = OldFrames[i].m_PreWeapon;
+			Frames[i].m_Weapon = OldFrames[i].m_Weapon;
+			Frames[i].m_AttackTick = OldFrames[i].m_AttackTick;
+			Frames[i].m_Tick = OldFrames[i].m_Tick;
+			Frames[i].m_HasCoordinates = OldFrames[i].m_HasCoordinates;
+			Frames[i].m_ClientId = OldFrames[i].m_ClientId;
+			Frames[i].m_PreFreezeTime = OldFrames[i].m_PreFreezeTime;
+			Frames[i].m_FreezeTime = OldFrames[i].m_FreezeTime;
+			Frames[i].m_PreFrozenLastTick = OldFrames[i].m_PreFrozenLastTick;
+			Frames[i].m_FrozenLastTick = OldFrames[i].m_FrozenLastTick;
+			Frames[i].m_PreAttackTick = OldFrames[i].m_PreAttackTick;
+			Frames[i].m_HasDDNetState = OldFrames[i].m_HasDDNetState;
+			Frames[i].m_PreDDNetCharacter = OldFrames[i].m_PreDDNetCharacter;
+			// Older macros did not store ammo for every weapon. Treat those
+			// legacy frames as unlimited instead of restoring zero ammo.
+			for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+			{
+				Frames[i].m_aPreWeaponAmmo[Weapon] = -1;
+				Frames[i].m_aWeaponAmmo[Weapon] = -1;
+			}
+		}
+	};
 	auto CopyVersion6Frames = [&](const std::vector<SMacroFrameV6> &OldFrames) {
 		Frames.resize(Count);
 		for(uint32_t i = 0; i < Count; ++i)
@@ -1697,11 +1742,19 @@ bool CControls::PlayMacro(const char *pName)
 			Frames[i].m_PreDDNetCharacter = {};
 		}
 	};
-	if(Valid && Version >= 7)
+	if(Valid && Version >= 8)
 	{
 		Frames.resize(Count);
 		Valid = RemainingBytes == CurrentFrameBytes &&
 			io_read(File, Frames.data(), CurrentFrameBytes) == CurrentFrameBytes;
+	}
+	else if(Valid && Version == 7)
+	{
+		std::vector<SMacroFrameV7> OldFrames(Count);
+		Valid = RemainingBytes == Version7FrameBytes &&
+			io_read(File, OldFrames.data(), Version7FrameBytes) == Version7FrameBytes;
+		if(Valid)
+			CopyVersion7Frames(OldFrames);
 	}
 	else if(Valid && Version == 6)
 	{
