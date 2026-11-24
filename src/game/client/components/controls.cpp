@@ -435,6 +435,8 @@ void CControls::OnConsoleInit()
 	Console()->Register("+macro_rewind", "", CFGFLAG_CLIENT, ConMacroRewind, this, "Hold to rewind a macro; repeat speed increases while held");
 	Console()->Register("+macro_seek", "", CFGFLAG_CLIENT, ConMacroSeek, this, "Jump forward by the configured number of macro ticks");
 	Console()->Register("macro_goto", "i[tick]", CFGFLAG_CLIENT, ConMacroGoto, this, "Jump to an exact macro tick");
+	Console()->Register("macro_stop_at_tick", "", CFGFLAG_CLIENT, ConMacroStopAtTick, this, "Stop macro at the configured tick");
+	Console()->Register("macro_goto_configured", "", CFGFLAG_CLIENT, ConMacroGotoConfigured, this, "Jump to the configured macro tick");
 
 	static const SMacroPracticeDummyBind s_PlayerLeft{this, EMacroPracticeDummyAction::LEFT};
 	static const SMacroPracticeDummyBind s_PlayerRight{this, EMacroPracticeDummyAction::RIGHT};
@@ -1610,6 +1612,7 @@ void CControls::StopMacroRecording()
 	m_MacroRecordingPaused = false;
 	m_MacroPlaybackLive = false;
 	m_MacroPlaybackPaused = false;
+	m_MacroStopAtTickArmed = false;
 	m_MacroPlaybackOwnsPractice = false;
 	m_MacroPlaybackLastTick = -1;
 	m_MacroRewindHeld = false;
@@ -1987,6 +1990,7 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroHasCurrentFrame = false;
 	m_MacroHoldCurrentFrame = false;
 	m_MacroPlaybackPaused = false;
+	m_MacroStopAtTickArmed = false;
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeAccumulator = 0.0;
 	m_MacroPracticeLastTime = time_get();
@@ -2120,6 +2124,59 @@ void CControls::ConMacroGoto(IConsole::IResult *pResult, void *pUserData)
 	const int CurrentTick = pSelf->m_MacroRecording ? pSelf->MacroFrameCount() :
 		(pSelf->m_MacroDisplayedTick > 0 ? pSelf->m_MacroDisplayedTick : (int)pSelf->m_MacroPlaybackIndex);
 	pSelf->SeekMacro(TargetTick - CurrentTick, true, true);
+}
+
+void CControls::ConMacroStopAtTick(IConsole::IResult *pResult, void *pUserData)
+{
+	(void)pResult;
+	CControls *pSelf = (CControls *)pUserData;
+	if(!pSelf->m_MacroPlaybackLive || !pSelf->m_MacroPlaying)
+	{
+		pSelf->GameClient()->Echo("Сначала запусти сохранённый макрос.");
+		return;
+	}
+
+	const int StopTick = g_Config.m_ClMacroStopTick;
+	if(StopTick < 1 || StopTick > (int)pSelf->m_vMacroFrames.size())
+	{
+		pSelf->GameClient()->Echo("Укажи тик остановки от 1 до длины макроса в разделе «Кнопки».");
+		return;
+	}
+
+	if(pSelf->m_MacroDisplayedTick >= StopTick)
+	{
+		pSelf->StopMacroRecording();
+		return;
+	}
+
+	pSelf->m_MacroStopAtTickArmed = true;
+	char aMessage[128];
+	str_format(aMessage, sizeof(aMessage), "Макрос остановится на тике %d.", StopTick);
+	pSelf->GameClient()->Echo(aMessage);
+}
+
+void CControls::ConMacroGotoConfigured(IConsole::IResult *pResult, void *pUserData)
+{
+	(void)pResult;
+	CControls *pSelf = (CControls *)pUserData;
+	if(pSelf->GameClient()->m_Chat.IsActive() || pSelf->GameClient()->m_Menus.IsActive())
+		return;
+	if((!pSelf->m_MacroPracticeActive && !pSelf->m_MacroPlaybackLive) || pSelf->m_vMacroFrames.empty())
+	{
+		pSelf->GameClient()->Echo("Сначала начни запись или запусти сохранённый макрос.");
+		return;
+	}
+
+	const int TargetTick = g_Config.m_ClMacroGotoTick;
+	if(TargetTick < 1 || TargetTick > (int)pSelf->m_vMacroFrames.size())
+	{
+		pSelf->GameClient()->Echo("Укажи тик перехода в пределах длины макроса.");
+		return;
+	}
+	const int CurrentTick = pSelf->m_MacroRecording ? pSelf->MacroFrameCount() :
+		(pSelf->m_MacroDisplayedTick > 0 ? pSelf->m_MacroDisplayedTick : (int)pSelf->m_MacroPlaybackIndex);
+	if(!pSelf->SeekMacro(TargetTick - CurrentTick, true, true))
+		pSelf->GameClient()->Echo("Не удалось перейти к выбранному тику макроса.");
 }
 
 void CControls::ToggleMacroPause()
@@ -2873,53 +2930,6 @@ int CControls::SnapInput(int *pData)
 
 	m_aLastData[g_Config.m_ClDummy].m_PlayerFlags = m_aInputData[g_Config.m_ClDummy].m_PlayerFlags;
 
-	// Saved macros run on the real server-controlled tee. The first frame
-	// waits for the recorded starting position; after that, one frame is
-	// selected per predicted game tick and sent through the regular input path.
-	bool MacroLiveInput = false;
-	if(m_MacroPlaybackLive && m_MacroPlaying && Client()->State() == IClient::STATE_ONLINE)
-	{
-		MacroLiveInput = true;
-		const int PredTick = Client()->PredGameTick(m_MacroPlaybackDummy);
-		if(!m_MacroPlaybackPaused)
-		{
-			if(m_MacroPlaybackLastTick < 0)
-				m_MacroPlaybackLastTick = PredTick;
-			const int TickDelta = std::max(0, PredTick - m_MacroPlaybackLastTick);
-			m_MacroPlaybackLastTick = PredTick;
-			m_MacroPracticeAccumulator +=
-				(double)TickDelta * (double)m_MacroPlaybackRate / (double)SERVER_TICK_SPEED;
-
-			// At most one frame is sent per input update. Backlog is drained
-			// over later updates so two frames are never collapsed into one server tick.
-			if(m_MacroPracticeAccumulator >= 1.0)
-			{
-				m_MacroPracticeAccumulator -= 1.0;
-				if(m_MacroPlaybackIndex >= m_vMacroFrames.size())
-				{
-					if(g_Config.m_ClMacroLoop && !m_vMacroFrames.empty())
-						m_MacroPlaybackIndex = (std::size_t)std::clamp(m_MacroStartFrameIndex, 0, (int)m_vMacroFrames.size() - 1);
-					else
-						StopMacroRecording();
-				}
-
-				if(m_MacroPlaying && m_MacroPlaybackLive && m_MacroPlaybackIndex < m_vMacroFrames.size())
-				{
-					const int FrameIndex = (int)m_MacroPlaybackIndex;
-					SendMacroFrame(FrameIndex, EMacroFrameMode::STEP);
-					++m_MacroPlaybackIndex;
-					m_MacroDisplayedTick = FrameIndex + 1;
-				}
-			}
-		}
-
-		// The server ignores normal input while MacroPlaybackControlled is
-		// active. Keep the normal input buffer intact so a rejected macro
-		// (for example, when /practice is not enabled) never locks the player
-		// out of ordinary movement and weapon binds.
-	}
-
-
 	// we freeze the input if chat or menu is activated
 	if(!(m_aInputData[g_Config.m_ClDummy].m_PlayerFlags & PLAYERFLAG_PLAYING))
 	{
@@ -2962,7 +2972,7 @@ int CControls::SnapInput(int *pData)
 			m_aInputData[g_Config.m_ClDummy].m_Direction = 1;
 
 
-		if(!MacroLiveInput)
+		if(!m_MacroPlaybackLive)
 		{
 			ApplyHookAutomation(g_Config.m_ClDummy);
 			ApplyEdgeAssist(g_Config.m_ClDummy);
@@ -3053,6 +3063,51 @@ void CControls::OnRender()
 {
 	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
 		return;
+
+	// Advance saved live macros from the render/update loop, not SnapInput.
+	// SnapInput is throttled by the normal network input rate and can pause when
+	// menus or other input states suppress ordinary player packets.
+	if(m_MacroPlaybackLive && m_MacroPlaying && Client()->State() == IClient::STATE_ONLINE)
+	{
+		const int PredTick = Client()->PredGameTick(m_MacroPlaybackDummy);
+		if(m_MacroPlaybackPaused)
+		{
+			m_MacroPlaybackLastTick = PredTick;
+		}
+		else
+		{
+			if(m_MacroPlaybackLastTick < 0)
+				m_MacroPlaybackLastTick = PredTick;
+			const int TickDelta = std::max(0, PredTick - m_MacroPlaybackLastTick);
+			m_MacroPlaybackLastTick = PredTick;
+			m_MacroPracticeAccumulator +=
+				(double)TickDelta * (double)m_MacroPlaybackRate / (double)SERVER_TICK_SPEED;
+
+			// Send no more than one frame per predicted server tick. This keeps
+			// every recorded step separate while allowing playback above 25 Hz.
+			if(m_MacroPracticeAccumulator >= 1.0)
+			{
+				m_MacroPracticeAccumulator -= 1.0;
+				if(m_MacroPlaybackIndex >= m_vMacroFrames.size())
+				{
+					if(g_Config.m_ClMacroLoop && !m_vMacroFrames.empty())
+						m_MacroPlaybackIndex = (std::size_t)std::clamp(m_MacroStartFrameIndex, 0, (int)m_vMacroFrames.size() - 1);
+					else
+						StopMacroRecording();
+				}
+
+				if(m_MacroPlaying && m_MacroPlaybackLive && m_MacroPlaybackIndex < m_vMacroFrames.size())
+				{
+					const int FrameIndex = (int)m_MacroPlaybackIndex;
+					SendMacroFrame(FrameIndex, EMacroFrameMode::STEP);
+					++m_MacroPlaybackIndex;
+					m_MacroDisplayedTick = FrameIndex + 1;
+					if(m_MacroStopAtTickArmed && m_MacroDisplayedTick >= g_Config.m_ClMacroStopTick)
+						StopMacroRecording();
+				}
+			}
+		}
+	}
 
 	if(m_MacroRewindHeld && !m_vMacroFrames.empty() &&
 		(m_MacroPracticeActive || m_MacroPlaybackLive) &&
