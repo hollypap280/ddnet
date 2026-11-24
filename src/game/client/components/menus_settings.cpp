@@ -836,6 +836,22 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 void CMenus::RenderSettingsButtons(CUIRect MainView)
 {
 	CUIRect Row, Label, KeyRect;
+	// Remove obsolete seek binds saved by older client versions.
+	static bool s_MacroSeekBindsCleared = false;
+	if(!s_MacroSeekBindsCleared)
+	{
+		for(int ModifierMask = 0; ModifierMask < KeyModifier::COMBINATION_COUNT; ++ModifierMask)
+		{
+			for(int Key = KEY_FIRST; Key < KEY_LAST; ++Key)
+			{
+				const CBindSlot Candidate(Key, ModifierMask);
+				const char *pCommand = GameClient()->m_Binds.Get(Candidate);
+				if(str_comp(pCommand, "+macro_rewind") == 0 || str_comp(pCommand, "+macro_seek") == 0)
+					GameClient()->m_Binds.Bind(Key, "", false, ModifierMask);
+			}
+		}
+		s_MacroSeekBindsCleared = true;
+	}
 	MainView.HSplitTop(28.0f, &Label, &MainView);
 	Ui()->DoLabel(&Label, Localize("Назначение клавиш для функций"), 20.0f, TEXTALIGN_ML);
 	MainView.HSplitTop(5.0f, nullptr, &MainView);
