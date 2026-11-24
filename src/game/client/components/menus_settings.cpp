@@ -510,10 +510,6 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 
 	static CLineInputBuffered<64> s_MacroName;
 	static CLineInputBuffered<64> s_MacroSearch;
-	static CLineInputNumber s_RewindStep;
-	static bool s_RewindStepInitialized = false;
-	static CLineInputNumber s_StartTick;
-	static bool s_StartTickInitialized = false;
 	static std::vector<CControls::SMacroInfo> s_vMacros;
 	static std::vector<CButtonContainer> s_vMacroButtons;
 	static bool s_MacroListLoaded = false;
@@ -523,7 +519,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	static CButtonContainer s_ShowOthers;
 	static CButtonContainer s_RecordToggle;
 	static CButtonContainer s_PlayToggle, s_Delete, s_Refresh, s_PauseToggle;
-	static CButtonContainer s_MacroGotoTick, s_MacroStepBack, s_MacroStepForward;
+	static CButtonContainer s_MacroStepBack, s_MacroStepForward, s_MacroStepDown, s_MacroStepUp;
 	static CButtonContainer s_MacroLoop;
 	static CScrollRegion s_MacroListScrollRegion;
 	static CScrollRegion s_MacroSettingsScrollRegion;
@@ -667,28 +663,6 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 					GameClient()->m_Controls.PlayMacro(aPlaybackName);
 			}
 		}
-		if(!s_StartTickInitialized)
-		{
-			s_StartTick.SetInteger(g_Config.m_ClMacroStartTick);
-			s_StartTickInitialized = true;
-		}
-		CUIRect StartTickRow;
-		MainView.HSplitTop(27.0f, &StartTickRow, &MainView);
-		StartTickRow.VSplitLeft(106.0f, &Label, &NameRect);
-		Ui()->DoLabel(&Label, Localize("Стартовый тик"), 12.0f, TEXTALIGN_ML);
-		NameRect.VSplitRight(82.0f, &NameRect, &Button);
-		Ui()->DoEditBox(&s_StartTick, &NameRect, 13.0f);
-		if(s_StartTick.WasChanged())
-		{
-			const int StartTick = s_StartTick.GetInteger();
-			if(StartTick >= 1 && StartTick <= 18000)
-				g_Config.m_ClMacroStartTick = StartTick;
-			else
-				s_StartTick.SetInteger(g_Config.m_ClMacroStartTick);
-		}
-		if(DoButton_Menu(&s_MacroGotoTick, Localize("Перейти"), 0, &Button))
-			GameClient()->m_Controls.SeekMacroToTick(s_StartTick.GetInteger());
-
 		CUIRect SeekRow;
 		MainView.HSplitTop(27.0f, &SeekRow, &MainView);
 		SeekRow.VSplitLeft(142.0f, &Button, &Row);
@@ -698,6 +672,18 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		Row.VSplitLeft(142.0f, &Button, nullptr);
 		if(DoButton_Menu(&s_MacroStepForward, Localize("Вперёд →"), 0, &Button))
 			GameClient()->m_Controls.SeekMacroBy(GameClient()->m_Controls.MacroSeekStep());
+
+		CUIRect StepRow, StepLabel, StepButton;
+		MainView.HSplitTop(24.0f, &StepRow, &MainView);
+		StepRow.VSplitLeft(64.0f, &StepButton, &StepRow);
+		if(DoButton_Menu(&s_MacroStepDown, Localize("−"), 0, &StepButton))
+			GameClient()->m_Controls.SetMacroSeekStep(GameClient()->m_Controls.MacroSeekStep() - 1);
+		StepRow.VSplitRight(64.0f, &StepLabel, &StepButton);
+		if(DoButton_Menu(&s_MacroStepUp, Localize("+"), 0, &StepButton))
+			GameClient()->m_Controls.SetMacroSeekStep(GameClient()->m_Controls.MacroSeekStep() + 1);
+		char aSeekStep[64];
+		str_format(aSeekStep, sizeof(aSeekStep), "Шаг: %d тиков", GameClient()->m_Controls.MacroSeekStep());
+		Ui()->DoLabel(&StepLabel, aSeekStep, 12.0f, TEXTALIGN_MC);
 
 		if(Recording || Playing)
 		{
@@ -852,48 +838,12 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			Ui()->DoScrollbarOption(&g_Config.m_ClMacroPracticeRate, &g_Config.m_ClMacroPracticeRate,
 				&PracticeRateRow, Localize("Скорость записи и воспроизведения (тиков/с)"), 1, 50);
 
-		AddSection("СТАРТ И ПЕРЕМОТКА МАКРОСА");
-		if(!s_StartTickInitialized)
-		{
-			s_StartTick.SetInteger(g_Config.m_ClMacroStartTick);
-			s_StartTickInitialized = true;
-		}
-		CUIRect StartRow;
-		if(AddSettingRow(27.0f, StartRow))
-		{
-			StartRow.VSplitLeft(185.0f, &Label, &NameRect);
-			Ui()->DoLabel(&Label, Localize("Начать с тика"), 12.0f, TEXTALIGN_ML);
-			Ui()->DoEditBox(&s_StartTick, &NameRect, 13.0f);
-			if(s_StartTick.WasChanged())
-			{
-				const int StartTick = s_StartTick.GetInteger();
-				if(StartTick >= 1 && StartTick <= 18000)
-					g_Config.m_ClMacroStartTick = StartTick;
-				else
-					s_StartTick.SetInteger(g_Config.m_ClMacroStartTick);
-			}
-		}
-
-		if(!s_RewindStepInitialized)
-		{
-			s_RewindStep.SetInteger(g_Config.m_ClMacroRewindStep);
-			s_RewindStepInitialized = true;
-		}
-		CUIRect StepRow;
-		if(AddSettingRow(27.0f, StepRow))
-		{
-			StepRow.VSplitLeft(185.0f, &Label, &NameRect);
-			Ui()->DoLabel(&Label, Localize("Шаг перемотки (тиков)"), 12.0f, TEXTALIGN_ML);
-			Ui()->DoEditBox(&s_RewindStep, &NameRect, 13.0f);
-			if(s_RewindStep.WasChanged())
-			{
-				const int Step = s_RewindStep.GetInteger();
-				if(Step >= 1 && Step <= 18000)
-					g_Config.m_ClMacroRewindStep = Step;
-				else
-					s_RewindStep.SetInteger(g_Config.m_ClMacroRewindStep);
-			}
-		}
+		AddSection("ПЕРЕМОТКА МАКРОСА");
+		CUIRect StepHint;
+		if(AddSettingRow(42.0f, StepHint))
+			Ui()->DoLabel(&StepHint,
+				Localize("Шаг меняется кнопками − и + рядом с перемоткой на вкладке «Макрос». Макрос всегда начинается с первого тика. Перемотка не переключает паузу."),
+				12.0f, TEXTALIGN_ML);
 
 		AddSection("КОМАНДЫ В ТРЕНИРОВКЕ");
 		CUIRect InfoRow;
