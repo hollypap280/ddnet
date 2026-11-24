@@ -2742,7 +2742,33 @@ void CControls::OnUpdate()
 	const bool UiCapturesInput = GameClient()->m_Chat.IsActive() || GameClient()->m_Menus.IsActive();
 	const bool MacroPaused = (m_MacroRecording && m_MacroRecordingPaused) ||
 		(m_MacroPlaying && m_MacroPlaybackPaused);
-	if(UiCapturesInput || MacroPaused)
+	if(UiCapturesInput)
+	{
+		// DDNet intentionally suppresses bind release callbacks while a menu,
+		// chat or console is open. Clear the private held-input state here so
+		// a movement/hook/fire bind cannot remain stuck after closing the UI.
+		m_MacroPracticeDirectionLeft = false;
+		m_MacroPracticeDirectionRight = false;
+		m_MacroPracticePendingDirectionLeft = false;
+		m_MacroPracticePendingDirectionRight = false;
+		m_MacroPracticePendingJump = false;
+		m_MacroPracticePendingHook = false;
+		m_MacroPracticePendingWantedWeapon = 0;
+		m_MacroPracticeInput.m_Jump = 0;
+		m_MacroPracticeInput.m_Hook = 0;
+		m_MacroPracticeInput.m_WantedWeapon = 0;
+		if(m_MacroPracticeInput.m_Fire & 1)
+			++m_MacroPracticeInput.m_Fire;
+		m_MacroPracticeInput.m_Fire &= INPUT_STATE_MASK;
+		if(m_MacroPracticeInput.m_NextWeapon & 1)
+			++m_MacroPracticeInput.m_NextWeapon;
+		if(m_MacroPracticeInput.m_PrevWeapon & 1)
+			++m_MacroPracticeInput.m_PrevWeapon;
+		m_aManualHook[Dummy] = false;
+		m_MacroPracticeLastTime = CurrentTime;
+		return;
+	}
+	if(MacroPaused)
 	{
 		m_MacroPracticeLastTime = CurrentTime;
 		return;
