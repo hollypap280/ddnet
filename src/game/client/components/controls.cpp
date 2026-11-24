@@ -586,6 +586,8 @@ void CControls::SendMacroFrame(int Index, EMacroFrameMode Mode)
 	Msg.m_DDNetTargetX = Frame.m_HasDDNetState ? DDNet.m_TargetX : Frame.m_Input.m_TargetX;
 	Msg.m_DDNetTargetY = Frame.m_HasDDNetState ? DDNet.m_TargetY : Frame.m_Input.m_TargetY;
 	Msg.m_DDNetTuneZoneOverride = Frame.m_HasDDNetState ? DDNet.m_TuneZoneOverride : -1;
+	for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+		Msg.m_aWeaponAmmo[Weapon] = Frame.m_aPreWeaponAmmo[Weapon];
 
 	const int Conn = m_MacroPlaybackDummy ? IClient::CONN_DUMMY : IClient::CONN_MAIN;
 	Client()->SendPackMsg(Conn, &Msg, MSGFLAG_VITAL);
@@ -607,9 +609,9 @@ void CControls::SendPracticeTeleportToCursor(int Conn)
 namespace
 {
 	constexpr uint32_t MACRO_FILE_MAGIC = 0x444D4143;
-	// Version 6 writes the current frame layout. Version 5 files are read
-	// using either the current layout or the older version-4-compatible one.
-	constexpr uint32_t MACRO_FILE_VERSION = 8;
+	// Version 9 also stores the recording tick rate in the file header.
+	// Older versions remain readable with the current rate as their fallback.
+	constexpr uint32_t MACRO_FILE_VERSION = 9;
 	constexpr uint32_t MACRO_MAX_FRAMES = 18000;
 }
 
@@ -1529,6 +1531,7 @@ bool CControls::StartMacroRecording(const char *pName)
 	m_MacroPracticeAccumulator = 0.0f;
 	m_MacroPracticeLastTime = time_get();
 	m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
+	m_MacroRecordingRate = MacroPracticeRate();
 	m_vMacroFrames.clear();
 	m_MacroRecordingPaused = false;
 	m_MacroRecording = true;
@@ -1637,10 +1640,12 @@ bool CControls::SaveMacro(const char *pName)
 	const uint32_t Magic = MACRO_FILE_MAGIC;
 	const uint32_t Version = MACRO_FILE_VERSION;
 	const uint32_t Count = (uint32_t)m_vMacroFrames.size();
+	const uint32_t RecordedRate = (uint32_t)std::clamp(m_MacroRecordingRate, 1, SERVER_TICK_SPEED);
 	const bool Written = io_write(File, &Magic, sizeof(Magic)) == sizeof(Magic) &&
 		io_write(File, &Version, sizeof(Version)) == sizeof(Version) &&
 		io_write(File, &Count, sizeof(Count)) == sizeof(Count) &&
 		io_write(File, m_aMacroMapName, sizeof(m_aMacroMapName)) == sizeof(m_aMacroMapName) &&
+		io_write(File, &RecordedRate, sizeof(RecordedRate)) == sizeof(RecordedRate) &&
 		io_write(File, m_vMacroFrames.data(), Count * sizeof(SMacroFrame)) == Count * sizeof(SMacroFrame);
 	io_close(File);
 	return Written;
@@ -1680,6 +1685,7 @@ bool CControls::PlayMacro(const char *pName)
 	uint32_t Magic = 0;
 	uint32_t Version = 0;
 	uint32_t Count = 0;
+	uint32_t RecordedRate = 0;
 	bool Valid = FileLength >= 0 &&
 		io_read(File, &Magic, sizeof(Magic)) == sizeof(Magic) &&
 		io_read(File, &Version, sizeof(Version)) == sizeof(Version) &&
@@ -1693,9 +1699,16 @@ bool CControls::PlayMacro(const char *pName)
 		Valid = io_read(File, aRecordedMapName, sizeof(aRecordedMapName)) == sizeof(aRecordedMapName);
 		aRecordedMapName[sizeof(aRecordedMapName) - 1] = '\0';
 	}
+	if(Valid && Version >= 9)
+	{
+		Valid = io_read(File, &RecordedRate, sizeof(RecordedRate)) == sizeof(RecordedRate) &&
+			RecordedRate >= 1 && RecordedRate <= SERVER_TICK_SPEED;
+	}
 
 	const int64_t HeaderBytes = (int64_t)sizeof(Magic) + sizeof(Version) + sizeof(Count) +
-		(Version >= 3 ? (int64_t)sizeof(aRecordedMapName) : 0);
+		(Version >= 3 ? (int64_t)sizeof(aRecordedMapName) : 0) +
+		(Version >= 9 ? (int64_t)sizeof(RecordedRate) : 0);
+	const int LoadedPlaybackRate = Version >= 9 ? (int)RecordedRate : MacroPracticeRate();
 	const int64_t RemainingBytes = Valid && FileLength >= HeaderBytes ? FileLength - HeaderBytes : 0;
 	if(Valid && FileLength < HeaderBytes)
 		Valid = false;
@@ -1951,7 +1964,7 @@ bool CControls::PlayMacro(const char *pName)
 	if(m_MacroPracticeActive)
 		StopMacroPractice();
 
-	const int StartFrameIndex = std::clamp(g_Config.m_ClMacroStartTick - 1, 0, (int)Frames.size() - 1);
+	const int StartFrameIndex = 0;
 	if(std::any_of(Frames.begin(), Frames.end(), [](const SMacroFrame &Frame) { return !Frame.m_HasCoordinates; }))
 	{
 		GameClient()->Echo("Этот старый макрос не содержит координат и не поддерживает запуск в живом мире. Перезапиши его новой версией клиента.");
@@ -1962,6 +1975,7 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroRecording = false;
 	m_MacroRecordingPaused = false;
 	m_MacroPlaybackLive = true;
+	m_MacroPlaybackRate = LoadedPlaybackRate;
 	m_MacroPlaybackOwnsPractice = false;
 	m_MacroPlaybackOwnsDummy = false;
 	m_MacroPlaybackDummy = PlaybackDummy;
@@ -1983,8 +1997,8 @@ bool CControls::PlayMacro(const char *pName)
 	SendMacroFrame(StartFrameIndex, EMacroFrameMode::STEP);
 
 	char aStartMessage[192];
-	str_format(aStartMessage, sizeof(aStartMessage), "Макрос «%s» запущен на настоящем персонаже. Требуется /practice в команде. Старт: тик %d, скорость: %d тиков/с.",
-		pName, StartFrameIndex + 1, MacroPracticeRate());
+	str_format(aStartMessage, sizeof(aStartMessage), "Макрос «%s» запущен на настоящем персонаже. Требуется /practice в команде. Скорость записи: %d тиков/с.",
+		pName, m_MacroPlaybackRate);
 	GameClient()->Echo(aStartMessage);
 	return true;
 }
@@ -2342,18 +2356,6 @@ bool CControls::OnInput(const IInput::CEvent &)
 bool CControls::SeekMacroBy(int Offset)
 {
 	return SeekMacro(Offset, true, true);
-}
-
-bool CControls::SeekMacroToTick(int TargetTick)
-{
-	if(TargetTick < 1 || TargetTick > (int)m_vMacroFrames.size())
-	{
-		GameClient()->Echo("Укажи номер тика от 1 до длины макроса.");
-		return false;
-	}
-	const int CurrentTick = m_MacroRecording ? (int)m_vMacroFrames.size() :
-		(m_MacroDisplayedTick > 0 ? m_MacroDisplayedTick : (int)m_MacroPlaybackIndex);
-	return SeekMacro(TargetTick - CurrentTick, true, true);
 }
 
 void CControls::OnMessage(int Msg, void *pRawMsg)
@@ -2916,8 +2918,7 @@ int CControls::SnapInput(int *pData)
 		// waits for the recorded starting position; after that, one frame is
 		// selected per predicted game tick and sent through the regular input path.
 		bool MacroLiveInput = false;
-		if(m_MacroPlaybackLive && m_MacroPlaying &&
-			(m_aInputData[g_Config.m_ClDummy].m_PlayerFlags & PLAYERFLAG_PLAYING))
+		if(m_MacroPlaybackLive && m_MacroPlaying && Client()->State() == IClient::STATE_ONLINE)
 		{
 			MacroLiveInput = true;
 			const int PredTick = Client()->PredGameTick(m_MacroPlaybackDummy);
@@ -2928,7 +2929,7 @@ int CControls::SnapInput(int *pData)
 				const int TickDelta = std::max(0, PredTick - m_MacroPlaybackLastTick);
 				m_MacroPlaybackLastTick = PredTick;
 				m_MacroPracticeAccumulator +=
-					(double)TickDelta * (double)MacroPracticeRate() / (double)SERVER_TICK_SPEED;
+					(double)TickDelta * (double)m_MacroPlaybackRate / (double)SERVER_TICK_SPEED;
 
 				// At most one frame is sent per input update. Backlog is drained
 				// over later updates so two frames are never collapsed into one server tick.
@@ -3181,7 +3182,7 @@ void CControls::RenderMacroHud()
 		str_format(aTickLabel, sizeof(aTickLabel), "%s  |  ТИК %d / %d  |  %d ТИК/С",
 			m_MacroPlaybackPaused ? "МАКРОС ПАУЗА" : "МАКРОС",
 			std::clamp(m_MacroDisplayedTick, 1, (int)m_vMacroFrames.size()),
-			(int)m_vMacroFrames.size(), MacroPracticeRate());
+			(int)m_vMacroFrames.size(), m_MacroPlaybackRate);
 	else
 		str_format(aTickLabel, sizeof(aTickLabel), "FP-ТРЕНИРОВКА  |  ТИК %d  |  %d ТИК/С",
 			m_MacroPracticeTick, MacroPracticeRate());
@@ -3195,7 +3196,7 @@ void CControls::RenderMacroHud()
 	Graphics()->DrawRect(BoxX + 4.0f, BoxY + 4.0f, BoxWidth - 8.0f, BoxHeight - 8.0f,
 		ColorRGBA(0.42f, 0.42f, 0.42f, 0.88f), IGraphics::CORNER_ALL, 2.0f);
 
-	const char *pClientName = "КЛИЕНТ 9";
+	const char *pClientName = "КЛИЕНТ 10";
 	const float ClientFontSize = 15.0f;
 	const float ClientWidth = TextRender()->TextWidth(ClientFontSize, pClientName);
 	TextRender()->TextColor(0.55f, 0.9f, 1.0f, 1.0f);
