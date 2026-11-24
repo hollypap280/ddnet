@@ -110,38 +110,52 @@ void CControls::ConKeyInputState(IConsole::IResult *pResult, void *pUserData)
 	const int Stroke = pResult->GetInteger(0);
 	const int Dummy = g_Config.m_ClDummy;
 
-	// Keep the normal DDNet input path intact during FP practice. The private
-	// world reads the same input buffer; only SnapInput replaces the network
-	// packet with neutral input before it reaches the server.
-	*pState->m_apVariables[Dummy] = Stroke;
+	// Practice controls must never enter the real DDNet input buffers. Those
+	// buffers are also consumed by the live prediction world, not only SnapInput.
 	if(pSelf->m_MacroPracticeActive)
 	{
 		if(pState->m_IsDirectionLeft)
 		{
 			pSelf->m_MacroPracticeDirectionLeft = Stroke != 0;
-			if(Stroke != 0)
+			if(Stroke && pSelf->MacroPracticeRate() < SERVER_TICK_SPEED)
 				pSelf->m_MacroPracticePendingDirectionLeft = true;
 		}
 		if(pState->m_IsDirectionRight)
 		{
 			pSelf->m_MacroPracticeDirectionRight = Stroke != 0;
-			if(Stroke != 0)
+			if(Stroke && pSelf->MacroPracticeRate() < SERVER_TICK_SPEED)
 				pSelf->m_MacroPracticePendingDirectionRight = true;
 		}
-		if(pState->m_IsJumpAction && Stroke != 0)
-			pSelf->m_MacroPracticePendingJump = true;
+		if(pState->m_IsJumpAction)
+		{
+			pSelf->m_MacroPracticeInput.m_Jump = Stroke;
+			if(Stroke && pSelf->MacroPracticeRate() < SERVER_TICK_SPEED)
+				pSelf->m_MacroPracticePendingJump = true;
+		}
 		if(pState->m_IsHookAction)
 		{
+			pSelf->m_MacroPracticeInput.m_Hook = Stroke;
 			pSelf->m_aManualHook[Dummy] = Stroke != 0;
-			if(Stroke != 0)
+			if(Stroke && pSelf->MacroPracticeRate() < SERVER_TICK_SPEED)
 				pSelf->m_MacroPracticePendingHook = true;
 		}
+		if(Stroke && pState->m_IsMouseAction && g_Config.m_ClSubTickAiming &&
+			pSelf->GameClient()->m_Binds.m_HandlingNewBind)
+		{
+			pSelf->m_aMouseOnAction[Dummy] = true;
+		}
+		return;
 	}
+
+	*pState->m_apVariables[Dummy] = Stroke;
 	if(pState->m_IsHookAction)
 		pSelf->m_aManualHook[Dummy] = Stroke != 0;
 
-	if(Stroke != 0 && pState->m_IsMouseAction && g_Config.m_ClSubTickAiming && pSelf->GameClient()->m_Binds.m_HandlingNewBind)
+	if(Stroke && pState->m_IsMouseAction && g_Config.m_ClSubTickAiming &&
+		pSelf->GameClient()->m_Binds.m_HandlingNewBind)
+	{
 		pSelf->m_aMouseOnAction[Dummy] = true;
+	}
 }
 
 void CControls::ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData)
@@ -149,25 +163,39 @@ void CControls::ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData)
 	CInputState *pState = (CInputState *)pUserData;
 	CControls *pSelf = pState->m_pControls;
 
-	if((pSelf->GameClient()->m_GameInfo.m_BugDDRaceInput && pSelf->GameClient()->m_Snap.m_SpecInfo.m_Active) || pSelf->GameClient()->m_Spectator.IsActive())
+	if((pSelf->GameClient()->m_GameInfo.m_BugDDRaceInput && pSelf->GameClient()->m_Snap.m_SpecInfo.m_Active) ||
+		pSelf->GameClient()->m_Spectator.IsActive())
+	{
 		return;
+	}
 
 	const int Stroke = pResult->GetInteger(0);
 	const int Dummy = g_Config.m_ClDummy;
-	if(pSelf->m_MacroPracticeActive && pState->m_IsFireAction &&
-		pSelf->m_MacroPracticeFirePressed != (Stroke != 0))
+	if(pSelf->m_MacroPracticeActive && pState->m_IsFireAction)
 	{
-		pSelf->m_MacroPracticeFirePressed = Stroke != 0;
-		pSelf->m_MacroPracticePendingFireTransitions =
-			std::min(pSelf->m_MacroPracticePendingFireTransitions + 1, 64);
+		// Keep the normal DDNet press/release counter, but in a private buffer.
+		// This preserves same-tick hammer and gun taps without an extra queue tick.
+		int &Fire = pSelf->m_MacroPracticeInput.m_Fire;
+		if((Fire & 1) != Stroke)
+			++Fire;
+		Fire &= INPUT_STATE_MASK;
+		if(Stroke && pState->m_IsMouseAction && g_Config.m_ClSubTickAiming &&
+			pSelf->GameClient()->m_Binds.m_HandlingNewBind)
+		{
+			pSelf->m_aMouseOnAction[Dummy] = true;
+		}
+		return;
 	}
 
 	int *pVariable = pState->m_apVariables[Dummy];
 	if(((*pVariable) & 1) != Stroke)
 	{
-		(*pVariable)++;
-		if(Stroke != 0 && pState->m_IsMouseAction && g_Config.m_ClSubTickAiming && pSelf->GameClient()->m_Binds.m_HandlingNewBind)
+		++(*pVariable);
+		if(Stroke && pState->m_IsMouseAction && g_Config.m_ClSubTickAiming &&
+			pSelf->GameClient()->m_Binds.m_HandlingNewBind)
+		{
 			pSelf->m_aMouseOnAction[Dummy] = true;
+		}
 	}
 	*pVariable &= INPUT_STATE_MASK;
 }
@@ -181,37 +209,40 @@ void CControls::ConMacroPracticeInput(IConsole::IResult *pResult, void *pUserDat
 	if(!pSelf->m_MacroPracticeActive || pSelf->m_MacroPlaying)
 		return;
 
-	// Compatibility for existing +macro_* binds: feed the same standard
-	// input buffers used by +left/+right/+jump/+hook/+fire.
+	// Compatibility aliases write to the exact same isolated input buffer.
 	switch(pBind->m_Action)
 	{
 	case EMacroPracticeDummyAction::LEFT:
-		pSelf->m_aInputDirectionLeft[Dummy] = Pressed ? 1 : 0;
 		pSelf->m_MacroPracticeDirectionLeft = Pressed;
-		if(Pressed) pSelf->m_MacroPracticePendingDirectionLeft = true;
+		if(Pressed && pSelf->MacroPracticeRate() < SERVER_TICK_SPEED)
+			pSelf->m_MacroPracticePendingDirectionLeft = true;
 		break;
 	case EMacroPracticeDummyAction::RIGHT:
-		pSelf->m_aInputDirectionRight[Dummy] = Pressed ? 1 : 0;
 		pSelf->m_MacroPracticeDirectionRight = Pressed;
-		if(Pressed) pSelf->m_MacroPracticePendingDirectionRight = true;
+		if(Pressed && pSelf->MacroPracticeRate() < SERVER_TICK_SPEED)
+			pSelf->m_MacroPracticePendingDirectionRight = true;
 		break;
 	case EMacroPracticeDummyAction::JUMP:
-		pSelf->m_aInputData[Dummy].m_Jump = Pressed ? 1 : 0;
-		if(Pressed) pSelf->m_MacroPracticePendingJump = true;
+		pSelf->m_MacroPracticeInput.m_Jump = Pressed ? 1 : 0;
+		if(Pressed && pSelf->MacroPracticeRate() < SERVER_TICK_SPEED)
+			pSelf->m_MacroPracticePendingJump = true;
 		break;
 	case EMacroPracticeDummyAction::HOOK:
-		pSelf->m_aInputData[Dummy].m_Hook = Pressed ? 1 : 0;
+		pSelf->m_MacroPracticeInput.m_Hook = Pressed ? 1 : 0;
 		pSelf->m_aManualHook[Dummy] = Pressed;
-		if(Pressed) pSelf->m_MacroPracticePendingHook = true;
+		if(Pressed && pSelf->MacroPracticeRate() < SERVER_TICK_SPEED)
+			pSelf->m_MacroPracticePendingHook = true;
 		break;
 	case EMacroPracticeDummyAction::FIRE:
-		if(pSelf->m_MacroPracticeFirePressed != Pressed)
+	{
+		int &Fire = pSelf->m_MacroPracticeInput.m_Fire;
+		if((Fire & 1) != (Pressed ? 1 : 0))
 		{
-			pSelf->m_MacroPracticeFirePressed = Pressed;
-			pSelf->m_MacroPracticePendingFireTransitions =
-				std::min(pSelf->m_MacroPracticePendingFireTransitions + 1, 64);
+			++Fire;
+			Fire &= INPUT_STATE_MASK;
 		}
 		break;
+	}
 	}
 }
 
@@ -269,9 +300,21 @@ void CControls::ConKeyInputSet(IConsole::IResult *pResult, void *pUserData)
 	if(!pResult->GetInteger(0))
 		return;
 
-	if(pSet->m_pControls->m_MacroPracticeActive &&
-		pSet->m_apVariables[0] == &pSet->m_pControls->m_aInputData[0].m_WantedWeapon)
-		pSet->m_pControls->m_MacroPracticePendingWantedWeapon = pSet->m_Value;
+	CControls *pSelf = pSet->m_pControls;
+	if(pSelf->m_MacroPracticeActive &&
+		pSet->m_apVariables[0] == &pSelf->m_aInputData[0].m_WantedWeapon)
+	{
+		if(pSelf->MacroPracticeRate() < SERVER_TICK_SPEED)
+		{
+			pSelf->m_MacroPracticePendingWantedWeapon = pSet->m_Value;
+			pSelf->m_MacroPracticeInput.m_WantedWeapon = 0;
+		}
+		else
+		{
+			pSelf->m_MacroPracticeInput.m_WantedWeapon = pSet->m_Value;
+		}
+		return;
+	}
 
 	*pSet->m_apVariables[g_Config.m_ClDummy] = pSet->m_Value;
 }
@@ -280,29 +323,23 @@ void CControls::ConKeyInputNextPrevWeapon(IConsole::IResult *pResult, void *pUse
 {
 	CInputSet *pSet = (CInputSet *)pUserData;
 	CControls *pSelf = pSet->m_pControls;
-	const int Dummy = g_Config.m_ClDummy;
 	const int Stroke = pResult->GetInteger(0);
+	const int Dummy = g_Config.m_ClDummy;
 
 	if(pSelf->m_MacroPracticeActive)
 	{
-		bool *pPressed = nullptr;
-		int *pPendingTransitions = nullptr;
+		int *pPracticeVariable = nullptr;
 		if(pSet->m_apVariables[0] == &pSelf->m_aInputData[0].m_NextWeapon)
-		{
-			pPressed = &pSelf->m_MacroPracticeNextWeaponPressed;
-			pPendingTransitions = &pSelf->m_MacroPracticePendingNextWeaponTransitions;
-		}
+			pPracticeVariable = &pSelf->m_MacroPracticeInput.m_NextWeapon;
 		else if(pSet->m_apVariables[0] == &pSelf->m_aInputData[0].m_PrevWeapon)
-		{
-			pPressed = &pSelf->m_MacroPracticePrevWeaponPressed;
-			pPendingTransitions = &pSelf->m_MacroPracticePendingPrevWeaponTransitions;
-		}
+			pPracticeVariable = &pSelf->m_MacroPracticeInput.m_PrevWeapon;
 
-		if(pPressed && *pPressed != (Stroke != 0))
+		if(pPracticeVariable && ((*pPracticeVariable & 1) != Stroke))
 		{
-			*pPressed = Stroke != 0;
-			*pPendingTransitions = std::min(*pPendingTransitions + 1, 64);
+			++(*pPracticeVariable);
+			*pPracticeVariable &= INPUT_STATE_MASK;
 		}
+		return;
 	}
 
 	int *pVariable = pSet->m_apVariables[Dummy];
