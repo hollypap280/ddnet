@@ -1058,10 +1058,10 @@ bool CControls::SwitchMacroPracticeCharacter(int ClientId)
 	IdleInput.m_TargetX = 1;
 	if(CCharacter *pOldCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId))
 	{
+		// Stop feeding this tee live input, but keep its velocity, hook,
+		// freeze, weapon and position so it remains part of the timeline.
 		pOldCharacter->SetInput(&IdleInput);
 		pOldCharacter->m_IsLocal = false;
-		// Keep this tee at its last practice position while the other local
-		// tee is controlled. Never refresh it from the server snapshot.
 		pOldCharacter->m_IsMacroPracticeStatic = true;
 	}
 
@@ -1077,8 +1077,14 @@ bool CControls::SwitchMacroPracticeCharacter(int ClientId)
 	m_MacroPracticePendingHook = false;
 	m_MacroPracticePendingDirectionLeft = false;
 	m_MacroPracticePendingDirectionRight = false;
-	m_MacroPracticeFireCounter = m_aInputData[g_Config.m_ClDummy].m_Fire & INPUT_STATE_MASK;
-	m_MacroPracticeInput = m_aInputData[g_Config.m_ClDummy];
+	m_MacroPracticeDirectionLeft = false;
+	m_MacroPracticeDirectionRight = false;
+	m_MacroPracticeInput = IdleInput;
+	m_MacroPracticeInput.m_TargetX = 1;
+	m_MacroPracticeFireCounter = 0;
+	m_MacroPracticeFirePressed = false;
+	m_MacroPracticeNextWeaponPressed = false;
+	m_MacroPracticePrevWeaponPressed = false;
 	UpdateMacroPracticeGhost(pNewCharacter);
 	return true;
 }
@@ -2089,7 +2095,6 @@ void CControls::OnMacroPracticeDummySwap()
 {
 	if(!m_MacroPracticeActive || m_MacroPlaying)
 		return;
-	m_MacroPlaybackOwnsDummy = false;
 	const int RequestedLocalId = GameClient()->m_aLocalIds[g_Config.m_ClDummy];
 	if(RequestedLocalId >= 0 && RequestedLocalId < MAX_CLIENTS)
 		SwitchMacroPracticeCharacter(RequestedLocalId);
