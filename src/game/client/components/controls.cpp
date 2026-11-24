@@ -867,13 +867,18 @@ void CControls::StopMacroPractice()
 	m_aAutoAvoidActive[Dummy] = false;
 	m_aAutoEdgeHookActive[Dummy] = false;
 	m_MacroRecording = false;
+	m_MacroRecordingPaused = false;
 	m_MacroPlaying = false;
 	m_MacroPracticeActive = false;
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeAccumulator = 0.0f;
 	m_MacroPracticeLastTime = 0;
 	m_MacroPracticeLocalId = -1;
+	m_MacroPracticeStartLocalId = -1;
 	std::fill(std::begin(m_aMacroPracticeSnapshotInitialized), std::end(m_aMacroPracticeSnapshotInitialized), false);
+	std::fill(std::begin(m_aMacroPracticeStartSnapshotInitialized), std::end(m_aMacroPracticeStartSnapshotInitialized), false);
+	m_MacroPracticeBaselineValid = false;
+	m_aMacroPracticeBaselineName[0] = '\0';
 	m_MacroPlaybackOwnsDummy = false;
 	m_MacroPlaybackOwnsPractice = false;
 	m_aRecordingMacroName[0] = '\0';
@@ -905,6 +910,7 @@ void CControls::StopMacroPractice()
 	m_MacroStartFrameIndex = 0;
 	m_MacroDisplayedTick = 0;
 	m_MacroPracticeWorld.Clear();
+	m_MacroPracticeStartWorld.Clear();
 	if(GameClient())
 		GameClient()->m_Ghost.ClearMacroPracticeCharacter();
 }
@@ -1502,7 +1508,18 @@ bool CControls::StartMacroRecording(const char *pName)
 	m_MacroPracticeLastTime = time_get();
 	m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
 	m_vMacroFrames.clear();
+	m_MacroRecordingPaused = false;
 	m_MacroRecording = true;
+
+	// Keep an exact copy of the entire local practice world at the beginning
+	// of recording. Rewind restores this snapshot and simulates every frame
+	// back to the selected time, including the idle dummy, projectiles and pickups.
+	m_MacroPracticeStartWorld.CopyWorld(&m_MacroPracticeWorld);
+	m_MacroPracticeStartLocalId = m_MacroPracticeLocalId;
+	std::copy(std::begin(m_aMacroPracticeSnapshotInitialized), std::end(m_aMacroPracticeSnapshotInitialized),
+		std::begin(m_aMacroPracticeStartSnapshotInitialized));
+	m_MacroPracticeBaselineValid = true;
+	str_copy(m_aMacroPracticeBaselineName, aRecordingName);
 
 	char aMessage[128];
 	str_format(aMessage, sizeof(aMessage), "Макрос «%s»: FP-тренировка началась. Скорость: %d тиков/с.",
@@ -1561,6 +1578,7 @@ void CControls::StopMacroRecording()
 	}
 
 	m_MacroPlaying = false;
+	m_MacroRecordingPaused = false;
 	m_MacroPlaybackLive = false;
 	m_MacroPlaybackPaused = false;
 	m_MacroPlaybackOwnsPractice = false;
@@ -1575,9 +1593,10 @@ void CControls::StopMacroRecording()
 	m_MacroHoldCurrentFrame = false;
 	m_MacroPracticeWaiting = false;
 
-	// Finishing a recording or stopping playback also ends the private FP
-	// world immediately; the live server tee is already receiving neutral input.
-	if(m_MacroPracticeActive && (WasRecording || StopOwnedPractice))
+	// Keep the isolated world and its starting snapshot after recording. This
+	// lets the saved macro play in the same practice world and makes recording
+	// rewind/re-record deterministic. A playback-owned world is still cleaned up.
+	if(m_MacroPracticeActive && StopOwnedPractice)
 		StopMacroPractice();
 }
 
