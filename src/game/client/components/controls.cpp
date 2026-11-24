@@ -585,14 +585,6 @@ void CControls::SendMacroFrameControl(EMacroFrameMode Mode)
 	Msg.m_Mode = (int)Mode;
 	const int Conn = m_MacroPlaybackDummy ? IClient::CONN_DUMMY : IClient::CONN_MAIN;
 	Client()->SendPackMsg(Conn, &Msg, MSGFLAG_VITAL);
-
-	if(PreviousDummy >= 0)
-	{
-		CNetMsg_Cl_MacroFrame StopMsg{};
-		StopMsg.m_Mode = (int)EMacroFrameMode::STOP;
-		const int PreviousConn = PreviousDummy ? IClient::CONN_DUMMY : IClient::CONN_MAIN;
-		Client()->SendPackMsg(PreviousConn, &StopMsg, MSGFLAG_VITAL);
-	}
 }
 
 void CControls::SendMacroFrame(int Index, EMacroFrameMode Mode)
@@ -687,7 +679,14 @@ void CControls::SendMacroFrame(int Index, EMacroFrameMode Mode)
 
 	const int Conn = m_MacroPlaybackDummy ? IClient::CONN_DUMMY : IClient::CONN_MAIN;
 	Client()->SendPackMsg(Conn, &Msg, MSGFLAG_VITAL);
-}
+
+	if(PreviousDummy >= 0)
+	{
+		CNetMsg_Cl_MacroFrame StopMsg{};
+		StopMsg.m_Mode = (int)EMacroFrameMode::STOP;
+		const int PreviousConn = PreviousDummy ? IClient::CONN_DUMMY : IClient::CONN_MAIN;
+		Client()->SendPackMsg(PreviousConn, &StopMsg, MSGFLAG_VITAL);
+	}
 
 void CControls::SendPracticeTeleport(vec2 Pos, int Conn)
 {
