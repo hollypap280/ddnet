@@ -618,6 +618,7 @@ Messages = [
 		NetIntAny("m_DDNetTargetX"),
 		NetIntAny("m_DDNetTargetY"),
 		NetIntAny("m_DDNetTuneZoneOverride"),
+		NetArray(NetIntAny("m_aWeaponAmmo", default=-1), 6),
 	]),
 
 	NetMessageEx("Sv_TeamsState", "teamsstate@netmsg.ddnet.tw", []),
