@@ -111,7 +111,7 @@ void CControls::ConKeyInputState(IConsole::IResult *pResult, void *pUserData)
 		return;
 
 	const int Stroke = pResult->GetInteger(0);
-	const int Dummy = g_Config.m_ClDummy;
+	const int Dummy = pSelf->m_MacroPlaybackLive ? pSelf->m_MacroPlaybackDummy : g_Config.m_ClDummy;
 
 	// After the user touches an action, its live state replaces the recorded state,
 	// including key release, so manual intervention can cancel a held TAS action.
@@ -194,7 +194,7 @@ void CControls::ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData)
 	}
 
 	const int Stroke = pResult->GetInteger(0);
-	const int Dummy = g_Config.m_ClDummy;
+	const int Dummy = pSelf->m_MacroPlaybackLive ? pSelf->m_MacroPlaybackDummy : g_Config.m_ClDummy;
 	if(pSelf->m_MacroPracticeActive && pState->m_IsFireAction)
 	{
 		// Keep the normal DDNet press/release counter, but in a private buffer.
@@ -358,7 +358,7 @@ void CControls::ConKeyInputNextPrevWeapon(IConsole::IResult *pResult, void *pUse
 	CInputSet *pSet = (CInputSet *)pUserData;
 	CControls *pSelf = pSet->m_pControls;
 	const int Stroke = pResult->GetInteger(0);
-	const int Dummy = g_Config.m_ClDummy;
+	const int Dummy = pSelf->m_MacroPlaybackLive ? pSelf->m_MacroPlaybackDummy : g_Config.m_ClDummy;
 
 	if(pSelf->m_MacroPlaybackLive)
 	{
@@ -586,6 +586,25 @@ void CControls::SendMacroFrame(int Index, EMacroFrameMode Mode)
 		return;
 
 	const SMacroFrame &Frame = m_vMacroFrames[Index];
+
+	// Recordings may switch between the main tee and the local dummy.
+	// Stop controlling the previous connection before handing the macro to the other one.
+	if(Frame.m_ClientId >= 0)
+	{
+		int RequestedDummy = -1;
+		if(Frame.m_ClientId == GameClient()->m_aLocalIds[0])
+			RequestedDummy = 0;
+		else if(Frame.m_ClientId == GameClient()->m_aLocalIds[1])
+			RequestedDummy = 1;
+
+		if(RequestedDummy >= 0 && RequestedDummy != m_MacroPlaybackDummy)
+		{
+			SendMacroFrameControl(EMacroFrameMode::STOP);
+			m_MacroPlaybackDummy = RequestedDummy;
+			g_Config.m_ClDummy = RequestedDummy;
+			m_MacroPlaybackLastTick = Client()->GameTick(m_MacroPlaybackDummy);
+		}
+	}
 	const CNetObj_CharacterCore &Core = Frame.m_PreCore;
 	const CNetObj_DDNetCharacter &DDNet = Frame.m_PreDDNetCharacter;
 	CNetMsg_Cl_MacroFrame Msg{};
@@ -2030,9 +2049,7 @@ bool CControls::PlayMacro(const char *pName)
 		return false;
 	}
 
-	// Replay on the actual server-controlled tee. Server-side handling
-	// validates /practice before it accepts recorded frames.
-	const int PlaybackDummy = g_Config.m_ClDummy;
+	// Replay on the actual server-controlled tee. A recording may begin on either local connection.
 	if(m_MacroPracticeActive)
 		StopMacroPractice();
 
@@ -2042,6 +2059,13 @@ bool CControls::PlayMacro(const char *pName)
 		GameClient()->Echo("Этот старый макрос не содержит координат и не поддерживает запуск в живом мире. Перезапиши его новой версией клиента.");
 		return false;
 	}
+
+	int PlaybackDummy = g_Config.m_ClDummy;
+	const int FirstRecordedClientId = Frames[StartFrameIndex].m_ClientId;
+	if(FirstRecordedClientId == GameClient()->m_aLocalIds[0])
+		PlaybackDummy = 0;
+	else if(FirstRecordedClientId == GameClient()->m_aLocalIds[1])
+		PlaybackDummy = 1;
 
 	m_vMacroFrames = std::move(Frames);
 	m_MacroRecording = false;
@@ -3369,15 +3393,17 @@ bool CControls::OnCursorMove(float x, float y, IInput::ECursorType CursorType)
 	if(GameClient()->IsWorldPaused())
 		return false;
 
+	const int Dummy = m_MacroPlaybackLive ? m_MacroPlaybackDummy : g_Config.m_ClDummy;
+
 	if(CursorType == IInput::CURSOR_JOYSTICK && g_Config.m_InpControllerAbsolute && GameClient()->m_Snap.m_pGameInfoObj && !GameClient()->m_Snap.m_SpecInfo.m_Active)
 	{
 		vec2 AbsoluteDirection;
 		if(Input()->GetActiveJoystick()->Absolute(&AbsoluteDirection.x, &AbsoluteDirection.y))
 		{
-			m_aMousePos[g_Config.m_ClDummy] = AbsoluteDirection * GetMaxMouseDistance();
+			m_aMousePos[Dummy] = AbsoluteDirection * GetMaxMouseDistance();
 			if(m_MacroPlaybackLive)
 				m_MacroManualAimActive = true;
-			GameClient()->m_Controls.m_aMouseInputType[g_Config.m_ClDummy] = CControls::EMouseInputType::ABSOLUTE;
+			GameClient()->m_Controls.m_aMouseInputType[Dummy] = CControls::EMouseInputType::ABSOLUTE;
 		}
 		return true;
 	}
@@ -3405,10 +3431,10 @@ bool CControls::OnCursorMove(float x, float y, IInput::ECursorType CursorType)
 	if(GameClient()->m_Snap.m_SpecInfo.m_Active && GameClient()->m_Snap.m_SpecInfo.m_SpectatorId < 0)
 		Factor *= GameClient()->m_Camera.m_Zoom;
 
-	m_aMousePos[g_Config.m_ClDummy] += vec2(x, y) * Factor;
+	m_aMousePos[Dummy] += vec2(x, y) * Factor;
 	if(m_MacroPlaybackLive)
 		m_MacroManualAimActive = true;
-	GameClient()->m_Controls.m_aMouseInputType[g_Config.m_ClDummy] = CControls::EMouseInputType::RELATIVE;
+	GameClient()->m_Controls.m_aMouseInputType[Dummy] = CControls::EMouseInputType::RELATIVE;
 	ClampMousePos();
 	return true;
 }
