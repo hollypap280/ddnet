@@ -2953,12 +2953,10 @@ int CControls::SnapInput(int *pData)
 				}
 			}
 
-			// The custom macro-frame message controls the server tee. Normal
-			// client input remains neutral until macro_stop sends STOP.
-			const int PlayerFlags = m_aInputData[g_Config.m_ClDummy].m_PlayerFlags;
-			m_aInputData[g_Config.m_ClDummy] = {};
-			m_aInputData[g_Config.m_ClDummy].m_PlayerFlags = PlayerFlags;
-			m_aInputData[g_Config.m_ClDummy].m_TargetX = 1;
+			// The server ignores normal input while MacroPlaybackControlled is
+			// active. Keep the normal input buffer intact so a rejected macro
+			// (for example, when /practice is not enabled) never locks the player
+			// out of ordinary movement and weapon binds.
 		}
 
 		if(!MacroLiveInput)
