@@ -3040,7 +3040,7 @@ void CControls::OnRender()
 	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
 		return;
 
-		if(m_MacroRewindHeld && !m_vMacroFrames.empty() &&
+	if(m_MacroRewindHeld && !m_vMacroFrames.empty() &&
 		(m_MacroPracticeActive || m_MacroPlaybackLive) &&
 		!GameClient()->m_Chat.IsActive() && !GameClient()->m_Menus.IsActive())
 	{
