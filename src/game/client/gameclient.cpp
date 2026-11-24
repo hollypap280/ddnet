@@ -530,10 +530,10 @@ int CGameClient::OnSnapInput(int *pData, bool Dummy, bool Force)
 	{
 		return m_Controls.SnapInput(pData);
 	}
-	if(m_Controls.MacroPracticeActive())
+	if(m_Controls.MacroPracticeActive() || m_Controls.MacroPlaybackLive())
 	{
-		// Both real server connections are observers while macro practice is
-		// active. Keep the inactive tee neutral too, including dummy-hammer mode.
+		// Keep the inactive real tee neutral during recording and live playback.
+		// Never copy the active character's movement or cursor aim to the other tee.
 		CNetObj_PlayerInput ObserverInput{};
 		ObserverInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
 		ObserverInput.m_TargetX = 1;
