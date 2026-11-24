@@ -3196,7 +3196,7 @@ void CControls::RenderMacroHud()
 	Graphics()->DrawRect(BoxX + 4.0f, BoxY + 4.0f, BoxWidth - 8.0f, BoxHeight - 8.0f,
 		ColorRGBA(0.42f, 0.42f, 0.42f, 0.88f), IGraphics::CORNER_ALL, 2.0f);
 
-	const char *pClientName = "КЛИЕНТ 1";
+	const char *pClientName = "КЛИЕНТ 9";
 	const float ClientFontSize = 15.0f;
 	const float ClientWidth = TextRender()->TextWidth(ClientFontSize, pClientName);
 	TextRender()->TextColor(0.55f, 0.9f, 1.0f, 1.0f);
