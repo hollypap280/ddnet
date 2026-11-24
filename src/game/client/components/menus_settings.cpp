@@ -601,7 +601,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		const bool Recording = GameClient()->m_Controls.MacroRecording();
 		const bool Playing = GameClient()->m_Controls.MacroPlaying();
 		const bool PracticeActive = GameClient()->m_Controls.MacroPracticeActive();
-		const bool LivePlayback = GameClient()->m_Controls.MacroPlaybackLive();
+		const bool LivePlayback = Playing;
 
 		CUIRect RecordingRow;
 		MainView.HSplitTop(28.0f, &RecordingRow, &MainView);
@@ -630,8 +630,8 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			}
 		}
 		const char *pPracticeHint = Recording ? GameClient()->m_Controls.MacroRecordingName() :
-			LivePlayback ? Localize("Персонаж виден на каждом записанном тике; физика не пропускается") :
-			PracticeActive ? Localize("Локальная запись; серверный персонаж неподвижен") : Localize("Воспроизведение идёт в живом мире");
+			LivePlayback ? Localize("FP повторяет нажатия и физику в локальном мире, без серверных телепортов") :
+			PracticeActive ? Localize("Локальный FP-мир; серверный персонаж не двигается") : Localize("FP выключен");
 		Ui()->DoLabel(&Row, pPracticeHint, 11.0f, TEXTALIGN_ML);
 
 		CUIRect PlaybackRow;
@@ -800,7 +800,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		CUIRect PracticeInfo;
 		if(AddSettingRow(44.0f, PracticeInfo))
 			Ui()->DoLabel(&PracticeInfo,
-				Localize("Запись идёт в отдельной локальной копии, чтобы не двигать серверного персонажа. Сохранённый макрос запускается на настоящем персонаже — вручную включать /practice или вступать в команду не нужно. Рекорд не засчитывается."),
+				Localize("Запись и воспроизведение идут в отдельной локальной копии FP. Макрос повторяет записанные нажатия и проходит карту физикой DDNet; координаты не отправляются на сервер. После конца FP остаётся на последней позиции."),
 				11.0f, TEXTALIGN_ML);
 
 		CUIRect ShowOthersRow;
@@ -826,7 +826,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		CUIRect InfoRow;
 		if(AddSettingRow(48.0f, InfoRow))
 			Ui()->DoLabel(&InfoRow,
-				Localize("Макрос выполняет записанную физику по одному тику; второй твой тии остаётся AFK. Скорость — от 1 до 50 тиков/с. Во время воспроизведения можно вручную нажимать движение, прыжок, крюк и клавиши оружия."),
+				Localize("Повторяются движение, прыжок, крюк, прицел, стрельба и смена оружия. Второй локальный тии остаётся AFK, пока ты не переключил управление на него. Скорость — от 1 до 50 тиков/с; перемотка и стартовый тик используют ту же FP-физику."),
 				12.0f, TEXTALIGN_ML);
 
 		s_MacroSettingsScrollRegion.End();
