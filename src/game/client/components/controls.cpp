@@ -114,23 +114,27 @@ void CControls::ConKeyInputState(IConsole::IResult *pResult, void *pUserData)
 	// buffers are also consumed by the live prediction world, not only SnapInput.
 	if(pSelf->m_MacroPracticeActive)
 	{
+		bool HandledPracticeInput = false;
 		if(pState->m_IsDirectionLeft)
 		{
 			pSelf->m_MacroPracticeDirectionLeft = Stroke != 0;
 			if(Stroke && pSelf->MacroPracticeRate() < SERVER_TICK_SPEED)
 				pSelf->m_MacroPracticePendingDirectionLeft = true;
+			HandledPracticeInput = true;
 		}
 		if(pState->m_IsDirectionRight)
 		{
 			pSelf->m_MacroPracticeDirectionRight = Stroke != 0;
 			if(Stroke && pSelf->MacroPracticeRate() < SERVER_TICK_SPEED)
 				pSelf->m_MacroPracticePendingDirectionRight = true;
+			HandledPracticeInput = true;
 		}
 		if(pState->m_IsJumpAction)
 		{
 			pSelf->m_MacroPracticeInput.m_Jump = Stroke;
 			if(Stroke && pSelf->MacroPracticeRate() < SERVER_TICK_SPEED)
 				pSelf->m_MacroPracticePendingJump = true;
+			HandledPracticeInput = true;
 		}
 		if(pState->m_IsHookAction)
 		{
@@ -138,13 +142,17 @@ void CControls::ConKeyInputState(IConsole::IResult *pResult, void *pUserData)
 			pSelf->m_aManualHook[Dummy] = Stroke != 0;
 			if(Stroke && pSelf->MacroPracticeRate() < SERVER_TICK_SPEED)
 				pSelf->m_MacroPracticePendingHook = true;
+			HandledPracticeInput = true;
 		}
-		if(Stroke && pState->m_IsMouseAction && g_Config.m_ClSubTickAiming &&
-			pSelf->GameClient()->m_Binds.m_HandlingNewBind)
+		if(HandledPracticeInput)
 		{
-			pSelf->m_aMouseOnAction[Dummy] = true;
+			if(Stroke && pState->m_IsMouseAction && g_Config.m_ClSubTickAiming &&
+				pSelf->GameClient()->m_Binds.m_HandlingNewBind)
+			{
+				pSelf->m_aMouseOnAction[Dummy] = true;
+			}
+			return;
 		}
-		return;
 	}
 
 	*pState->m_apVariables[Dummy] = Stroke;
@@ -523,7 +531,7 @@ void CControls::SendMacroFrameControl(EMacroFrameMode Mode)
 		return;
 	CNetMsg_Cl_MacroFrame Msg{};
 	Msg.m_Mode = (int)Mode;
-	const int Conn = g_Config.m_ClDummy ? IClient::CONN_DUMMY : IClient::CONN_MAIN;
+	const int Conn = m_MacroPlaybackDummy ? IClient::CONN_DUMMY : IClient::CONN_MAIN;
 	Client()->SendPackMsg(Conn, &Msg, MSGFLAG_VITAL);
 }
 
@@ -578,7 +586,7 @@ void CControls::SendMacroFrame(int Index, EMacroFrameMode Mode)
 	Msg.m_DDNetTargetY = Frame.m_HasDDNetState ? DDNet.m_TargetY : Frame.m_Input.m_TargetY;
 	Msg.m_DDNetTuneZoneOverride = Frame.m_HasDDNetState ? DDNet.m_TuneZoneOverride : -1;
 
-	const int Conn = g_Config.m_ClDummy ? IClient::CONN_DUMMY : IClient::CONN_MAIN;
+	const int Conn = m_MacroPlaybackDummy ? IClient::CONN_DUMMY : IClient::CONN_MAIN;
 	Client()->SendPackMsg(Conn, &Msg, MSGFLAG_VITAL);
 }
 
@@ -1582,7 +1590,7 @@ void CControls::StopMacroRecording()
 		SendMacroFrameControl(EMacroFrameMode::STOP);
 	if(m_MacroPlaybackLive)
 	{
-		const int Dummy = g_Config.m_ClDummy;
+		const int Dummy = m_MacroPlaybackDummy;
 		m_aInputData[Dummy].m_Direction = 0;
 		m_aInputData[Dummy].m_Jump = 0;
 		m_aInputData[Dummy].m_Hook = 0;
@@ -1610,10 +1618,9 @@ void CControls::StopMacroRecording()
 	m_MacroHoldCurrentFrame = false;
 	m_MacroPracticeWaiting = false;
 
-	// Keep the isolated world and its starting snapshot after recording. This
-	// lets the saved macro play in the same practice world and makes recording
-	// rewind/re-record deterministic. A playback-owned world is still cleaned up.
-	if(m_MacroPracticeActive && StopOwnedPractice)
+	// Saving the macro is independent from the temporary recording world.
+	// Remove that world immediately after the recording is stopped.
+	if(m_MacroPracticeActive && (WasRecording || StopOwnedPractice))
 		StopMacroPractice();
 }
 
@@ -1937,64 +1944,46 @@ bool CControls::PlayMacro(const char *pName)
 		return false;
 	}
 
-	// Saved playback always uses the isolated local world. If this is the
-	// macro that was just recorded, keep its original full-world baseline so
-	// the dummy and all practice entities rewind to the actual recording start.
-	const bool OwnsPractice = !m_MacroPracticeActive;
-	if(OwnsPractice && !StartMacroPractice())
-		return false;
-
-	const bool ReuseRecordingBaseline = m_MacroPracticeBaselineValid &&
-		str_comp(m_aMacroPracticeBaselineName, pName) == 0;
-	if(!ReuseRecordingBaseline)
-	{
-		m_MacroPracticeStartWorld.CopyWorld(&m_MacroPracticeWorld);
-		m_MacroPracticeStartWorld.m_pParent = nullptr;
-		m_MacroPracticeStartWorld.m_pChild = nullptr;
-		m_MacroPracticeWorld.m_pParent = nullptr;
-		m_MacroPracticeWorld.m_pChild = nullptr;
-		m_MacroPracticeStartLocalId = m_MacroPracticeLocalId;
-		std::copy(std::begin(m_aMacroPracticeSnapshotInitialized),
-			std::end(m_aMacroPracticeSnapshotInitialized),
-			std::begin(m_aMacroPracticeStartSnapshotInitialized));
-		m_MacroPracticeBaselineValid = true;
-		str_copy(m_aMacroPracticeBaselineName, pName);
-	}
+	// Replay on the actual server-controlled tee. Server-side handling
+	// validates /practice before it accepts recorded frames.
+	const int PlaybackDummy = g_Config.m_ClDummy;
+	if(m_MacroPracticeActive)
+		StopMacroPractice();
 
 	const int StartFrameIndex = std::clamp(g_Config.m_ClMacroStartTick - 1, 0, (int)Frames.size() - 1);
+	if(std::any_of(Frames.begin(), Frames.end(), [](const SMacroFrame &Frame) { return !Frame.m_HasCoordinates; }))
+	{
+		GameClient()->Echo("Этот старый макрос не содержит координат и не поддерживает запуск в живом мире. Перезапиши его новой версией клиента.");
+		return false;
+	}
+
 	m_vMacroFrames = std::move(Frames);
 	m_MacroRecording = false;
-	m_MacroPlaybackLive = false;
-	m_MacroPlaybackOwnsPractice = OwnsPractice;
+	m_MacroRecordingPaused = false;
+	m_MacroPlaybackLive = true;
+	m_MacroPlaybackOwnsPractice = false;
 	m_MacroPlaybackOwnsDummy = false;
+	m_MacroPlaybackDummy = PlaybackDummy;
 	m_MacroPlaying = true;
 	m_MacroStartFrameIndex = StartFrameIndex;
-	// Rebuild all frames before the requested start tick in the same practice
-	// world. This restores the dummy, pickups, projectiles and switchers too.
-	m_MacroPlaybackIndex = 0;
-	m_MacroDisplayedTick = 0;
+	m_MacroPlaybackIndex = (std::size_t)StartFrameIndex + 1;
+	m_MacroDisplayedTick = StartFrameIndex + 1;
 	m_MacroCurrentFrame = {};
 	m_MacroHasCurrentFrame = false;
 	m_MacroHoldCurrentFrame = false;
 	m_MacroPlaybackPaused = false;
-	m_MacroRecordingPaused = false;
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeAccumulator = 0.0;
 	m_MacroPracticeLastTime = time_get();
-	m_MacroPlaybackLastTick = -1;
-	if(!RebuildMacroWorldToPosition(StartFrameIndex))
-	{
-		m_MacroPlaying = false;
-		m_MacroPlaybackOwnsPractice = false;
-		GameClient()->Echo("Не удалось восстановить начальное состояние мира для макроса.");
-		return false;
-	}
-	m_MacroPlaybackIndex = (std::size_t)StartFrameIndex;
-	m_MacroDisplayedTick = StartFrameIndex + 1;
+	m_MacroPlaybackLastTick = Client()->PredGameTick(PlaybackDummy);
+
+	// Apply the requested first frame immediately and let the server perform
+	// one real character tick. AttackTick and weapon changes are server-visible.
+	SendMacroFrame(StartFrameIndex, EMacroFrameMode::STEP);
 
 	char aStartMessage[192];
-	str_format(aStartMessage, sizeof(aStartMessage), "Макрос «%s» запущен в отдельном тренировочном мире. Скорость: %d тиков/с. /practice не нужен.",
-		pName, SERVER_TICK_SPEED);
+	str_format(aStartMessage, sizeof(aStartMessage), "Макрос «%s» запущен на настоящем персонаже. Требуется /practice в команде. Старт: тик %d, скорость: %d тиков/с.",
+		pName, StartFrameIndex + 1, MacroPracticeRate());
 	GameClient()->Echo(aStartMessage);
 	return true;
 }
@@ -2120,7 +2109,7 @@ void CControls::ConMacroGoto(IConsole::IResult *pResult, void *pUserData)
 
 void CControls::ToggleMacroPause()
 {
-	if(!m_MacroPracticeActive)
+	if(!m_MacroPracticeActive && !m_MacroPlaybackLive)
 		return;
 
 	if(m_MacroRecording)
@@ -2137,6 +2126,12 @@ void CControls::ToggleMacroPause()
 
 	m_MacroPlaybackPaused = !m_MacroPlaybackPaused;
 	m_MacroPracticeAccumulator = 0.0;
+	if(m_MacroPlaybackLive)
+	{
+		m_MacroPlaybackLastTick = Client()->PredGameTick(m_MacroPlaybackDummy);
+		if(m_MacroPlaybackPaused)
+			SendMacroFrameControl(EMacroFrameMode::PAUSE);
+	}
 	if(m_MacroPlaybackPaused)
 	{
 		GameClient()->Echo("Макрос на паузе.");
@@ -2272,7 +2267,7 @@ bool CControls::RebuildMacroWorldToPosition(int Position)
 bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 {
 	(void)TeleportLive;
-	if(!m_MacroPracticeActive || m_vMacroFrames.empty())
+	if((!m_MacroPracticeActive && !m_MacroPlaybackLive) || m_vMacroFrames.empty())
 		return false;
 
 	if(m_MacroRecording)
@@ -2315,7 +2310,7 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 		m_MacroPlaybackIndex = (std::size_t)Target + 1;
 		m_MacroDisplayedTick = Target + 1;
 		m_MacroHasCurrentFrame = false;
-		m_MacroPlaybackLastTick = Client()->PredGameTick(g_Config.m_ClDummy);
+		m_MacroPlaybackLastTick = Client()->PredGameTick(m_MacroPlaybackDummy);
 		m_MacroPracticeAccumulator = 0.0;
 		m_MacroPracticeWaiting = false;
 	}
@@ -2343,6 +2338,23 @@ bool CControls::OnInput(const IInput::CEvent &)
 	// explicit bindable commands so movement binds keep working in practice.
 	return false;
 }
+bool CControls::SeekMacroBy(int Offset)
+{
+	return SeekMacro(Offset, true, true);
+}
+
+bool CControls::SeekMacroToTick(int TargetTick)
+{
+	if(TargetTick < 1 || TargetTick > (int)m_vMacroFrames.size())
+	{
+		GameClient()->Echo("Укажи номер тика от 1 до длины макроса.");
+		return false;
+	}
+	const int CurrentTick = m_MacroRecording ? (int)m_vMacroFrames.size() :
+		(m_MacroDisplayedTick > 0 ? m_MacroDisplayedTick : (int)m_MacroPlaybackIndex);
+	return SeekMacro(TargetTick - CurrentTick, true, true);
+}
+
 void CControls::OnMessage(int Msg, void *pRawMsg)
 {
 	if(Msg == NETMSGTYPE_SV_WEAPONPICKUP)
@@ -2907,7 +2919,7 @@ int CControls::SnapInput(int *pData)
 			(m_aInputData[g_Config.m_ClDummy].m_PlayerFlags & PLAYERFLAG_PLAYING))
 		{
 			MacroLiveInput = true;
-			const int PredTick = Client()->PredGameTick(g_Config.m_ClDummy);
+			const int PredTick = Client()->PredGameTick(m_MacroPlaybackDummy);
 			if(!m_MacroPlaybackPaused)
 			{
 				if(m_MacroPlaybackLastTick < 0)
