@@ -2075,6 +2075,7 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroPlaybackOwnsPractice = false;
 	m_MacroPlaybackOwnsDummy = false;
 	m_MacroPlaybackDummy = PlaybackDummy;
+	g_Config.m_ClDummy = PlaybackDummy;
 	m_MacroPlaying = true;
 	m_MacroStartFrameIndex = StartFrameIndex;
 	m_MacroPlaybackIndex = (std::size_t)StartFrameIndex + 1;
