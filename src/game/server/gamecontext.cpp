@@ -2856,9 +2856,16 @@ void CGameContext::OnMacroFrameNetMessage(const CNetMsg_Cl_MacroFrame *pMsg, int
 	if(Mode == 3) // STOP: return control to the normal input stream.
 	{
 		pPlayer->SetMacroPlaybackWarningSent(false);
-		pChr->SetMacroPlaybackPauseAfterTick(false);
+		pChr->SetMacroPlaybackTickPending(false);
 		if(pChr->IsPaused())
 			pChr->Pause(false);
+
+		// Release held macro inputs before normal client input takes over again.
+		CNetObj_PlayerInput IdleInput{};
+		IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+		IdleInput.m_TargetX = 1;
+		pChr->OnPredictedInput(&IdleInput);
+		pChr->OnDirectInput(&IdleInput);
 		pChr->SetMacroPlaybackControlled(false);
 		return;
 	}
@@ -2870,29 +2877,19 @@ void CGameContext::OnMacroFrameNetMessage(const CNetMsg_Cl_MacroFrame *pMsg, int
 	// No manual team join or /practice vote is required.
 	pPlayer->SetMacroPlaybackWarningSent(false);
 	pChr->SetMacroPlaybackControlled(true);
-	if(Mode == 0) // PAUSE
+	if(Mode == 0) // PAUSE: keep the visible tee in place.
 	{
-		pChr->SetMacroPlaybackPauseAfterTick(false);
-		if(!pChr->IsPaused())
-			pChr->Pause(true);
+		// Do not cancel a frame already queued for the current server tick.
 		return;
 	}
-	if(Mode == 2) // RESTORE_PAUSED
+	if(Mode == 2) // RESTORE_PAUSED: restore a frame without advancing physics.
 	{
-		pChr->SetMacroPlaybackPauseAfterTick(false);
-		if(!pChr->IsPaused())
-			pChr->Pause(true);
+		pChr->SetMacroPlaybackTickPending(false);
 	}
-	else // STEP: resume, restore the pre-state and execute exactly one server tick.
+	else // STEP: restore the pre-state and queue one visible server physics tick.
 	{
 		if(pChr->IsPaused())
 			pChr->Pause(false);
-		else
-		{
-			// Establish the same paused boundary as all later macro frames.
-			pChr->Pause(true);
-			pChr->Pause(false);
-		}
 	}
 
 	const int TickOffset = Server()->Tick() - pMsg->m_RecordedTick;
@@ -2958,9 +2955,10 @@ void CGameContext::OnMacroFrameNetMessage(const CNetMsg_Cl_MacroFrame *pMsg, int
 		Input.m_WantedWeapon = pMsg->m_InputWantedWeapon;
 		Input.m_NextWeapon = pMsg->m_InputNextWeapon;
 		Input.m_PrevWeapon = pMsg->m_InputPrevWeapon;
-		pChr->SetMacroPlaybackPauseAfterTick(true);
-		pChr->OnDirectInput(&Input);
+		pChr->SetMacroPlaybackTickPending(true);
+		// HandleWeaponSwitch in OnDirectInput reads m_Input, so update it first.
 		pChr->OnPredictedInput(&Input);
+		pChr->OnDirectInput(&Input);
 	}
 }
 

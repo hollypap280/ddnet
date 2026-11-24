@@ -837,6 +837,11 @@ void CCharacter::PreTick()
 
 void CCharacter::Tick()
 {
+	// Keep macro-controlled tees in the world so snapshots show every frame.
+	// They advance physics only when the next recorded frame has been queued.
+	if(m_MacroPlaybackControlled && !m_MacroPlaybackTickPending)
+		return;
+
 	if(g_Config.m_SvNoWeakHook)
 	{
 		if(m_Paused)
@@ -873,18 +878,14 @@ void CCharacter::Tick()
 
 	m_PrevPos = m_Core.m_Pos;
 
-	// A macro frame advances exactly one authoritative server tick, then
-	// the tee is removed from the live world until the next recorded frame.
-	if(m_MacroPlaybackPauseAfterTick)
-	{
-		m_MacroPlaybackPauseAfterTick = false;
-		if(m_MacroPlaybackControlled)
-			Pause(true);
-	}
 }
 
 void CCharacter::TickDeferred()
 {
+	// Keep the last rendered position stable between recorded physics ticks.
+	if(m_MacroPlaybackControlled && !m_MacroPlaybackTickPending)
+		return;
+
 	// advance the dummy
 	{
 		CWorldCore TempWorld;
@@ -997,6 +998,10 @@ void CCharacter::TickDeferred()
 			m_Core.m_Reset = false;
 		}
 	}
+
+	// TickDeferred completes the one queued macro physics step.
+	if(m_MacroPlaybackControlled)
+		m_MacroPlaybackTickPending = false;
 }
 
 void CCharacter::TickPaused()
@@ -2521,7 +2526,7 @@ void CCharacter::DDRaceInit()
 {
 	m_Paused = false;
 	m_MacroPlaybackControlled = false;
-	m_MacroPlaybackPauseAfterTick = false;
+	m_MacroPlaybackTickPending = false;
 	m_DDRaceState = ERaceState::NONE;
 	m_PrevPos = m_Pos;
 	std::fill(std::begin(m_aSetSavePos), std::end(m_aSetSavePos), false);

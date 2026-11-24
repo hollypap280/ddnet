@@ -630,7 +630,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			}
 		}
 		const char *pPracticeHint = Recording ? GameClient()->m_Controls.MacroRecordingName() :
-			LivePlayback ? Localize("Настоящий персонаж управляется макросом; практика включена автоматически") :
+			LivePlayback ? Localize("Персонаж виден на каждом записанном тике; физика не пропускается") :
 			PracticeActive ? Localize("Локальная запись; серверный персонаж неподвижен") : Localize("Воспроизведение идёт в живом мире");
 		Ui()->DoLabel(&Row, pPracticeHint, 11.0f, TEXTALIGN_ML);
 
@@ -819,14 +819,14 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		CUIRect StepHint;
 		if(AddSettingRow(42.0f, StepHint))
 			Ui()->DoLabel(&StepHint,
-				Localize("Макрос всегда начинается с первого тика. Клавиши остановки на заданном тике и перехода к тику настраиваются во вкладке «Кнопки»."),
+				Localize("Стартовый тик задаётся во вкладке «Кнопки». Пауза оставляет персонажа видимым на месте; перемотка назад восстанавливает выбранный кадр."),
 				12.0f, TEXTALIGN_ML);
 
 		AddSection("КОМАНДЫ В ТРЕНИРОВКЕ");
 		CUIRect InfoRow;
 		if(AddSettingRow(48.0f, InfoRow))
 			Ui()->DoLabel(&InfoRow,
-				Localize("Во время записи используются обычные бинды DDNet. Макрос выполняет действия на настоящем персонаже; вручную включать /practice или вступать в команду не нужно. Скорость задаётся ползунком (до 50 тиков/с); оружие переключается назначенными клавишами."),
+				Localize("Макрос выполняет записанную физику по одному тику; второй твой тии остаётся AFK. Скорость — от 1 до 50 тиков/с. Во время воспроизведения можно вручную нажимать движение, прыжок, крюк и клавиши оружия."),
 				12.0f, TEXTALIGN_ML);
 
 		s_MacroSettingsScrollRegion.End();

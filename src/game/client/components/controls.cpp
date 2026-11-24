@@ -203,6 +203,8 @@ void CControls::ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData)
 	if(((*pVariable) & 1) != Stroke)
 	{
 		++(*pVariable);
+		if(pSelf->m_MacroPlaybackLive && pState->m_IsFireAction)
+			++pSelf->m_MacroLiveFireOffset;
 		if(Stroke && pState->m_IsMouseAction && g_Config.m_ClSubTickAiming &&
 			pSelf->GameClient()->m_Binds.m_HandlingNewBind)
 		{
@@ -345,6 +347,23 @@ void CControls::ConKeyInputNextPrevWeapon(IConsole::IResult *pResult, void *pUse
 	CControls *pSelf = pSet->m_pControls;
 	const int Stroke = pResult->GetInteger(0);
 	const int Dummy = g_Config.m_ClDummy;
+
+	if(pSelf->m_MacroPlaybackLive)
+	{
+		int *pMacroOffset = nullptr;
+		if(pSet->m_apVariables[0] == &pSelf->m_aInputData[0].m_NextWeapon)
+			pMacroOffset = &pSelf->m_MacroLiveNextWeaponOffset;
+		else if(pSet->m_apVariables[0] == &pSelf->m_aInputData[0].m_PrevWeapon)
+			pMacroOffset = &pSelf->m_MacroLivePrevWeaponOffset;
+		int *pVariable = pSet->m_apVariables[Dummy];
+		if(pMacroOffset && ((*pVariable & 1) != Stroke))
+		{
+			++(*pVariable);
+			*pVariable &= INPUT_STATE_MASK;
+			++(*pMacroOffset);
+		}
+		return;
+	}
 
 	if(pSelf->m_MacroPracticeActive)
 	{
@@ -585,6 +604,20 @@ void CControls::SendMacroFrame(int Index, EMacroFrameMode Mode)
 	Msg.m_InputJump = Frame.m_Input.m_Jump;
 	Msg.m_InputFire = (Frame.m_Input.m_Fire + m_MacroLiveFireOffset) & INPUT_STATE_MASK;
 	Msg.m_InputHook = Frame.m_Input.m_Hook;
+
+	// Manual binds can override the matching recorded actions during playback.
+	if(m_aInputDirectionLeft[m_MacroPlaybackDummy] || m_aInputDirectionRight[m_MacroPlaybackDummy])
+		Msg.m_InputDirection = m_aInputDirectionLeft[m_MacroPlaybackDummy] && !m_aInputDirectionRight[m_MacroPlaybackDummy] ? -1 :
+			(!m_aInputDirectionLeft[m_MacroPlaybackDummy] && m_aInputDirectionRight[m_MacroPlaybackDummy] ? 1 : 0);
+	if(m_aInputData[m_MacroPlaybackDummy].m_Jump)
+		Msg.m_InputJump = m_aInputData[m_MacroPlaybackDummy].m_Jump;
+	if(m_aInputData[m_MacroPlaybackDummy].m_Hook)
+		Msg.m_InputHook = m_aInputData[m_MacroPlaybackDummy].m_Hook;
+	if(m_aMousePos[m_MacroPlaybackDummy] != vec2(0.0f, 0.0f))
+	{
+		Msg.m_InputTargetX = (int)m_aMousePos[m_MacroPlaybackDummy].x;
+		Msg.m_InputTargetY = (int)m_aMousePos[m_MacroPlaybackDummy].y;
+	}
 	Msg.m_InputWantedWeapon = m_MacroPlaybackWeaponOverride > 0 ?
 		m_MacroPlaybackWeaponOverride : Frame.m_Input.m_WantedWeapon;
 	Msg.m_InputNextWeapon = (Frame.m_Input.m_NextWeapon + m_MacroLiveNextWeaponOffset) & INPUT_STATE_MASK;
@@ -1630,6 +1663,9 @@ void CControls::StopMacroRecording()
 	m_MacroStopAtTickArmed = false;
 	m_MacroPlaybackSeekTargetIndex = -1;
 	m_MacroPlaybackWeaponOverride = -1;
+	m_MacroLiveFireOffset = 0;
+	m_MacroLiveNextWeaponOffset = 0;
+	m_MacroLivePrevWeaponOffset = 0;
 	m_MacroPlaybackOwnsPractice = false;
 	m_MacroPlaybackLastTick = -1;
 	m_MacroRewindHeld = false;
@@ -1983,7 +2019,7 @@ bool CControls::PlayMacro(const char *pName)
 	if(m_MacroPracticeActive)
 		StopMacroPractice();
 
-	const int StartFrameIndex = 0;
+	const int StartFrameIndex = std::clamp(g_Config.m_ClMacroGotoTick - 1, 0, (int)Frames.size() - 1);
 	if(std::any_of(Frames.begin(), Frames.end(), [](const SMacroFrame &Frame) { return !Frame.m_HasCoordinates; }))
 	{
 		GameClient()->Echo("Этот старый макрос не содержит координат и не поддерживает запуск в живом мире. Перезапиши его новой версией клиента.");
@@ -2009,6 +2045,9 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroStopAtTickArmed = false;
 	m_MacroPlaybackSeekTargetIndex = -1;
 	m_MacroPlaybackWeaponOverride = -1;
+	m_MacroLiveFireOffset = 0;
+	m_MacroLiveNextWeaponOffset = 0;
+	m_MacroLivePrevWeaponOffset = 0;
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeAccumulator = 0.0;
 	m_MacroPracticeLastTime = time_get();
@@ -2404,13 +2443,11 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 
 	if(m_MacroPlaybackLive)
 	{
-		SendMacroFrame(Target, m_MacroPlaybackPaused ? EMacroFrameMode::RESTORE_PAUSED : EMacroFrameMode::STEP);
-		m_MacroPlaybackIndex = (std::size_t)Target + 1;
-		m_MacroDisplayedTick = Target + 1;
-		m_MacroHasCurrentFrame = false;
-		m_MacroPlaybackLastTick = Client()->GameTick(m_MacroPlaybackDummy);
+		// Queue seeks so held rewind cannot overwrite multiple frames before the
+		// server has processed the previous seek.
+		m_MacroPlaybackSeekTargetIndex = Target;
 		m_MacroPracticeAccumulator = 0.0;
-		m_MacroPracticeWaiting = false;
+		m_MacroPracticeWaiting = true;
 	}
 	else
 	{
