@@ -44,6 +44,8 @@ public:
 	int GetTeam() const { return m_Team; }
 	int GetCid() const { return m_ClientId; }
 	uint32_t GetUniqueCid() const { return m_UniqueClientId; }
+	bool MacroPlaybackWarningSent() const { return m_MacroPlaybackWarningSent; }
+	void SetMacroPlaybackWarningSent(bool Sent) { m_MacroPlaybackWarningSent = Sent; }
 	int GetClientVersion() const;
 	bool SetTimerType(int TimerType);
 
