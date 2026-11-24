@@ -2946,6 +2946,8 @@ void CGameContext::OnMacroFrameNetMessage(const CNetMsg_Cl_MacroFrame *pMsg, int
 		pChr->Core()->ReadDDNet(&DDNetCharacter);
 		pChr->m_TeleCheckpoint = pMsg->m_DDNetTeleCheckpoint;
 		pChr->m_StrongWeakId = pMsg->m_DDNetStrongWeakId;
+		for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+			pChr->SetWeaponAmmo(Weapon, pMsg->m_aWeaponAmmo[Weapon]);
 	}
 
 	pChr->m_Pos = pChr->Core()->m_Pos;
