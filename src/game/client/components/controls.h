@@ -221,6 +221,7 @@ private:
 	bool m_MacroPlaying = false;
 	bool m_MacroPlaybackLive = false;
 	bool m_MacroPlaybackPaused = false;
+	bool m_MacroStopAtTickArmed = false;
 	int m_MacroRecordingRate = 50;
 	int m_MacroPlaybackRate = 50;
 	int m_MacroPlaybackDummy = 0;
@@ -306,6 +307,8 @@ private:
 	static void ConMacroRewind(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroSeek(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroGoto(IConsole::IResult *pResult, void *pUserData);
+	static void ConMacroStopAtTick(IConsole::IResult *pResult, void *pUserData);
+	static void ConMacroGotoConfigured(IConsole::IResult *pResult, void *pUserData);
 	enum class EMacroPracticeDummyAction
 	{
 		LEFT,
