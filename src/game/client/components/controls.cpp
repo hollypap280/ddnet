@@ -780,14 +780,22 @@ bool CControls::StartMacroPractice()
 	m_MacroPracticeNextWeaponPressed = false;
 	m_MacroPracticePrevWeaponPressed = false;
 
-	// Keep the real/predicted tee idle while keys are consumed by the private world.
-	m_aInputData[Dummy] = {};
-	m_aInputData[Dummy].m_PlayerFlags = PLAYERFLAG_PLAYING;
-	m_aInputData[Dummy].m_TargetX = 1;
-	m_aLastData[Dummy] = m_aInputData[Dummy];
-	m_aInputDirectionLeft[Dummy] = 0;
-	m_aInputDirectionRight[Dummy] = 0;
-	m_aManualHook[Dummy] = false;
+	// Both real server connections and both client-side prediction inputs
+	// stay idle for the entire practice session. Every gameplay bind writes
+	// only to m_MacroPracticeInput until practice is stopped.
+	for(int InputDummy = 0; InputDummy < NUM_DUMMIES; ++InputDummy)
+	{
+		m_aInputData[InputDummy] = {};
+		m_aInputData[InputDummy].m_PlayerFlags = PLAYERFLAG_PLAYING;
+		m_aInputData[InputDummy].m_TargetX = 1;
+		m_aLastData[InputDummy] = m_aInputData[InputDummy];
+		m_aInputDirectionLeft[InputDummy] = 0;
+		m_aInputDirectionRight[InputDummy] = 0;
+		m_aManualHook[InputDummy] = false;
+	}
+	GameClient()->m_DummyInput = {};
+	GameClient()->m_DummyInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+	GameClient()->m_DummyInput.m_TargetX = 1;
 
 	m_MacroPracticeDummyInput = {};
 	m_MacroPracticeDummyInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
