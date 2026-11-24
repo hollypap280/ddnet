@@ -769,7 +769,6 @@ bool CControls::StartMacroPractice()
 	m_MacroPracticePendingNextWeaponTransitions = 0;
 	m_MacroPracticePendingPrevWeaponTransitions = 0;
 	m_MacroPracticePendingWantedWeapon = 0;
-	const int Dummy = g_Config.m_ClDummy;
 	m_MacroPracticeFireCounter = 0;
 	m_MacroPracticeFirePressed = false;
 	m_MacroPracticeInput = {};
