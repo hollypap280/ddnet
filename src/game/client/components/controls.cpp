@@ -2873,6 +2873,53 @@ int CControls::SnapInput(int *pData)
 
 	m_aLastData[g_Config.m_ClDummy].m_PlayerFlags = m_aInputData[g_Config.m_ClDummy].m_PlayerFlags;
 
+	// Saved macros run on the real server-controlled tee. The first frame
+	// waits for the recorded starting position; after that, one frame is
+	// selected per predicted game tick and sent through the regular input path.
+	bool MacroLiveInput = false;
+	if(m_MacroPlaybackLive && m_MacroPlaying && Client()->State() == IClient::STATE_ONLINE)
+	{
+		MacroLiveInput = true;
+		const int PredTick = Client()->PredGameTick(m_MacroPlaybackDummy);
+		if(!m_MacroPlaybackPaused)
+		{
+			if(m_MacroPlaybackLastTick < 0)
+				m_MacroPlaybackLastTick = PredTick;
+			const int TickDelta = std::max(0, PredTick - m_MacroPlaybackLastTick);
+			m_MacroPlaybackLastTick = PredTick;
+			m_MacroPracticeAccumulator +=
+				(double)TickDelta * (double)m_MacroPlaybackRate / (double)SERVER_TICK_SPEED;
+
+			// At most one frame is sent per input update. Backlog is drained
+			// over later updates so two frames are never collapsed into one server tick.
+			if(m_MacroPracticeAccumulator >= 1.0)
+			{
+				m_MacroPracticeAccumulator -= 1.0;
+				if(m_MacroPlaybackIndex >= m_vMacroFrames.size())
+				{
+					if(g_Config.m_ClMacroLoop && !m_vMacroFrames.empty())
+						m_MacroPlaybackIndex = (std::size_t)std::clamp(m_MacroStartFrameIndex, 0, (int)m_vMacroFrames.size() - 1);
+					else
+						StopMacroRecording();
+				}
+
+				if(m_MacroPlaying && m_MacroPlaybackLive && m_MacroPlaybackIndex < m_vMacroFrames.size())
+				{
+					const int FrameIndex = (int)m_MacroPlaybackIndex;
+					SendMacroFrame(FrameIndex, EMacroFrameMode::STEP);
+					++m_MacroPlaybackIndex;
+					m_MacroDisplayedTick = FrameIndex + 1;
+				}
+			}
+		}
+
+		// The server ignores normal input while MacroPlaybackControlled is
+		// active. Keep the normal input buffer intact so a rejected macro
+		// (for example, when /practice is not enabled) never locks the player
+		// out of ordinary movement and weapon binds.
+	}
+
+
 	// we freeze the input if chat or menu is activated
 	if(!(m_aInputData[g_Config.m_ClDummy].m_PlayerFlags & PLAYERFLAG_PLAYING))
 	{
@@ -2914,51 +2961,6 @@ int CControls::SnapInput(int *pData)
 		if(!m_aInputDirectionLeft[g_Config.m_ClDummy] && m_aInputDirectionRight[g_Config.m_ClDummy])
 			m_aInputData[g_Config.m_ClDummy].m_Direction = 1;
 
-		// Saved macros run on the real server-controlled tee. The first frame
-		// waits for the recorded starting position; after that, one frame is
-		// selected per predicted game tick and sent through the regular input path.
-		bool MacroLiveInput = false;
-		if(m_MacroPlaybackLive && m_MacroPlaying && Client()->State() == IClient::STATE_ONLINE)
-		{
-			MacroLiveInput = true;
-			const int PredTick = Client()->PredGameTick(m_MacroPlaybackDummy);
-			if(!m_MacroPlaybackPaused)
-			{
-				if(m_MacroPlaybackLastTick < 0)
-					m_MacroPlaybackLastTick = PredTick;
-				const int TickDelta = std::max(0, PredTick - m_MacroPlaybackLastTick);
-				m_MacroPlaybackLastTick = PredTick;
-				m_MacroPracticeAccumulator +=
-					(double)TickDelta * (double)m_MacroPlaybackRate / (double)SERVER_TICK_SPEED;
-
-				// At most one frame is sent per input update. Backlog is drained
-				// over later updates so two frames are never collapsed into one server tick.
-				if(m_MacroPracticeAccumulator >= 1.0)
-				{
-					m_MacroPracticeAccumulator -= 1.0;
-					if(m_MacroPlaybackIndex >= m_vMacroFrames.size())
-					{
-						if(g_Config.m_ClMacroLoop && !m_vMacroFrames.empty())
-							m_MacroPlaybackIndex = (std::size_t)std::clamp(m_MacroStartFrameIndex, 0, (int)m_vMacroFrames.size() - 1);
-						else
-							StopMacroRecording();
-					}
-
-					if(m_MacroPlaying && m_MacroPlaybackLive && m_MacroPlaybackIndex < m_vMacroFrames.size())
-					{
-						const int FrameIndex = (int)m_MacroPlaybackIndex;
-						SendMacroFrame(FrameIndex, EMacroFrameMode::STEP);
-						++m_MacroPlaybackIndex;
-						m_MacroDisplayedTick = FrameIndex + 1;
-					}
-				}
-			}
-
-			// The server ignores normal input while MacroPlaybackControlled is
-			// active. Keep the normal input buffer intact so a rejected macro
-			// (for example, when /practice is not enabled) never locks the player
-			// out of ordinary movement and weapon binds.
-		}
 
 		if(!MacroLiveInput)
 		{
