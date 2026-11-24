@@ -2855,6 +2855,7 @@ void CGameContext::OnMacroFrameNetMessage(const CNetMsg_Cl_MacroFrame *pMsg, int
 	const int Mode = pMsg->m_Mode;
 	if(Mode == 3) // STOP: return control to the normal input stream.
 	{
+		pPlayer->m_MacroPlaybackWarningSent = false;
 		pChr->SetMacroPlaybackPauseAfterTick(false);
 		if(pChr->IsPaused())
 			pChr->Pause(false);
@@ -2865,7 +2866,11 @@ void CGameContext::OnMacroFrameNetMessage(const CNetMsg_Cl_MacroFrame *pMsg, int
 	CGameTeams &Teams = m_pController->Teams();
 	if(!Teams.IsPractice(GetDDRaceTeam(ClientId)))
 	{
-		SendChatTarget(ClientId, "Enable /practice in your team before playing a macro in the live world.");
+		if(!pPlayer->m_MacroPlaybackWarningSent)
+		{
+			SendChatTarget(ClientId, "Enable /practice in your team before playing a macro in the live world.");
+			pPlayer->m_MacroPlaybackWarningSent = true;
+		}
 		pChr->SetMacroPlaybackPauseAfterTick(false);
 		if(pChr->IsPaused())
 			pChr->Pause(false);
@@ -2873,6 +2878,7 @@ void CGameContext::OnMacroFrameNetMessage(const CNetMsg_Cl_MacroFrame *pMsg, int
 		return;
 	}
 
+	pPlayer->m_MacroPlaybackWarningSent = false;
 	pChr->SetMacroPlaybackControlled(true);
 	if(Mode == 0) // PAUSE
 	{
