@@ -1728,7 +1728,7 @@ bool CControls::PlayMacro(const char *pName)
 	const int64_t HeaderBytes = (int64_t)sizeof(Magic) + sizeof(Version) + sizeof(Count) +
 		(Version >= 3 ? (int64_t)sizeof(aRecordedMapName) : 0) +
 		(Version >= 9 ? (int64_t)sizeof(RecordedRate) : 0);
-		const int64_t RemainingBytes = Valid && FileLength >= HeaderBytes ? FileLength - HeaderBytes : 0;
+	const int64_t RemainingBytes = Valid && FileLength >= HeaderBytes ? FileLength - HeaderBytes : 0;
 	if(Valid && FileLength < HeaderBytes)
 		Valid = false;
 	const int64_t CurrentFrameBytes = (int64_t)Count * sizeof(SMacroFrame);
