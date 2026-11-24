@@ -58,7 +58,14 @@ void CControls::OnReset()
 	m_MacroPlaybackLastTick = -1;
 	m_MacroStopAtTickArmed = false;
 	m_MacroPlaybackSeekTargetIndex = -1;
-	m_MacroPlaybackWeaponOverride = -1;
+	std::fill(std::begin(m_aMacroPlaybackWeaponOverride), std::end(m_aMacroPlaybackWeaponOverride), -1);
+	std::fill(std::begin(m_aMacroLiveFireOffset), std::end(m_aMacroLiveFireOffset), 0);
+	std::fill(std::begin(m_aMacroLiveNextWeaponOffset), std::end(m_aMacroLiveNextWeaponOffset), 0);
+	std::fill(std::begin(m_aMacroLivePrevWeaponOffset), std::end(m_aMacroLivePrevWeaponOffset), 0);
+	std::fill(std::begin(m_aMacroManualDirectionActive), std::end(m_aMacroManualDirectionActive), false);
+	std::fill(std::begin(m_aMacroManualJumpActive), std::end(m_aMacroManualJumpActive), false);
+	std::fill(std::begin(m_aMacroManualHookActive), std::end(m_aMacroManualHookActive), false);
+	std::fill(std::begin(m_aMacroManualAimActive), std::end(m_aMacroManualAimActive), false);
 	m_MacroPlaybackIndex = 0;
 	m_MacroCurrentFrame = {};
 	m_MacroHasCurrentFrame = false;
@@ -118,11 +125,11 @@ void CControls::ConKeyInputState(IConsole::IResult *pResult, void *pUserData)
 	if(pSelf->m_MacroPlaybackLive)
 	{
 		if(pState->m_IsDirectionLeft || pState->m_IsDirectionRight)
-			pSelf->m_MacroManualDirectionActive = true;
+			pSelf->m_aMacroManualDirectionActive[Dummy] = true;
 		if(pState->m_IsJumpAction)
-			pSelf->m_MacroManualJumpActive = true;
+			pSelf->m_aMacroManualJumpActive[Dummy] = true;
 		if(pState->m_IsHookAction)
-			pSelf->m_MacroManualHookActive = true;
+			pSelf->m_aMacroManualHookActive[Dummy] = true;
 	}
 
 	// Practice controls must never enter the real DDNet input buffers. Those
@@ -216,7 +223,7 @@ void CControls::ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData)
 	{
 		++(*pVariable);
 		if(pSelf->m_MacroPlaybackLive && pState->m_IsFireAction)
-			++pSelf->m_MacroLiveFireOffset;
+			++pSelf->m_aMacroLiveFireOffset[Dummy];
 		if(Stroke && pState->m_IsMouseAction && g_Config.m_ClSubTickAiming &&
 			pSelf->GameClient()->m_Binds.m_HandlingNewBind)
 		{
@@ -330,7 +337,7 @@ void CControls::ConKeyInputSet(IConsole::IResult *pResult, void *pUserData)
 	if(pSelf->m_MacroPlaybackLive &&
 		pSet->m_apVariables[0] == &pSelf->m_aInputData[0].m_WantedWeapon)
 	{
-		pSelf->m_MacroPlaybackWeaponOverride = pSet->m_Value;
+		pSelf->m_aMacroPlaybackWeaponOverride[pSelf->m_MacroPlaybackDummy] = pSet->m_Value;
 		if(pSelf->m_MacroPlaybackPaused && pSelf->m_MacroDisplayedTick > 0)
 			pSelf->m_MacroPlaybackSeekTargetIndex = pSelf->m_MacroDisplayedTick - 1;
 		return;
@@ -364,9 +371,9 @@ void CControls::ConKeyInputNextPrevWeapon(IConsole::IResult *pResult, void *pUse
 	{
 		int *pMacroOffset = nullptr;
 		if(pSet->m_apVariables[0] == &pSelf->m_aInputData[0].m_NextWeapon)
-			pMacroOffset = &pSelf->m_MacroLiveNextWeaponOffset;
+			pMacroOffset = &pSelf->m_aMacroLiveNextWeaponOffset[Dummy];
 		else if(pSet->m_apVariables[0] == &pSelf->m_aInputData[0].m_PrevWeapon)
-			pMacroOffset = &pSelf->m_MacroLivePrevWeaponOffset;
+			pMacroOffset = &pSelf->m_aMacroLivePrevWeaponOffset[Dummy];
 		int *pVariable = pSet->m_apVariables[Dummy];
 		if(pMacroOffset && ((*pVariable & 1) != Stroke))
 		{
@@ -578,6 +585,14 @@ void CControls::SendMacroFrameControl(EMacroFrameMode Mode)
 	Msg.m_Mode = (int)Mode;
 	const int Conn = m_MacroPlaybackDummy ? IClient::CONN_DUMMY : IClient::CONN_MAIN;
 	Client()->SendPackMsg(Conn, &Msg, MSGFLAG_VITAL);
+
+	if(PreviousDummy >= 0)
+	{
+		CNetMsg_Cl_MacroFrame StopMsg{};
+		StopMsg.m_Mode = (int)EMacroFrameMode::STOP;
+		const int PreviousConn = PreviousDummy ? IClient::CONN_DUMMY : IClient::CONN_MAIN;
+		Client()->SendPackMsg(PreviousConn, &StopMsg, MSGFLAG_VITAL);
+	}
 }
 
 void CControls::SendMacroFrame(int Index, EMacroFrameMode Mode)
@@ -586,9 +601,10 @@ void CControls::SendMacroFrame(int Index, EMacroFrameMode Mode)
 		return;
 
 	const SMacroFrame &Frame = m_vMacroFrames[Index];
+	int PreviousDummy = -1;
 
-	// Recordings may switch between the main tee and the local dummy.
-	// Stop controlling the previous connection before handing the macro to the other one.
+	// A recording can switch between the main tee and dummy. Queue the new
+	// connection first, then release the old one so practice has no gap.
 	if(Frame.m_ClientId >= 0)
 	{
 		int RequestedDummy = -1;
@@ -599,7 +615,7 @@ void CControls::SendMacroFrame(int Index, EMacroFrameMode Mode)
 
 		if(RequestedDummy >= 0 && RequestedDummy != m_MacroPlaybackDummy)
 		{
-			SendMacroFrameControl(EMacroFrameMode::STOP);
+			PreviousDummy = m_MacroPlaybackDummy;
 			m_MacroPlaybackDummy = RequestedDummy;
 			g_Config.m_ClDummy = RequestedDummy;
 			m_MacroPlaybackLastTick = Client()->GameTick(m_MacroPlaybackDummy);
@@ -626,34 +642,34 @@ void CControls::SendMacroFrame(int Index, EMacroFrameMode Mode)
 	Msg.m_HookDy = Core.m_HookDy;
 	Msg.m_FreezeTime = Frame.m_PreFreezeTime;
 	Msg.m_FrozenLastTick = Frame.m_PreFrozenLastTick != 0;
-	Msg.m_Weapon = m_MacroPlaybackWeaponOverride > 0 ?
-		m_MacroPlaybackWeaponOverride - 1 : Frame.m_PreWeapon;
+	Msg.m_Weapon = m_aMacroPlaybackWeaponOverride[m_MacroPlaybackDummy] > 0 ?
+		m_aMacroPlaybackWeaponOverride[m_MacroPlaybackDummy] - 1 : Frame.m_PreWeapon;
 	Msg.m_AttackTick = Frame.m_PreAttackTick;
 	Msg.m_InputDirection = Frame.m_Input.m_Direction;
 	Msg.m_InputTargetX = Frame.m_Input.m_TargetX;
 	Msg.m_InputTargetY = Frame.m_Input.m_TargetY;
 	Msg.m_InputJump = Frame.m_Input.m_Jump;
-	Msg.m_InputFire = (Frame.m_Input.m_Fire + m_MacroLiveFireOffset) & INPUT_STATE_MASK;
+	Msg.m_InputFire = (Frame.m_Input.m_Fire + m_aMacroLiveFireOffset[m_MacroPlaybackDummy]) & INPUT_STATE_MASK;
 	Msg.m_InputHook = Frame.m_Input.m_Hook;
 
 	// Manual binds take over only after the user touches that action.
 	// Releasing the key is also an override, so held recorded inputs can be cancelled.
-	if(m_MacroManualDirectionActive)
+	if(m_aMacroManualDirectionActive[m_MacroPlaybackDummy])
 		Msg.m_InputDirection = m_aInputDirectionLeft[m_MacroPlaybackDummy] && !m_aInputDirectionRight[m_MacroPlaybackDummy] ? -1 :
 			(!m_aInputDirectionLeft[m_MacroPlaybackDummy] && m_aInputDirectionRight[m_MacroPlaybackDummy] ? 1 : 0);
-	if(m_MacroManualJumpActive)
+	if(m_aMacroManualJumpActive[m_MacroPlaybackDummy])
 		Msg.m_InputJump = m_aInputData[m_MacroPlaybackDummy].m_Jump;
-	if(m_MacroManualHookActive)
+	if(m_aMacroManualHookActive[m_MacroPlaybackDummy])
 		Msg.m_InputHook = m_aInputData[m_MacroPlaybackDummy].m_Hook;
-	if(m_MacroManualAimActive)
+	if(m_aMacroManualAimActive[m_MacroPlaybackDummy])
 	{
 		Msg.m_InputTargetX = (int)m_aMousePos[m_MacroPlaybackDummy].x;
 		Msg.m_InputTargetY = (int)m_aMousePos[m_MacroPlaybackDummy].y;
 	}
-	Msg.m_InputWantedWeapon = m_MacroPlaybackWeaponOverride > 0 ?
-		m_MacroPlaybackWeaponOverride : Frame.m_Input.m_WantedWeapon;
-	Msg.m_InputNextWeapon = (Frame.m_Input.m_NextWeapon + m_MacroLiveNextWeaponOffset) & INPUT_STATE_MASK;
-	Msg.m_InputPrevWeapon = (Frame.m_Input.m_PrevWeapon + m_MacroLivePrevWeaponOffset) & INPUT_STATE_MASK;
+	Msg.m_InputWantedWeapon = m_aMacroPlaybackWeaponOverride[m_MacroPlaybackDummy] > 0 ?
+		m_aMacroPlaybackWeaponOverride[m_MacroPlaybackDummy] : Frame.m_Input.m_WantedWeapon;
+	Msg.m_InputNextWeapon = (Frame.m_Input.m_NextWeapon + m_aMacroLiveNextWeaponOffset[m_MacroPlaybackDummy]) & INPUT_STATE_MASK;
+	Msg.m_InputPrevWeapon = (Frame.m_Input.m_PrevWeapon + m_aMacroLivePrevWeaponOffset[m_MacroPlaybackDummy]) & INPUT_STATE_MASK;
 	Msg.m_DDNetHasState = Frame.m_HasDDNetState;
 	Msg.m_DDNetFlags = Frame.m_HasDDNetState ? DDNet.m_Flags : 0;
 	Msg.m_DDNetFreezeEnd = Frame.m_HasDDNetState ? DDNet.m_FreezeEnd : 0;
@@ -989,7 +1005,14 @@ void CControls::StopMacroPractice()
 	m_MacroPlaybackLive = false;
 	m_MacroPlaybackLastTick = -1;
 	m_MacroPlaybackSeekTargetIndex = -1;
-	m_MacroPlaybackWeaponOverride = -1;
+	std::fill(std::begin(m_aMacroPlaybackWeaponOverride), std::end(m_aMacroPlaybackWeaponOverride), -1);
+	std::fill(std::begin(m_aMacroLiveFireOffset), std::end(m_aMacroLiveFireOffset), 0);
+	std::fill(std::begin(m_aMacroLiveNextWeaponOffset), std::end(m_aMacroLiveNextWeaponOffset), 0);
+	std::fill(std::begin(m_aMacroLivePrevWeaponOffset), std::end(m_aMacroLivePrevWeaponOffset), 0);
+	std::fill(std::begin(m_aMacroManualDirectionActive), std::end(m_aMacroManualDirectionActive), false);
+	std::fill(std::begin(m_aMacroManualJumpActive), std::end(m_aMacroManualJumpActive), false);
+	std::fill(std::begin(m_aMacroManualHookActive), std::end(m_aMacroManualHookActive), false);
+	std::fill(std::begin(m_aMacroManualAimActive), std::end(m_aMacroManualAimActive), false);
 	m_MacroRewindHeld = false;
 	m_MacroRewindHeldSince = 0;
 	m_MacroRewindNextRepeat = 0;
@@ -1694,14 +1717,15 @@ void CControls::StopMacroRecording()
 	m_MacroPlaybackPaused = false;
 	m_MacroStopAtTickArmed = false;
 	m_MacroPlaybackSeekTargetIndex = -1;
-	m_MacroPlaybackWeaponOverride = -1;
-	m_MacroLiveFireOffset = 0;
-	m_MacroLiveNextWeaponOffset = 0;
-	m_MacroLivePrevWeaponOffset = 0;
-	m_MacroManualDirectionActive = false;
-	m_MacroManualJumpActive = false;
-	m_MacroManualHookActive = false;
-	m_MacroManualAimActive = false;
+	std::fill(std::begin(m_aMacroPlaybackWeaponOverride), std::end(m_aMacroPlaybackWeaponOverride), -1);
+	std::fill(std::begin(m_aMacroLiveFireOffset), std::end(m_aMacroLiveFireOffset), 0);
+	std::fill(std::begin(m_aMacroLiveNextWeaponOffset), std::end(m_aMacroLiveNextWeaponOffset), 0);
+	std::fill(std::begin(m_aMacroLivePrevWeaponOffset), std::end(m_aMacroLivePrevWeaponOffset), 0);
+	std::fill(std::begin(m_aMacroManualDirectionActive), std::end(m_aMacroManualDirectionActive), false);
+	std::fill(std::begin(m_aMacroManualJumpActive), std::end(m_aMacroManualJumpActive), false);
+	std::fill(std::begin(m_aMacroManualHookActive), std::end(m_aMacroManualHookActive), false);
+	std::fill(std::begin(m_aMacroManualAimActive), std::end(m_aMacroManualAimActive), false);
+
 	m_MacroPlaybackOwnsPractice = false;
 	m_MacroPlaybackLastTick = -1;
 	m_MacroRewindHeld = false;
@@ -2086,14 +2110,15 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroPlaybackPaused = false;
 	m_MacroStopAtTickArmed = false;
 	m_MacroPlaybackSeekTargetIndex = -1;
-	m_MacroPlaybackWeaponOverride = -1;
-	m_MacroLiveFireOffset = 0;
-	m_MacroLiveNextWeaponOffset = 0;
-	m_MacroLivePrevWeaponOffset = 0;
-	m_MacroManualDirectionActive = false;
-	m_MacroManualJumpActive = false;
-	m_MacroManualHookActive = false;
-	m_MacroManualAimActive = false;
+	std::fill(std::begin(m_aMacroPlaybackWeaponOverride), std::end(m_aMacroPlaybackWeaponOverride), -1);
+	std::fill(std::begin(m_aMacroLiveFireOffset), std::end(m_aMacroLiveFireOffset), 0);
+	std::fill(std::begin(m_aMacroLiveNextWeaponOffset), std::end(m_aMacroLiveNextWeaponOffset), 0);
+	std::fill(std::begin(m_aMacroLivePrevWeaponOffset), std::end(m_aMacroLivePrevWeaponOffset), 0);
+	std::fill(std::begin(m_aMacroManualDirectionActive), std::end(m_aMacroManualDirectionActive), false);
+	std::fill(std::begin(m_aMacroManualJumpActive), std::end(m_aMacroManualJumpActive), false);
+	std::fill(std::begin(m_aMacroManualHookActive), std::end(m_aMacroManualHookActive), false);
+	std::fill(std::begin(m_aMacroManualAimActive), std::end(m_aMacroManualAimActive), false);
+
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeAccumulator = 0.0;
 	m_MacroPracticeLastTime = time_get();
@@ -3403,7 +3428,7 @@ bool CControls::OnCursorMove(float x, float y, IInput::ECursorType CursorType)
 		{
 			m_aMousePos[Dummy] = AbsoluteDirection * GetMaxMouseDistance();
 			if(m_MacroPlaybackLive)
-				m_MacroManualAimActive = true;
+				m_aMacroManualAimActive[Dummy] = true;
 			GameClient()->m_Controls.m_aMouseInputType[Dummy] = CControls::EMouseInputType::ABSOLUTE;
 		}
 		return true;
@@ -3434,7 +3459,7 @@ bool CControls::OnCursorMove(float x, float y, IInput::ECursorType CursorType)
 
 	m_aMousePos[Dummy] += vec2(x, y) * Factor;
 	if(m_MacroPlaybackLive)
-		m_MacroManualAimActive = true;
+		m_aMacroManualAimActive[Dummy] = true;
 	GameClient()->m_Controls.m_aMouseInputType[Dummy] = CControls::EMouseInputType::RELATIVE;
 	ClampMousePos();
 	return true;
