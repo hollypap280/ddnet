@@ -69,7 +69,6 @@ public:
 	bool MacroPaused() const { return m_MacroRecording ? m_MacroRecordingPaused : m_MacroPlaybackPaused; }
 	int MacroPosition() const { return m_MacroRecording ? (int)m_vMacroFrames.size() : m_MacroPlaying ? m_MacroDisplayedTick : (int)m_MacroPlaybackIndex; }
 	bool SeekMacroBy(int Offset);
-	bool SeekMacroToTick(int TargetTick);
 	void ToggleMacroPause();
 	int MacroFrameCount() const { return (int)m_vMacroFrames.size(); }
 	const char *MacroRecordingName() const { return m_aRecordingMacroName; }
@@ -82,6 +81,7 @@ public:
 	void GetMacroList(std::vector<SMacroInfo> &vMacros);
 	int MacroSeekStep() const;
 	void SetMacroSeekStep(int Step);
+	int MacroPlaybackRate() const { return m_MacroPlaybackRate; }
 	int MacroPracticeRate() const;
 	bool MacroPracticeActive() const { return m_MacroPracticeActive; }
 	int MacroPracticeTick() const { return m_MacroPracticeTick; }
@@ -221,6 +221,8 @@ private:
 	bool m_MacroPlaying = false;
 	bool m_MacroPlaybackLive = false;
 	bool m_MacroPlaybackPaused = false;
+	int m_MacroRecordingRate = 50;
+	int m_MacroPlaybackRate = 50;
 	int m_MacroPlaybackDummy = 0;
 	bool m_MacroPlaybackOwnsDummy = false;
 	bool m_MacroPlaybackOwnsPractice = false;
