@@ -1930,11 +1930,29 @@ bool CControls::PlayMacro(const char *pName)
 		return false;
 	}
 
-	// Saved playback uses the same isolated local world as recording.
-	// Never send recorded frames to the real server character.
+	// Saved playback always uses the isolated local world. If this is the
+	// macro that was just recorded, keep its original full-world baseline so
+	// the dummy and all practice entities rewind to the actual recording start.
 	const bool OwnsPractice = !m_MacroPracticeActive;
 	if(OwnsPractice && !StartMacroPractice())
 		return false;
+
+	const bool ReuseRecordingBaseline = m_MacroPracticeBaselineValid &&
+		str_comp(m_aMacroPracticeBaselineName, pName) == 0;
+	if(!ReuseRecordingBaseline)
+	{
+		m_MacroPracticeStartWorld.CopyWorld(&m_MacroPracticeWorld);
+		m_MacroPracticeStartWorld.m_pParent = nullptr;
+		m_MacroPracticeStartWorld.m_pChild = nullptr;
+		m_MacroPracticeWorld.m_pParent = nullptr;
+		m_MacroPracticeWorld.m_pChild = nullptr;
+		m_MacroPracticeStartLocalId = m_MacroPracticeLocalId;
+		std::copy(std::begin(m_aMacroPracticeSnapshotInitialized),
+			std::end(m_aMacroPracticeSnapshotInitialized),
+			std::begin(m_aMacroPracticeStartSnapshotInitialized));
+		m_MacroPracticeBaselineValid = true;
+		str_copy(m_aMacroPracticeBaselineName, pName);
+	}
 
 	const int StartFrameIndex = std::clamp(g_Config.m_ClMacroStartTick - 1, 0, (int)Frames.size() - 1);
 	m_vMacroFrames = std::move(Frames);
@@ -1944,17 +1962,28 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroPlaybackOwnsDummy = false;
 	m_MacroPlaying = true;
 	m_MacroStartFrameIndex = StartFrameIndex;
-	// The practice simulator consumes this frame on its next local tick.
-	m_MacroPlaybackIndex = (std::size_t)StartFrameIndex;
-	m_MacroDisplayedTick = StartFrameIndex + 1;
+	// Rebuild all frames before the requested start tick in the same practice
+	// world. This restores the dummy, pickups, projectiles and switchers too.
+	m_MacroPlaybackIndex = 0;
+	m_MacroDisplayedTick = 0;
 	m_MacroCurrentFrame = {};
 	m_MacroHasCurrentFrame = false;
 	m_MacroHoldCurrentFrame = false;
 	m_MacroPlaybackPaused = false;
+	m_MacroRecordingPaused = false;
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeAccumulator = 0.0;
 	m_MacroPracticeLastTime = time_get();
 	m_MacroPlaybackLastTick = -1;
+	if(!RebuildMacroWorldToPosition(StartFrameIndex))
+	{
+		m_MacroPlaying = false;
+		m_MacroPlaybackOwnsPractice = false;
+		GameClient()->Echo("Не удалось восстановить начальное состояние мира для макроса.");
+		return false;
+	}
+	m_MacroPlaybackIndex = (std::size_t)StartFrameIndex;
+	m_MacroDisplayedTick = StartFrameIndex;
 
 	char aStartMessage[192];
 	str_format(aStartMessage, sizeof(aStartMessage), "Макрос «%s» запущен в отдельном тренировочном мире. Скорость: %d тиков/с. /practice не нужен.",
@@ -2077,29 +2106,37 @@ void CControls::ConMacroGoto(IConsole::IResult *pResult, void *pUserData)
 		pSelf->GameClient()->Echo("Укажи номер тика от 1 до длины макроса.");
 		return;
 	}
-	const int CurrentTick = pSelf->m_MacroDisplayedTick > 0 ? pSelf->m_MacroDisplayedTick :
-		(int)pSelf->m_MacroPlaybackIndex;
+	const int CurrentTick = pSelf->m_MacroRecording ? pSelf->MacroFrameCount() :
+		(pSelf->m_MacroDisplayedTick > 0 ? pSelf->m_MacroDisplayedTick : (int)pSelf->m_MacroPlaybackIndex);
 	pSelf->SeekMacro(TargetTick - CurrentTick, true, true);
 }
 
 void CControls::ToggleMacroPause()
 {
-	if(!m_MacroPlaying || (!m_MacroPracticeActive && !m_MacroPlaybackLive))
+	if(!m_MacroPracticeActive)
+		return;
+
+	if(m_MacroRecording)
+	{
+		m_MacroRecordingPaused = !m_MacroRecordingPaused;
+		m_MacroPracticeAccumulator = 0.0;
+		m_MacroPracticeLastTime = time_get();
+		GameClient()->Echo(m_MacroRecordingPaused ? "Запись макроса на паузе." : "Запись макроса продолжена.");
+		return;
+	}
+
+	if(!m_MacroPlaying)
 		return;
 
 	m_MacroPlaybackPaused = !m_MacroPlaybackPaused;
 	m_MacroPracticeAccumulator = 0.0;
 	if(m_MacroPlaybackPaused)
 	{
-		if(m_MacroPlaybackLive)
-			SendMacroFrameControl(EMacroFrameMode::PAUSE);
 		GameClient()->Echo("Макрос на паузе.");
 	}
 	else
 	{
 		m_MacroPracticeLastTime = time_get();
-		if(m_MacroPlaybackLive)
-			m_MacroPlaybackLastTick = Client()->PredGameTick(g_Config.m_ClDummy);
 		GameClient()->Echo("Воспроизведение макроса продолжено.");
 	}
 }
@@ -2304,9 +2341,20 @@ void CControls::OnMessage(int Msg, void *pRawMsg)
 	if(Msg == NETMSGTYPE_SV_WEAPONPICKUP)
 	{
 		CNetMsg_Sv_WeaponPickup *pMsg = (CNetMsg_Sv_WeaponPickup *)pRawMsg;
-		if(g_Config.m_ClAutoswitchWeapons)
+		if(g_Config.m_ClAutoswitchWeapons && m_MacroPracticeActive)
+		{
+			const int WantedWeapon = pMsg->m_Weapon + 1;
+			if(MacroPracticeRate() < SERVER_TICK_SPEED)
+				m_MacroPracticePendingWantedWeapon = WantedWeapon;
+			else
+				m_MacroPracticeInput.m_WantedWeapon = WantedWeapon;
+		}
+		else if(g_Config.m_ClAutoswitchWeapons)
+		{
 			m_aInputData[g_Config.m_ClDummy].m_WantedWeapon = pMsg->m_Weapon + 1;
-		// We don't really know ammo count, until we'll switch to that weapon, but any non-zero count will suffice here
+		}
+		// The exact ammo count is known once we switch to the weapon, but
+		// a non-zero value is enough here for the regular autoswitch logic.
 		m_aAmmoCount[std::max(0, pMsg->m_Weapon % NUM_WEAPONS)] = 10;
 	}
 }
@@ -2956,7 +3004,7 @@ void CControls::OnRender()
 	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
 		return;
 
-	if(m_MacroRewindHeld && !m_MacroRecording && !m_vMacroFrames.empty() &&
+		if(m_MacroRewindHeld && !m_vMacroFrames.empty() &&
 		(m_MacroPracticeActive || m_MacroPlaybackLive) &&
 		!GameClient()->m_Chat.IsActive() && !GameClient()->m_Menus.IsActive())
 	{
@@ -3079,10 +3127,12 @@ void CControls::RenderMacroHud()
 
 	char aTickLabel[128];
 	if(m_MacroRecording)
-		str_format(aTickLabel, sizeof(aTickLabel), "МАКРОС  |  ТИК %d  |  %d ТИК/С",
+		str_format(aTickLabel, sizeof(aTickLabel), "%s  |  ТИК %d  |  %d ТИК/С",
+			m_MacroRecordingPaused ? "ЗАПИСЬ ПАУЗА" : "ЗАПИСЬ",
 			(int)m_vMacroFrames.size(), MacroPracticeRate());
 	else if(m_MacroPlaying)
-		str_format(aTickLabel, sizeof(aTickLabel), "МАКРОС  |  ТИК %d / %d  |  %d ТИК/С",
+		str_format(aTickLabel, sizeof(aTickLabel), "%s  |  ТИК %d / %d  |  %d ТИК/С",
+			m_MacroPlaybackPaused ? "МАКРОС ПАУЗА" : "МАКРОС",
 			std::clamp(m_MacroDisplayedTick, 1, (int)m_vMacroFrames.size()),
 			(int)m_vMacroFrames.size(), MacroPracticeRate());
 	else
