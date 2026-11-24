@@ -2434,8 +2434,10 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 	if(!m_MacroPlaying && !m_MacroPlaybackLive)
 		return false;
 
-	const int CurrentIndex = m_MacroDisplayedTick > 0 ? m_MacroDisplayedTick - 1 :
-		(m_MacroHasCurrentFrame ? (int)m_MacroPlaybackIndex - 1 : (int)m_MacroPlaybackIndex);
+	const int CurrentIndex = m_MacroPlaybackLive && m_MacroPlaybackSeekTargetIndex >= 0 ?
+		m_MacroPlaybackSeekTargetIndex :
+		(m_MacroDisplayedTick > 0 ? m_MacroDisplayedTick - 1 :
+			(m_MacroHasCurrentFrame ? (int)m_MacroPlaybackIndex - 1 : (int)m_MacroPlaybackIndex));
 	const int Current = std::clamp(CurrentIndex, 0, (int)m_vMacroFrames.size() - 1);
 	const int Target = std::clamp(Current + Offset, 0, (int)m_vMacroFrames.size() - 1);
 	if(Target == Current)

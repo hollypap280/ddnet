@@ -809,6 +809,10 @@ void CCharacter::ResetInput()
 
 void CCharacter::PreTick()
 {
+	// sv_no_weak_hook runs PreTick in a separate world pass, so gate it too.
+	if(m_MacroPlaybackControlled && !m_MacroPlaybackTickPending)
+		return;
+
 	if(m_StartTime > Server()->Tick())
 	{
 		// Prevent the player from getting a negative time
