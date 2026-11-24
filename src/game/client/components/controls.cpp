@@ -720,6 +720,12 @@ bool CControls::StartMacroPractice()
 	m_MacroPracticeLocalId = LocalId;
 	std::fill(std::begin(m_aMacroPracticeSnapshotInitialized), std::end(m_aMacroPracticeSnapshotInitialized), false);
 	m_MacroPracticeWorld.CopyWorld(&GameClient()->m_PredictedWorld);
+	if(m_MacroPracticeWorld.m_pParent && m_MacroPracticeWorld.m_pParent->m_pChild == &m_MacroPracticeWorld)
+		m_MacroPracticeWorld.m_pParent->m_pChild = nullptr;
+	m_MacroPracticeWorld.m_pParent = nullptr;
+	m_MacroPracticeWorld.m_pChild = nullptr;
+	m_MacroPracticeBaselineValid = false;
+	m_aMacroPracticeBaselineName[0] = '\0';
 
 	// Fast Practice must simulate the same local gameplay as the normal
 	// prediction world, even when the server does not request client prediction.
@@ -1515,6 +1521,10 @@ bool CControls::StartMacroRecording(const char *pName)
 	// of recording. Rewind restores this snapshot and simulates every frame
 	// back to the selected time, including the idle dummy, projectiles and pickups.
 	m_MacroPracticeStartWorld.CopyWorld(&m_MacroPracticeWorld);
+	m_MacroPracticeStartWorld.m_pParent = nullptr;
+	m_MacroPracticeStartWorld.m_pChild = nullptr;
+	m_MacroPracticeWorld.m_pParent = nullptr;
+	m_MacroPracticeWorld.m_pChild = nullptr;
 	m_MacroPracticeStartLocalId = m_MacroPracticeLocalId;
 	std::copy(std::begin(m_aMacroPracticeSnapshotInitialized), std::end(m_aMacroPracticeSnapshotInitialized),
 		std::begin(m_aMacroPracticeStartSnapshotInitialized));
