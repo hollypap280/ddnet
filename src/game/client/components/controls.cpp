@@ -2551,18 +2551,14 @@ void CControls::OnUpdate()
 	if(!m_MacroPracticeActive)
 		return;
 
-	// Refresh remote tee copies from the active snapshot. Their physics
-	// then continues independently inside the private practice world.
+	// The live prediction buffers are intentionally never read or modified here.
+	// Standard binds populate m_MacroPracticeInput through the isolated handlers.
 	PopulateMacroPracticeWorld();
 
 	const int Dummy = g_Config.m_ClDummy;
-
-	// Reuse the normal DDNet controls buffer inside the isolated world.
-	// This keeps every existing +left/+right/+jump/+hook/+fire and weapon
-	// bind working without requiring a second set of FP-only keybinds.
-	m_aInputData[Dummy].m_PlayerFlags = PLAYERFLAG_PLAYING;
-	CNetObj_PlayerInput PracticeInput = m_aInputData[Dummy];
+	CNetObj_PlayerInput PracticeInput = m_MacroPracticeInput;
 	PracticeInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+
 	vec2 PracticeAim = m_aMousePos[Dummy];
 	if(g_Config.m_ClSubTickAiming && m_aMousePosOnAction[Dummy] != vec2(0.0f, 0.0f))
 	{
@@ -2573,93 +2569,61 @@ void CControls::OnUpdate()
 	PracticeInput.m_TargetY = (int)PracticeAim.y;
 	if(PracticeInput.m_TargetX == 0 && PracticeInput.m_TargetY == 0)
 		PracticeInput.m_TargetX = 1;
-	PracticeInput.m_Direction = m_aInputDirectionLeft[Dummy] == m_aInputDirectionRight[Dummy] ? 0 :
-		(m_aInputDirectionLeft[Dummy] ? -1 : 1);
-	// Weapon selection is a one-shot input. Queue it before simulating the
-	// next local tick, then clear the shared buffer to avoid repeating it.
-	if(PracticeInput.m_WantedWeapon > 0)
-		m_MacroPracticePendingWantedWeapon = PracticeInput.m_WantedWeapon;
-	PracticeInput.m_WantedWeapon = 0;
+	PracticeInput.m_Direction = m_MacroPracticeDirectionLeft == m_MacroPracticeDirectionRight ? 0 :
+		(m_MacroPracticeDirectionLeft ? -1 : 1);
 
-	if(!m_MacroPlaying)
+	const bool SlowPracticeInput = !m_MacroPlaying && MacroPracticeRate() < SERVER_TICK_SPEED;
+	if(SlowPracticeInput)
 	{
-		// Existing assists operate on m_aInputData. Temporarily stage the
-		// private input there, capture their result, then restore neutral live input.
-		const CNetObj_PlayerInput LiveInput = m_aInputData[Dummy];
-		m_aInputData[Dummy] = PracticeInput;
-		ApplyHookAutomation(Dummy);
-		ApplyEdgeAssist(Dummy);
-		ApplyEdgeHook(Dummy);
-		PracticeInput = m_aInputData[Dummy];
-		m_aInputData[Dummy] = LiveInput;
-		m_aInputData[Dummy].m_WantedWeapon = 0;
+		if(PracticeInput.m_WantedWeapon > 0)
+			m_MacroPracticePendingWantedWeapon = PracticeInput.m_WantedWeapon;
+		PracticeInput.m_WantedWeapon = 0;
 	}
-	CNetObj_PlayerInput PracticeDummyInput = GameClient()->m_DummyInput;
+
+	// The second local tee is deliberately AFK: it gets no copied movement,
+	// cursor, weapon or fire input. It still participates in world physics and
+	// can be moved by hooks, hammer hits, projectiles and map interactions.
+	CNetObj_PlayerInput PracticeDummyInput{};
 	PracticeDummyInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
-	if(m_MacroPracticeDummyEnabled)
+	PracticeDummyInput.m_TargetX = 1;
+
+	const int64_t CurrentTime = time_get();
+	if(m_MacroPracticeLastTime == 0)
+		m_MacroPracticeLastTime = CurrentTime;
+
+	// Do not simulate while the player is typing or viewing a menu. Paused
+	// recording and paused playback both keep an exact, stationary world.
+	const bool UiCapturesInput = GameClient()->m_Chat.IsActive() || GameClient()->m_Menus.IsActive();
+	const bool MacroPaused = (m_MacroRecording && m_MacroRecordingPaused) ||
+		(m_MacroPlaying && m_MacroPlaybackPaused);
+	if(UiCapturesInput || MacroPaused)
 	{
-		PracticeDummyInput = m_MacroPracticeDummyInput;
-		PracticeDummyInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
-		PracticeDummyInput.m_Direction = m_MacroPracticeDummyLeft == m_MacroPracticeDummyRight ? 0 :
-			(m_MacroPracticeDummyLeft ? -1 : 1);
-		if(const CCharacter *pPracticeDummy = m_MacroPracticeWorld.GetCharacterById(GameClient()->m_aLocalIds[!Dummy]))
-		{
-			if(const CCharacter *pPracticeLocal = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId))
-			{
-				const vec2 Dir = pPracticeLocal->Core()->m_Pos - pPracticeDummy->Core()->m_Pos;
-				PracticeDummyInput.m_TargetX = round_to_int(Dir.x);
-				PracticeDummyInput.m_TargetY = round_to_int(Dir.y);
-			}
-		}
-		if(PracticeDummyInput.m_TargetX == 0 && PracticeDummyInput.m_TargetY == 0)
-			PracticeDummyInput.m_TargetX = 1;
-	}
-	else if(g_Config.m_ClDummyCopyMoves)
-	{
-		PracticeDummyInput.m_Direction = PracticeInput.m_Direction;
-		PracticeDummyInput.m_Hook = PracticeInput.m_Hook;
-		PracticeDummyInput.m_Jump = PracticeInput.m_Jump;
-		PracticeDummyInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
-		PracticeDummyInput.m_TargetX = PracticeInput.m_TargetX;
-		PracticeDummyInput.m_TargetY = PracticeInput.m_TargetY;
-		PracticeDummyInput.m_WantedWeapon = PracticeInput.m_WantedWeapon;
-		PracticeDummyInput.m_Fire = (PracticeDummyInput.m_Fire + PracticeInput.m_Fire -
-			m_aLastData[Dummy].m_Fire) & INPUT_STATE_MASK;
-	}
-	else if(g_Config.m_ClDummyControl)
-	{
-		PracticeDummyInput.m_Jump = g_Config.m_ClDummyJump;
-		if(g_Config.m_ClDummyFire)
-			PracticeDummyInput.m_Fire = g_Config.m_ClDummyFire;
-		else if(PracticeDummyInput.m_Fire & 1)
-			++PracticeDummyInput.m_Fire;
-		PracticeDummyInput.m_Hook = g_Config.m_ClDummyHook;
+		m_MacroPracticeLastTime = CurrentTime;
+		return;
 	}
 
-	if(m_aInputData[Dummy].m_PlayerFlags & PLAYERFLAG_PLAYING)
+	const int64_t ElapsedTime = std::max<int64_t>(0, CurrentTime - m_MacroPracticeLastTime);
+	m_MacroPracticeLastTime = CurrentTime;
+	const int PracticeRate = m_MacroPlaying ? SERVER_TICK_SPEED : MacroPracticeRate();
+	m_MacroPracticeAccumulator += (double)ElapsedTime / (double)time_freq() * PracticeRate;
+
+	int Steps = 0;
+	const int MaxStepsPerUpdate = std::max<int>(SERVER_TICK_SPEED, PracticeRate);
+	bool ConsumeWantedWeapon = PracticeInput.m_WantedWeapon > 0;
+	while(m_MacroPracticeAccumulator >= 1.0 && Steps < MaxStepsPerUpdate)
 	{
-		const int64_t CurrentTime = time_get();
-		if(m_MacroPracticeLastTime == 0)
-			m_MacroPracticeLastTime = CurrentTime;
-		const int64_t ElapsedTime = std::max<int64_t>(0, CurrentTime - m_MacroPracticeLastTime);
-		m_MacroPracticeLastTime = CurrentTime;
-		if(!m_MacroPlaying || !m_MacroPlaybackPaused)
+		SimulateMacroPracticeTick(PracticeInput, PracticeDummyInput);
+		m_MacroPracticeAccumulator -= 1.0;
+		++Steps;
+		if(ConsumeWantedWeapon)
 		{
-			// Recording can be slowed down, but playback always consumes
-			// one recorded frame per normal DDNet tick.
-			const int PracticeRate = m_MacroPlaying ? SERVER_TICK_SPEED : MacroPracticeRate();
-			m_MacroPracticeAccumulator += (double)ElapsedTime / (double)time_freq() * PracticeRate;
-			int Steps = 0;
-			const int MaxStepsPerUpdate = std::max<int>(SERVER_TICK_SPEED, PracticeRate);
-			while(m_MacroPracticeAccumulator >= 1.0 && Steps < MaxStepsPerUpdate)
-			{
-				SimulateMacroPracticeTick(PracticeInput, PracticeDummyInput);
-				m_MacroPracticeAccumulator -= 1.0f;
-				++Steps;
-				if(!m_MacroPracticeActive)
-					break;
-			}
+			// Direct weapon selection is a one-tick event, not a held input.
+			PracticeInput.m_WantedWeapon = 0;
+			m_MacroPracticeInput.m_WantedWeapon = 0;
+			ConsumeWantedWeapon = false;
 		}
+		if(!m_MacroPracticeActive)
+			break;
 	}
 }
 
