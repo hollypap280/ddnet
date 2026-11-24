@@ -2719,7 +2719,10 @@ void CControls::OnUpdate()
 	if(SlowPracticeInput)
 	{
 		if(PracticeInput.m_WantedWeapon > 0)
+		{
 			m_MacroPracticePendingWantedWeapon = PracticeInput.m_WantedWeapon;
+			m_MacroPracticeInput.m_WantedWeapon = 0;
+		}
 		PracticeInput.m_WantedWeapon = 0;
 	}
 
