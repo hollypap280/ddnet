@@ -1640,7 +1640,7 @@ bool CControls::SaveMacro(const char *pName)
 	const uint32_t Magic = MACRO_FILE_MAGIC;
 	const uint32_t Version = MACRO_FILE_VERSION;
 	const uint32_t Count = (uint32_t)m_vMacroFrames.size();
-	const uint32_t RecordedRate = (uint32_t)std::clamp(m_MacroRecordingRate, 1, SERVER_TICK_SPEED);
+	const uint32_t RecordedRate = (uint32_t)std::clamp(m_MacroRecordingRate, 1, (int)SERVER_TICK_SPEED);
 	const bool Written = io_write(File, &Magic, sizeof(Magic)) == sizeof(Magic) &&
 		io_write(File, &Version, sizeof(Version)) == sizeof(Version) &&
 		io_write(File, &Count, sizeof(Count)) == sizeof(Count) &&
