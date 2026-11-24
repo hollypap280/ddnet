@@ -152,6 +152,7 @@ private:
 	//
 	bool m_Spawning;
 	bool m_WeakHookSpawn;
+	bool m_MacroPlaybackWarningSent = false;
 	int m_ClientId;
 	int m_Team;
 
