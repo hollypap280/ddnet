@@ -2135,15 +2135,126 @@ int CControls::MacroPracticeRate() const
 	return std::clamp(g_Config.m_ClMacroPracticeRate, 1, 50);
 }
 
+bool CControls::RebuildMacroWorldToPosition(int Position)
+{
+	if(!m_MacroPracticeActive || !m_MacroPracticeBaselineValid ||
+		Position < 0 || Position > (int)m_vMacroFrames.size())
+	{
+		return false;
+	}
+
+	const bool WasRecording = m_MacroRecording;
+	const bool WasRecordingPaused = m_MacroRecordingPaused;
+	const bool WasPlaying = m_MacroPlaying;
+	const bool WasPlaybackPaused = m_MacroPlaybackPaused;
+	const bool WasPlaybackOwnsPractice = m_MacroPlaybackOwnsPractice;
+
+	// Replace the complete practice world, not just the active tee. This
+	// restores the second tee, all moving entities, pickups and switchers.
+	m_MacroPracticeWorld.CopyWorld(&m_MacroPracticeStartWorld);
+	m_MacroPracticeWorld.m_pParent = nullptr;
+	m_MacroPracticeWorld.m_pChild = nullptr;
+	m_MacroPracticeStartWorld.m_pParent = nullptr;
+	m_MacroPracticeStartWorld.m_pChild = nullptr;
+	m_MacroPracticeLocalId = m_MacroPracticeStartLocalId;
+	m_MacroPracticeWorld.m_LocalClientId = m_MacroPracticeLocalId;
+	std::copy(std::begin(m_aMacroPracticeStartSnapshotInitialized),
+		std::end(m_aMacroPracticeStartSnapshotInitialized),
+		std::begin(m_aMacroPracticeSnapshotInitialized));
+	m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
+
+	m_MacroPracticePendingFireTransitions = 0;
+	m_MacroPracticePendingNextWeaponTransitions = 0;
+	m_MacroPracticePendingPrevWeaponTransitions = 0;
+	m_MacroPracticePendingWantedWeapon = 0;
+	m_MacroPracticePendingJump = false;
+	m_MacroPracticePendingHook = false;
+	m_MacroPracticePendingDirectionLeft = false;
+	m_MacroPracticePendingDirectionRight = false;
+	m_MacroPracticeDirectionLeft = false;
+	m_MacroPracticeDirectionRight = false;
+	m_MacroPracticeFireCounter = 0;
+	m_MacroPracticeFirePressed = false;
+	m_MacroPracticeInput = {};
+	m_MacroPracticeInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+	m_MacroPracticeInput.m_TargetX = 1;
+	m_MacroPracticeAccumulator = 0.0;
+	m_MacroPracticeWaiting = false;
+
+	// Replay the timeline from its original full-world snapshot. SimulateMacro
+	// applies the saved inputs to the cloned CGameWorld and advances every
+	// entity in it, so seeking backward restores the dummy and the rest of the
+	// practice scene to that exact point instead of leaving them in the future.
+	m_MacroRecording = false;
+	m_MacroPlaying = true;
+	m_MacroPlaybackPaused = false;
+	m_MacroPlaybackIndex = 0;
+	m_MacroDisplayedTick = 0;
+	CNetObj_PlayerInput IdleInput{};
+	IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+	IdleInput.m_TargetX = 1;
+	for(int i = 0; i < Position; ++i)
+	{
+		SimulateMacroPracticeTick(IdleInput, IdleInput);
+		if(!m_MacroPracticeActive)
+			return false;
+	}
+
+	m_MacroRecording = WasRecording;
+	m_MacroRecordingPaused = WasRecording ? true : WasRecordingPaused;
+	m_MacroPlaying = WasPlaying;
+	m_MacroPlaybackPaused = WasPlaybackPaused;
+	m_MacroPlaybackOwnsPractice = WasPlaybackOwnsPractice;
+	m_MacroPlaybackIndex = (std::size_t)Position;
+	m_MacroDisplayedTick = Position;
+	m_MacroPracticeWaiting = false;
+	m_MacroPracticeAccumulator = 0.0;
+	m_MacroPracticeLastTime = time_get();
+	m_MacroPlaybackLastTick = -1;
+	UpdateMacroPracticeGhost(m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId));
+	return true;
+}
+
 bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 {
-	if((!m_MacroPracticeActive && !m_MacroPlaybackLive) || m_MacroRecording || m_vMacroFrames.empty())
+	(void)TeleportLive;
+	if(!m_MacroPracticeActive || m_vMacroFrames.empty())
+		return false;
+
+	if(m_MacroRecording)
+	{
+		// Recording rewind moves the whole practice world backward and truncates
+		// the future. Recording remains paused until the user resumes it.
+		const int CurrentPosition = (int)m_vMacroFrames.size();
+		const int TargetPosition = std::clamp(CurrentPosition + Offset, 0, CurrentPosition);
+		if(TargetPosition == CurrentPosition)
+			return false;
+		m_MacroRecordingPaused = true;
+		if(!RebuildMacroWorldToPosition(TargetPosition))
+			return false;
+		m_vMacroFrames.resize(TargetPosition);
+		m_MacroPlaybackIndex = (std::size_t)TargetPosition;
+		m_MacroDisplayedTick = TargetPosition;
+		if(ShowMessage)
+		{
+			char aMessage[128];
+			str_format(aMessage, sizeof(aMessage), "Запись отмотана: тик %d / %d. Будущее будет перезаписано.",
+				TargetPosition, (int)m_vMacroFrames.size());
+			GameClient()->Echo(aMessage);
+		}
+		return true;
+	}
+
+	if(!m_MacroPlaying && !m_MacroPlaybackLive)
 		return false;
 
 	const int CurrentIndex = m_MacroDisplayedTick > 0 ? m_MacroDisplayedTick - 1 :
 		(m_MacroHasCurrentFrame ? (int)m_MacroPlaybackIndex - 1 : (int)m_MacroPlaybackIndex);
 	const int Current = std::clamp(CurrentIndex, 0, (int)m_vMacroFrames.size() - 1);
 	const int Target = std::clamp(Current + Offset, 0, (int)m_vMacroFrames.size() - 1);
+	if(Target == Current)
+		return false;
+
 	if(m_MacroPlaybackLive)
 	{
 		SendMacroFrame(Target, m_MacroPlaybackPaused ? EMacroFrameMode::RESTORE_PAUSED : EMacroFrameMode::STEP);
@@ -2156,10 +2267,10 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 	}
 	else
 	{
-		if(!RestoreMacroPracticeFrame(Target))
+		if(!RebuildMacroWorldToPosition(Target + 1))
 			return false;
-		m_MacroPracticeAccumulator = 0.0;
-		m_MacroPracticeLastTime = time_get();
+		m_MacroPlaybackIndex = (std::size_t)Target + 1;
+		m_MacroDisplayedTick = Target + 1;
 	}
 
 	if(ShowMessage)
