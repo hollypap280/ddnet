@@ -228,7 +228,6 @@ MACRO_CONFIG_INT(ClAutoTriplefly, cl_auto_triplefly, 0, 0, 1, CFGFLAG_CLIENT | C
 MACRO_CONFIG_INT(ClAutoEdgeHook, cl_auto_edge_hook, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Автоматически цепляться крюком у края платформы без прыжка")
 MACRO_CONFIG_INT(ClMacroRewindStep, cl_macro_rewind_step, 50, 1, 18000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Количество тиков для перемотки макроса")
 MACRO_CONFIG_INT(ClMacroLoop, cl_macro_loop, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Повторять воспроизведение макроса по кругу")
-MACRO_CONFIG_INT(ClMacroStartTick, cl_macro_start_tick, 1, 1, 18000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Тик, с которого запускать воспроизведение макроса")
 MACRO_CONFIG_INT(ClMacroPracticeRate, cl_macro_practice_rate, 50, 1, 50, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Количество тренировочных тиков в секунду")
 MACRO_CONFIG_INT(ClMacroPracticeShowOthers, cl_macro_practice_show_others, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Показывать неподвижных других тии как цели в макротренировке")
 MACRO_CONFIG_INT(ClAutoHookAngle, cl_auto_hook_angle, 250, 10, 360, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Ширина угла поиска цели для автохука в градусах")
