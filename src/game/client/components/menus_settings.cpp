@@ -629,9 +629,9 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 				GameClient()->m_Controls.StartMacroRecording(pName);
 			}
 		}
-		const char *pPracticeHint = Recording ? GameClient()->m_Controls.MacroRecordingName() :
-			LivePlayback ? Localize("FP повторяет нажатия и физику в локальном мире, без серверных телепортов") :
-			PracticeActive ? Localize("Локальный FP-мир; серверный персонаж не двигается") : Localize("FP выключен");
+		const char *pPracticeHint = Recording ? Localize("Запись идёт в отдельной локальной FP-копии мира") :
+			LivePlayback ? Localize("Обычный мир DDNet: воспроизводятся только нажатия, без FP и телепортов") :
+			PracticeActive ? Localize("Локальная FP-копия; серверный персонаж не двигается") : Localize("FP выключена");
 		Ui()->DoLabel(&Row, pPracticeHint, 11.0f, TEXTALIGN_ML);
 
 		CUIRect PlaybackRow;

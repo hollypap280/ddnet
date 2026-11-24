@@ -332,7 +332,6 @@ private:
 	static void ConMacroPracticeDummyInput(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroPracticeInput(IConsole::IResult *pResult, void *pUserData);
 	void SendMacroFrame(int Index, EMacroFrameMode Mode);
-	void SendMacroFrameControl(EMacroFrameMode Mode);
 	void SendPracticeTeleport(vec2 Pos, int Conn);
 	void SendPracticeTeleportToCursor(int Conn);
 };
