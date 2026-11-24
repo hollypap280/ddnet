@@ -519,7 +519,6 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	static CButtonContainer s_ShowOthers;
 	static CButtonContainer s_RecordToggle;
 	static CButtonContainer s_PlayToggle, s_Delete, s_Refresh, s_PauseToggle;
-	static CButtonContainer s_MacroStepBack, s_MacroStepForward, s_MacroStepDown, s_MacroStepUp;
 	static CButtonContainer s_MacroLoop;
 	static CScrollRegion s_MacroListScrollRegion;
 	static CScrollRegion s_MacroSettingsScrollRegion;
@@ -663,28 +662,6 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 					GameClient()->m_Controls.PlayMacro(aPlaybackName);
 			}
 		}
-		CUIRect SeekRow;
-		MainView.HSplitTop(27.0f, &SeekRow, &MainView);
-		SeekRow.VSplitLeft(142.0f, &Button, &Row);
-		if(DoButton_Menu(&s_MacroStepBack, Localize("← Назад"), 0, &Button))
-			GameClient()->m_Controls.SeekMacroBy(-GameClient()->m_Controls.MacroSeekStep());
-		Row.VSplitLeft(6.0f, nullptr, &Row);
-		Row.VSplitLeft(142.0f, &Button, nullptr);
-		if(DoButton_Menu(&s_MacroStepForward, Localize("Вперёд →"), 0, &Button))
-			GameClient()->m_Controls.SeekMacroBy(GameClient()->m_Controls.MacroSeekStep());
-
-		CUIRect StepRow, StepLabel, StepButton;
-		MainView.HSplitTop(24.0f, &StepRow, &MainView);
-		StepRow.VSplitLeft(64.0f, &StepButton, &StepRow);
-		if(DoButton_Menu(&s_MacroStepDown, Localize("−"), 0, &StepButton))
-			GameClient()->m_Controls.SetMacroSeekStep(GameClient()->m_Controls.MacroSeekStep() - 1);
-		StepRow.VSplitRight(64.0f, &StepLabel, &StepButton);
-		if(DoButton_Menu(&s_MacroStepUp, Localize("+"), 0, &StepButton))
-			GameClient()->m_Controls.SetMacroSeekStep(GameClient()->m_Controls.MacroSeekStep() + 1);
-		char aSeekStep[64];
-		str_format(aSeekStep, sizeof(aSeekStep), "Шаг: %d тиков", GameClient()->m_Controls.MacroSeekStep());
-		Ui()->DoLabel(&StepLabel, aSeekStep, 12.0f, TEXTALIGN_MC);
-
 		if(Recording || Playing)
 		{
 			CUIRect PauseRow;
@@ -842,7 +819,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		CUIRect StepHint;
 		if(AddSettingRow(42.0f, StepHint))
 			Ui()->DoLabel(&StepHint,
-				Localize("Шаг меняется кнопками − и + рядом с перемоткой на вкладке «Макрос». Макрос всегда начинается с первого тика. Перемотка не переключает паузу."),
+				Localize("Макрос всегда начинается с первого тика. Клавиши остановки на заданном тике и перехода к тику настраиваются во вкладке «Кнопки»."),
 				12.0f, TEXTALIGN_ML);
 
 		AddSection("КОМАНДЫ В ТРЕНИРОВКЕ");
@@ -878,9 +855,14 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 		{ "Начать запись макроса", "macro_record" },
 		{ "Запустить первый сохранённый макрос", "macro_play_first" },
 		{ "Остановить макрос", "macro_stop" },
-		{ "Перемотка макроса назад (удерживать)", "+macro_rewind" },
-		{ "Перемотка макроса вперёд (нажатие)", "+macro_seek" },
+		{ "Остановить макрос на выбранном тике", "macro_stop_at_tick" },
+		{ "Перейти к выбранному тику макроса", "macro_goto_configured" },
 		{ "Пауза/продолжить макрос", "macro_pause" },
+		{ "Макрос: выбрать хаммер", "+weapon1" },
+		{ "Макрос: выбрать пистолет", "+weapon2" },
+		{ "Макрос: выбрать шотган", "+weapon3" },
+		{ "Макрос: выбрать рокет", "+weapon4" },
+		{ "Макрос: выбрать лазер", "+weapon5" },
 	};
 	static CButtonContainer s_aKeyReaders[std::size(s_aHotkeys)];
 	static CButtonContainer s_aKeyClearButtons[std::size(s_aHotkeys)];
@@ -918,6 +900,49 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 			GameClient()->m_Binds.Bind(Result.m_Bind.m_Key, s_aHotkeys[i].m_pCommand, false, Result.m_Bind.m_ModifierMask);
 	}
 
-	MainView.HSplitTop(12.0f, nullptr, &MainView);
-	Ui()->DoLabel(&MainView, Localize("Назначь клавиши перемотки назад и вперёд. Во время записи перемотка ставит запись на паузу, возвращает весь мир назад и удаляет будущее; после продолжения оно записывается заново."), 12.0f, TEXTALIGN_ML);
+	static CLineInputNumber s_MacroStopTick;
+	static CLineInputNumber s_MacroGotoTick;
+	static bool s_MacroStopTickInitialized = false;
+	static bool s_MacroGotoTickInitialized = false;
+	if(!s_MacroStopTickInitialized)
+	{
+		s_MacroStopTick.SetInteger(g_Config.m_ClMacroStopTick);
+		s_MacroStopTickInitialized = true;
+	}
+	if(!s_MacroGotoTickInitialized)
+	{
+		s_MacroGotoTick.SetInteger(g_Config.m_ClMacroGotoTick);
+		s_MacroGotoTickInitialized = true;
+	}
+
+	MainView.HSplitTop(26.0f, &Row, &MainView);
+	Row.VSplitLeft(250.0f, &Label, &KeyRect);
+	Ui()->DoLabel(&Label, Localize("Остановить на тике (0 — выкл.)"), 13.0f, TEXTALIGN_ML);
+	Ui()->DoEditBox(&s_MacroStopTick, &KeyRect, 13.0f);
+	if(s_MacroStopTick.WasChanged())
+	{
+		const int Tick = s_MacroStopTick.GetInteger();
+		if(Tick >= 0 && Tick <= 18000)
+			g_Config.m_ClMacroStopTick = Tick;
+		else
+			s_MacroStopTick.SetInteger(g_Config.m_ClMacroStopTick);
+	}
+
+	MainView.HSplitTop(26.0f, &Row, &MainView);
+	Row.VSplitLeft(250.0f, &Label, &KeyRect);
+	Ui()->DoLabel(&Label, Localize("Перейти к тику"), 13.0f, TEXTALIGN_ML);
+	Ui()->DoEditBox(&s_MacroGotoTick, &KeyRect, 13.0f);
+	if(s_MacroGotoTick.WasChanged())
+	{
+		const int Tick = s_MacroGotoTick.GetInteger();
+		if(Tick >= 1 && Tick <= 18000)
+			g_Config.m_ClMacroGotoTick = Tick;
+		else
+			s_MacroGotoTick.SetInteger(g_Config.m_ClMacroGotoTick);
+	}
+
+	MainView.HSplitTop(30.0f, nullptr, &MainView);
+	Ui()->DoLabel(&MainView,
+		Localize("Клавиша остановки завершит макрос на выбранном тике. Клавиша перехода восстановит состояние на указанном тике. Оружие можно выбирать отдельными клавишами во время записи."),
+		12.0f, TEXTALIGN_ML);
 }
