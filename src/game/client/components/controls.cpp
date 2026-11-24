@@ -66,6 +66,7 @@ void CControls::OnReset()
 	std::fill(std::begin(m_aMacroManualJumpActive), std::end(m_aMacroManualJumpActive), false);
 	std::fill(std::begin(m_aMacroManualHookActive), std::end(m_aMacroManualHookActive), false);
 	std::fill(std::begin(m_aMacroManualAimActive), std::end(m_aMacroManualAimActive), false);
+	std::fill(std::begin(m_aMacroPlaybackConnectionUsed), std::end(m_aMacroPlaybackConnectionUsed), false);
 	m_MacroPlaybackIndex = 0;
 	m_MacroCurrentFrame = {};
 	m_MacroHasCurrentFrame = false;
@@ -581,6 +582,22 @@ void CControls::SendMacroFrameControl(EMacroFrameMode Mode)
 {
 	if(!m_MacroPlaybackLive)
 		return;
+
+	if(Mode == EMacroFrameMode::STOP)
+	{
+		// Release every local tee that was taken over during this playback.
+		for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
+		{
+			if(!m_aMacroPlaybackConnectionUsed[Dummy])
+				continue;
+			CNetMsg_Cl_MacroFrame Msg{};
+			Msg.m_Mode = (int)Mode;
+			const int Conn = Dummy ? IClient::CONN_DUMMY : IClient::CONN_MAIN;
+			Client()->SendPackMsg(Conn, &Msg, MSGFLAG_VITAL);
+		}
+		return;
+	}
+
 	CNetMsg_Cl_MacroFrame Msg{};
 	Msg.m_Mode = (int)Mode;
 	const int Conn = m_MacroPlaybackDummy ? IClient::CONN_DUMMY : IClient::CONN_MAIN;
@@ -593,7 +610,6 @@ void CControls::SendMacroFrame(int Index, EMacroFrameMode Mode)
 		return;
 
 	const SMacroFrame &Frame = m_vMacroFrames[Index];
-	int PreviousDummy = -1;
 
 	// A recording can switch between the main tee and dummy. Queue the new
 	// connection first, then release the old one so practice has no gap.
@@ -607,7 +623,6 @@ void CControls::SendMacroFrame(int Index, EMacroFrameMode Mode)
 
 		if(RequestedDummy >= 0 && RequestedDummy != m_MacroPlaybackDummy)
 		{
-			PreviousDummy = m_MacroPlaybackDummy;
 			m_MacroPlaybackDummy = RequestedDummy;
 			g_Config.m_ClDummy = RequestedDummy;
 			m_MacroPlaybackLastTick = Client()->GameTick(m_MacroPlaybackDummy);
@@ -677,16 +692,9 @@ void CControls::SendMacroFrame(int Index, EMacroFrameMode Mode)
 	for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
 		Msg.m_aWeaponAmmo[Weapon] = Frame.m_aPreWeaponAmmo[Weapon];
 
+	m_aMacroPlaybackConnectionUsed[m_MacroPlaybackDummy] = true;
 	const int Conn = m_MacroPlaybackDummy ? IClient::CONN_DUMMY : IClient::CONN_MAIN;
 	Client()->SendPackMsg(Conn, &Msg, MSGFLAG_VITAL);
-
-	if(PreviousDummy >= 0)
-	{
-		CNetMsg_Cl_MacroFrame StopMsg{};
-		StopMsg.m_Mode = (int)EMacroFrameMode::STOP;
-		const int PreviousConn = PreviousDummy ? IClient::CONN_DUMMY : IClient::CONN_MAIN;
-		Client()->SendPackMsg(PreviousConn, &StopMsg, MSGFLAG_VITAL);
-	}
 }
 
 void CControls::SendPracticeTeleport(vec2 Pos, int Conn)
@@ -1013,6 +1021,7 @@ void CControls::StopMacroPractice()
 	std::fill(std::begin(m_aMacroManualJumpActive), std::end(m_aMacroManualJumpActive), false);
 	std::fill(std::begin(m_aMacroManualHookActive), std::end(m_aMacroManualHookActive), false);
 	std::fill(std::begin(m_aMacroManualAimActive), std::end(m_aMacroManualAimActive), false);
+	std::fill(std::begin(m_aMacroPlaybackConnectionUsed), std::end(m_aMacroPlaybackConnectionUsed), false);
 	m_MacroRewindHeld = false;
 	m_MacroRewindHeldSince = 0;
 	m_MacroRewindNextRepeat = 0;
@@ -1725,6 +1734,7 @@ void CControls::StopMacroRecording()
 	std::fill(std::begin(m_aMacroManualJumpActive), std::end(m_aMacroManualJumpActive), false);
 	std::fill(std::begin(m_aMacroManualHookActive), std::end(m_aMacroManualHookActive), false);
 	std::fill(std::begin(m_aMacroManualAimActive), std::end(m_aMacroManualAimActive), false);
+	std::fill(std::begin(m_aMacroPlaybackConnectionUsed), std::end(m_aMacroPlaybackConnectionUsed), false);
 
 	m_MacroPlaybackOwnsPractice = false;
 	m_MacroPlaybackLastTick = -1;
@@ -2118,6 +2128,7 @@ bool CControls::PlayMacro(const char *pName)
 	std::fill(std::begin(m_aMacroManualJumpActive), std::end(m_aMacroManualJumpActive), false);
 	std::fill(std::begin(m_aMacroManualHookActive), std::end(m_aMacroManualHookActive), false);
 	std::fill(std::begin(m_aMacroManualAimActive), std::end(m_aMacroManualAimActive), false);
+	std::fill(std::begin(m_aMacroPlaybackConnectionUsed), std::end(m_aMacroPlaybackConnectionUsed), false);
 
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeAccumulator = 0.0;

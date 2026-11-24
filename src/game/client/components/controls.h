@@ -227,6 +227,7 @@ private:
 	int m_MacroRecordingRate = 50;
 	int m_MacroPlaybackRate = 50;
 	int m_MacroPlaybackDummy = 0;
+	bool m_aMacroPlaybackConnectionUsed[NUM_DUMMIES]{};
 	bool m_MacroPlaybackOwnsDummy = false;
 	bool m_MacroPlaybackOwnsPractice = false;
 	int m_MacroPlaybackLastTick = -1;
