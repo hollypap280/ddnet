@@ -222,6 +222,8 @@ private:
 	bool m_MacroPlaybackLive = false;
 	bool m_MacroPlaybackPaused = false;
 	bool m_MacroStopAtTickArmed = false;
+	int m_MacroPlaybackSeekTargetIndex = -1;
+	int m_MacroPlaybackWeaponOverride = -1;
 	int m_MacroRecordingRate = 50;
 	int m_MacroPlaybackRate = 50;
 	int m_MacroPlaybackDummy = 0;

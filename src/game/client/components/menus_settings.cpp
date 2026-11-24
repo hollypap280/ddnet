@@ -630,7 +630,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			}
 		}
 		const char *pPracticeHint = Recording ? GameClient()->m_Controls.MacroRecordingName() :
-			LivePlayback ? Localize("Настоящий персонаж управляется макросом (/practice)") :
+			LivePlayback ? Localize("Настоящий персонаж управляется макросом; практика включена автоматически") :
 			PracticeActive ? Localize("Локальная запись; серверный персонаж неподвижен") : Localize("Воспроизведение идёт в живом мире");
 		Ui()->DoLabel(&Row, pPracticeHint, 11.0f, TEXTALIGN_ML);
 
@@ -800,7 +800,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		CUIRect PracticeInfo;
 		if(AddSettingRow(44.0f, PracticeInfo))
 			Ui()->DoLabel(&PracticeInfo,
-				Localize("Запись идёт в отдельной локальной копии, чтобы не двигать серверного персонажа. После сохранения копия удаляется. Сохранённый макрос запускается на настоящем серверном персонаже и требует /practice в команде."),
+				Localize("Запись идёт в отдельной локальной копии, чтобы не двигать серверного персонажа. Сохранённый макрос запускается на настоящем персонаже; на время воспроизведения практика включается автоматически и рекорд не засчитывается."),
 				11.0f, TEXTALIGN_ML);
 
 		CUIRect ShowOthersRow;
@@ -815,7 +815,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			Ui()->DoScrollbarOption(&g_Config.m_ClMacroPracticeRate, &g_Config.m_ClMacroPracticeRate,
 				&PracticeRateRow, Localize("Скорость записи и воспроизведения (тиков/с)"), 1, 50);
 
-		AddSection("ПЕРЕМОТКА МАКРОСА");
+		AddSection("ПЕРЕХОД ПО ТИКАМ");
 		CUIRect StepHint;
 		if(AddSettingRow(42.0f, StepHint))
 			Ui()->DoLabel(&StepHint,
@@ -826,7 +826,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		CUIRect InfoRow;
 		if(AddSettingRow(48.0f, InfoRow))
 			Ui()->DoLabel(&InfoRow,
-				Localize("Во время записи используются обычные бинды DDNet. Скорость задаёт частоту обработки ввода; быстрые переключения оружия сохраняются. Воспроизведение идёт на серверном персонаже в /practice; удары и их анимация видны другим игрокам и наблюдателям."),
+				Localize("Во время записи используются обычные бинды DDNet. Скорость задаёт частоту обработки ввода; выбор хаммера, пистолета, шотгана, рокета и лазера доступен отдельными клавишами. Практика включается автоматически, рекорд не засчитывается."),
 				12.0f, TEXTALIGN_ML);
 
 		s_MacroSettingsScrollRegion.End();

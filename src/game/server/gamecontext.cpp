@@ -2863,21 +2863,11 @@ void CGameContext::OnMacroFrameNetMessage(const CNetMsg_Cl_MacroFrame *pMsg, int
 		return;
 	}
 
-	CGameTeams &Teams = m_pController->Teams();
-	if(!Teams.IsPractice(GetDDRaceTeam(ClientId)))
-	{
-		if(!pPlayer->MacroPlaybackWarningSent())
-		{
-			SendChatTarget(ClientId, "Enable /practice in your team before playing a macro in the live world.");
-			pPlayer->SetMacroPlaybackWarningSent(true);
-		}
-		pChr->SetMacroPlaybackPauseAfterTick(false);
-		if(pChr->IsPaused())
-			pChr->Pause(false);
-		pChr->SetMacroPlaybackControlled(false);
+	if(Mode != 0 && Mode != 1 && Mode != 2)
 		return;
-	}
 
+	// Macro playback marks its team as practice through MacroPlaybackControlled.
+	// No manual team join or /practice vote is required.
 	pPlayer->SetMacroPlaybackWarningSent(false);
 	pChr->SetMacroPlaybackControlled(true);
 	if(Mode == 0) // PAUSE
@@ -2887,9 +2877,6 @@ void CGameContext::OnMacroFrameNetMessage(const CNetMsg_Cl_MacroFrame *pMsg, int
 			pChr->Pause(true);
 		return;
 	}
-	if(Mode != 1 && Mode != 2)
-		return;
-
 	if(Mode == 2) // RESTORE_PAUSED
 	{
 		pChr->SetMacroPlaybackPauseAfterTick(false);

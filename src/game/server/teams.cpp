@@ -1547,6 +1547,18 @@ bool CGameTeams::IsPractice(int Team)
 {
 	if(!IsValidTeamNumber(Team))
 		return false;
+
+	// A macro-controlled character makes its team a practice team for the
+	// duration of playback. This also works in team 0 and does not persist.
+	for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
+	{
+		if(m_Core.Team(ClientId) != Team)
+			continue;
+		const CCharacter *pCharacter = Character(ClientId);
+		if(pCharacter && pCharacter->MacroPlaybackControlled())
+			return true;
+	}
+
 	if(g_Config.m_SvTeam != SV_TEAM_FORCED_SOLO && Team == TEAM_FLOCK)
 	{
 		if(GameServer()->PracticeByDefault())
