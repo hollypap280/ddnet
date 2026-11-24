@@ -68,6 +68,8 @@ public:
 	bool MacroPlaybackLive() const { return m_MacroPlaybackLive; }
 	bool MacroPaused() const { return m_MacroRecording ? m_MacroRecordingPaused : m_MacroPlaybackPaused; }
 	int MacroPosition() const { return m_MacroRecording ? (int)m_vMacroFrames.size() : m_MacroPlaying ? m_MacroDisplayedTick : (int)m_MacroPlaybackIndex; }
+	bool SeekMacroBy(int Offset);
+	bool SeekMacroToTick(int TargetTick);
 	void ToggleMacroPause();
 	int MacroFrameCount() const { return (int)m_vMacroFrames.size(); }
 	const char *MacroRecordingName() const { return m_aRecordingMacroName; }
@@ -219,6 +221,7 @@ private:
 	bool m_MacroPlaying = false;
 	bool m_MacroPlaybackLive = false;
 	bool m_MacroPlaybackPaused = false;
+	int m_MacroPlaybackDummy = 0;
 	bool m_MacroPlaybackOwnsDummy = false;
 	bool m_MacroPlaybackOwnsPractice = false;
 	int m_MacroPlaybackLastTick = -1;
