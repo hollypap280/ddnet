@@ -1983,7 +1983,7 @@ bool CControls::PlayMacro(const char *pName)
 		return false;
 	}
 	m_MacroPlaybackIndex = (std::size_t)StartFrameIndex;
-	m_MacroDisplayedTick = StartFrameIndex;
+	m_MacroDisplayedTick = StartFrameIndex + 1;
 
 	char aStartMessage[192];
 	str_format(aStartMessage, sizeof(aStartMessage), "Макрос «%s» запущен в отдельном тренировочном мире. Скорость: %d тиков/с. /practice не нужен.",
