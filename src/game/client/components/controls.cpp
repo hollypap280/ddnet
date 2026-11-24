@@ -104,7 +104,7 @@ void CControls::ConKeyInputState(IConsole::IResult *pResult, void *pUserData)
 	CInputState *pState = (CInputState *)pUserData;
 	CControls *pSelf = pState->m_pControls;
 
-	if(pSelf->GameClient()->m_GameInfo.m_BugDDRaceInput && pSelf->GameClient()->m_Snap.m_SpecInfo.m_Active)
+	if(!pSelf->m_MacroPracticeActive && pSelf->GameClient()->m_GameInfo.m_BugDDRaceInput && pSelf->GameClient()->m_Snap.m_SpecInfo.m_Active)
 		return;
 
 	const int Stroke = pResult->GetInteger(0);
@@ -171,8 +171,9 @@ void CControls::ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData)
 	CInputState *pState = (CInputState *)pUserData;
 	CControls *pSelf = pState->m_pControls;
 
-	if((pSelf->GameClient()->m_GameInfo.m_BugDDRaceInput && pSelf->GameClient()->m_Snap.m_SpecInfo.m_Active) ||
-		pSelf->GameClient()->m_Spectator.IsActive())
+	if(!pSelf->m_MacroPracticeActive &&
+		((pSelf->GameClient()->m_GameInfo.m_BugDDRaceInput && pSelf->GameClient()->m_Snap.m_SpecInfo.m_Active) ||
+			pSelf->GameClient()->m_Spectator.IsActive()))
 	{
 		return;
 	}
