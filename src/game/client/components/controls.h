@@ -66,7 +66,7 @@ public:
 	bool MacroRecording() const { return m_MacroRecording; }
 	bool MacroPlaying() const { return m_MacroPlaying; }
 	bool MacroPlaybackLive() const { return m_MacroPlaybackLive; }
-	bool MacroPaused() const { return m_MacroPlaybackPaused; }
+	bool MacroPaused() const { return m_MacroRecording ? m_MacroRecordingPaused : m_MacroPlaybackPaused; }
 	int MacroPosition() const { return m_MacroRecording ? (int)m_vMacroFrames.size() : m_MacroPlaying ? m_MacroDisplayedTick : (int)m_MacroPlaybackIndex; }
 	void ToggleMacroPause();
 	int MacroFrameCount() const { return (int)m_vMacroFrames.size(); }
@@ -215,6 +215,7 @@ private:
 	bool m_MacroHasCurrentFrame = false;
 	bool m_MacroHoldCurrentFrame = false;
 	bool m_MacroRecording = false;
+	bool m_MacroRecordingPaused = false;
 	bool m_MacroPlaying = false;
 	bool m_MacroPlaybackLive = false;
 	bool m_MacroPlaybackPaused = false;
@@ -258,6 +259,13 @@ private:
 	bool m_MacroPracticeNextWeaponPressed = false;
 	bool m_MacroPracticePrevWeaponPressed = false;
 	CGameWorld m_MacroPracticeWorld;
+	// Exact starting snapshot used to rebuild the entire practice world when
+	// rewinding during recording or seeking into a saved macro.
+	CGameWorld m_MacroPracticeStartWorld;
+	int m_MacroPracticeStartLocalId = -1;
+	bool m_aMacroPracticeStartSnapshotInitialized[MAX_CLIENTS]{};
+	bool m_MacroPracticeBaselineValid = false;
+	char m_aMacroPracticeBaselineName[64] = "";
 	CNetObj_Character m_MacroPracticeRenderChar{};
 	bool m_MacroPracticeHasRenderChar = false;
 	// Tracks one-time import from the live snapshot independently from whether
@@ -276,6 +284,7 @@ private:
 	bool MacroFilePath(const char *pName, char *pBuffer, unsigned BufferSize) const;
 	static int MacroListCallback(const char *pName, int IsDir, int DirType, void *pUser);
 	bool SeekMacro(int Offset, bool ShowMessage = true, bool TeleportLive = false);
+	bool RebuildMacroWorldToPosition(int Position);
 	void SimulateMacroPracticeTick(const CNetObj_PlayerInput &Input, const CNetObj_PlayerInput &DummyInput);
 	bool RestoreMacroPracticeFrame(int Index);
 	void UpdateMacroPracticeGhost(CCharacter *pCharacter);
