@@ -56,6 +56,7 @@ void CControls::OnReset()
 	m_MacroPlaying = false;
 	m_MacroPlaybackLive = false;
 	m_MacroPlaybackLastTick = -1;
+	m_MacroStopAtTickArmed = false;
 	m_MacroPlaybackIndex = 0;
 	m_MacroCurrentFrame = {};
 	m_MacroHasCurrentFrame = false;
