@@ -2048,8 +2048,8 @@ bool CControls::PlayMacro(const char *pName)
 	else if(BaselineClientId == GameClient()->m_aLocalIds[1])
 		PlaybackDummy = 1;
 	g_Config.m_ClDummy = PlaybackDummy;
-	const int LocalId = GameClient()->m_aLocalIds[PlaybackDummy];
-	if(LocalId < 0 || LocalId >= MAX_CLIENTS)
+	const int PlaybackLocalId = GameClient()->m_aLocalIds[PlaybackDummy];
+	if(PlaybackLocalId < 0 || PlaybackLocalId >= MAX_CLIENTS)
 	{
 		GameClient()->Echo("Не найден локальный тии для FP-макроса.");
 		return false;
