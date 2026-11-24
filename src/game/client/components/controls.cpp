@@ -687,6 +687,7 @@ void CControls::SendMacroFrame(int Index, EMacroFrameMode Mode)
 		const int PreviousConn = PreviousDummy ? IClient::CONN_DUMMY : IClient::CONN_MAIN;
 		Client()->SendPackMsg(PreviousConn, &StopMsg, MSGFLAG_VITAL);
 	}
+}
 
 void CControls::SendPracticeTeleport(vec2 Pos, int Conn)
 {
