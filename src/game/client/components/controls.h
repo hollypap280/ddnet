@@ -236,6 +236,10 @@ private:
 	int m_MacroLiveFireOffset = 0;
 	int m_MacroLiveNextWeaponOffset = 0;
 	int m_MacroLivePrevWeaponOffset = 0;
+	bool m_MacroManualDirectionActive = false;
+	bool m_MacroManualJumpActive = false;
+	bool m_MacroManualHookActive = false;
+	bool m_MacroManualAimActive = false;
 	bool m_MacroPracticeActive = false;
 	bool m_MacroPracticeWaiting = false;
 	double m_MacroPracticeAccumulator = 0.0;

@@ -113,6 +113,18 @@ void CControls::ConKeyInputState(IConsole::IResult *pResult, void *pUserData)
 	const int Stroke = pResult->GetInteger(0);
 	const int Dummy = g_Config.m_ClDummy;
 
+	// After the user touches an action, its live state replaces the recorded state,
+	// including key release, so manual intervention can cancel a held TAS action.
+	if(pSelf->m_MacroPlaybackLive)
+	{
+		if(pState->m_IsDirectionLeft || pState->m_IsDirectionRight)
+			pSelf->m_MacroManualDirectionActive = true;
+		if(pState->m_IsJumpAction)
+			pSelf->m_MacroManualJumpActive = true;
+		if(pState->m_IsHookAction)
+			pSelf->m_MacroManualHookActive = true;
+	}
+
 	// Practice controls must never enter the real DDNet input buffers. Those
 	// buffers are also consumed by the live prediction world, not only SnapInput.
 	if(pSelf->m_MacroPracticeActive)
@@ -605,15 +617,16 @@ void CControls::SendMacroFrame(int Index, EMacroFrameMode Mode)
 	Msg.m_InputFire = (Frame.m_Input.m_Fire + m_MacroLiveFireOffset) & INPUT_STATE_MASK;
 	Msg.m_InputHook = Frame.m_Input.m_Hook;
 
-	// Manual binds can override the matching recorded actions during playback.
-	if(m_aInputDirectionLeft[m_MacroPlaybackDummy] || m_aInputDirectionRight[m_MacroPlaybackDummy])
+	// Manual binds take over only after the user touches that action.
+	// Releasing the key is also an override, so held recorded inputs can be cancelled.
+	if(m_MacroManualDirectionActive)
 		Msg.m_InputDirection = m_aInputDirectionLeft[m_MacroPlaybackDummy] && !m_aInputDirectionRight[m_MacroPlaybackDummy] ? -1 :
 			(!m_aInputDirectionLeft[m_MacroPlaybackDummy] && m_aInputDirectionRight[m_MacroPlaybackDummy] ? 1 : 0);
-	if(m_aInputData[m_MacroPlaybackDummy].m_Jump)
+	if(m_MacroManualJumpActive)
 		Msg.m_InputJump = m_aInputData[m_MacroPlaybackDummy].m_Jump;
-	if(m_aInputData[m_MacroPlaybackDummy].m_Hook)
+	if(m_MacroManualHookActive)
 		Msg.m_InputHook = m_aInputData[m_MacroPlaybackDummy].m_Hook;
-	if(m_aMousePos[m_MacroPlaybackDummy] != vec2(0.0f, 0.0f))
+	if(m_MacroManualAimActive)
 	{
 		Msg.m_InputTargetX = (int)m_aMousePos[m_MacroPlaybackDummy].x;
 		Msg.m_InputTargetY = (int)m_aMousePos[m_MacroPlaybackDummy].y;
@@ -1666,6 +1679,10 @@ void CControls::StopMacroRecording()
 	m_MacroLiveFireOffset = 0;
 	m_MacroLiveNextWeaponOffset = 0;
 	m_MacroLivePrevWeaponOffset = 0;
+	m_MacroManualDirectionActive = false;
+	m_MacroManualJumpActive = false;
+	m_MacroManualHookActive = false;
+	m_MacroManualAimActive = false;
 	m_MacroPlaybackOwnsPractice = false;
 	m_MacroPlaybackLastTick = -1;
 	m_MacroRewindHeld = false;
@@ -2048,6 +2065,10 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroLiveFireOffset = 0;
 	m_MacroLiveNextWeaponOffset = 0;
 	m_MacroLivePrevWeaponOffset = 0;
+	m_MacroManualDirectionActive = false;
+	m_MacroManualJumpActive = false;
+	m_MacroManualHookActive = false;
+	m_MacroManualAimActive = false;
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeAccumulator = 0.0;
 	m_MacroPracticeLastTime = time_get();
@@ -3354,6 +3375,8 @@ bool CControls::OnCursorMove(float x, float y, IInput::ECursorType CursorType)
 		if(Input()->GetActiveJoystick()->Absolute(&AbsoluteDirection.x, &AbsoluteDirection.y))
 		{
 			m_aMousePos[g_Config.m_ClDummy] = AbsoluteDirection * GetMaxMouseDistance();
+			if(m_MacroPlaybackLive)
+				m_MacroManualAimActive = true;
 			GameClient()->m_Controls.m_aMouseInputType[g_Config.m_ClDummy] = CControls::EMouseInputType::ABSOLUTE;
 		}
 		return true;
@@ -3383,6 +3406,8 @@ bool CControls::OnCursorMove(float x, float y, IInput::ECursorType CursorType)
 		Factor *= GameClient()->m_Camera.m_Zoom;
 
 	m_aMousePos[g_Config.m_ClDummy] += vec2(x, y) * Factor;
+	if(m_MacroPlaybackLive)
+		m_MacroManualAimActive = true;
 	GameClient()->m_Controls.m_aMouseInputType[g_Config.m_ClDummy] = CControls::EMouseInputType::RELATIVE;
 	ClampMousePos();
 	return true;
