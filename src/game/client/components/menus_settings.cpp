@@ -664,7 +664,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 					GameClient()->m_Controls.PlayMacro(aPlaybackName);
 			}
 		}
-		if(Playing)
+		if(Recording || Playing)
 		{
 			CUIRect PauseRow;
 			MainView.HSplitTop(26.0f, &PauseRow, &MainView);
@@ -694,7 +694,9 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		MainView.HSplitTop(20.0f, &StatusRow, &MainView);
 		char aStatus[160];
 		if(GameClient()->m_Controls.MacroRecording())
-			str_format(aStatus, sizeof(aStatus), "ЗАПИСЬ  |  %d тиков", GameClient()->m_Controls.MacroFrameCount());
+			str_format(aStatus, sizeof(aStatus), "%s  |  %d тиков",
+				GameClient()->m_Controls.MacroPaused() ? "ЗАПИСЬ ПАУЗА" : "ЗАПИСЬ",
+				GameClient()->m_Controls.MacroFrameCount());
 		else if(GameClient()->m_Controls.MacroPlaying())
 			str_format(aStatus, sizeof(aStatus), "%s  |  %d / %d тиков",
 				GameClient()->m_Controls.MacroPaused() ? "ПАУЗА" : "ВОСПРОИЗВЕДЕНИЕ",
@@ -932,5 +934,5 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 	}
 
 	MainView.HSplitTop(12.0f, nullptr, &MainView);
-	Ui()->DoLabel(&MainView, Localize("Назначь клавиши перемотки назад и вперёд. Удержание перемотки назад повторяет шаг с нарастающей скоростью."), 12.0f, TEXTALIGN_ML);
+	Ui()->DoLabel(&MainView, Localize("Назначь клавиши перемотки назад и вперёд. Во время записи перемотка ставит запись на паузу, возвращает весь мир назад и удаляет будущее; после продолжения оно записывается заново."), 12.0f, TEXTALIGN_ML);
 }
