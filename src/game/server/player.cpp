@@ -60,6 +60,7 @@ void CPlayer::Reset()
 	m_LastSetTeam = 0;
 	m_LastInvited = 0;
 	m_WeakHookSpawn = false;
+	m_MacroPlaybackWarningSent = false;
 
 	// DDRace
 
