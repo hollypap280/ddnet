@@ -1147,6 +1147,7 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 
 void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, const CNetObj_PlayerInput &DummyInput)
 {
+	(void)DummyInput;
 	if(!m_MacroPracticeActive)
 		return;
 
@@ -1235,14 +1236,9 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 			return;
 		}
 
-		// Replay each saved tick from its recorded pre-state. Never wait for
-		// the live tee to reach an old coordinate: that caused the practice
-		// clock to run ahead while the macro input was held back.
+		// Restore the exact pre-tick state before replaying this input frame.
 		if(Frame.m_HasCoordinates)
 		{
-			// Restore the complete pre-tick character state, not only the
-			// position/velocity core. The DDNet extension also carries freeze,
-			// jumps, collision flags, weapons and tune-zone state used by FP.
 			m_MacroPracticeWorld.m_GameTick = std::max(0, Frame.m_Tick - 1);
 			m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
 			if(Frame.m_HasDDNetState)
@@ -1283,11 +1279,9 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		ReplayRecordedFrame = true;
 	}
 
-	if(!ReplayRecordedFrame)
+	if(!ReplayRecordedFrame && MacroPracticeRate() < SERVER_TICK_SPEED)
 	{
-		// Carry short press/release events into the next local simulation tick.
-		// At 50 Hz the local world now consumes this queue on schedule instead
-		// of waiting for the server's neutral-input send interval.
+		// At a slower recording rate preserve short movement/jump/hook taps.
 		if(TickInput.m_Direction == 0)
 		{
 			if(m_MacroPracticePendingDirectionLeft && !m_MacroPracticePendingDirectionRight)
@@ -1308,31 +1302,11 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 			TickInput.m_Hook = 1;
 			m_MacroPracticePendingHook = false;
 		}
-		if(m_MacroPracticePendingFireTransitions > 0)
-		{
-			m_MacroPracticeFireCounter = (m_MacroPracticeFireCounter + 1) & INPUT_STATE_MASK;
-			--m_MacroPracticePendingFireTransitions;
-		}
-		TickInput.m_Fire = m_MacroPracticeFireCounter;
-
 		if(m_MacroPracticePendingWantedWeapon > 0)
 		{
 			TickInput.m_WantedWeapon = m_MacroPracticePendingWantedWeapon;
 			m_MacroPracticePendingWantedWeapon = 0;
 		}
-		if(m_MacroPracticePendingNextWeaponTransitions > 0)
-		{
-			m_MacroPracticeInput.m_NextWeapon = (m_MacroPracticeInput.m_NextWeapon + 1) & INPUT_STATE_MASK;
-			--m_MacroPracticePendingNextWeaponTransitions;
-		}
-		if(m_MacroPracticePendingPrevWeaponTransitions > 0)
-		{
-			m_MacroPracticeInput.m_PrevWeapon = (m_MacroPracticeInput.m_PrevWeapon + 1) & INPUT_STATE_MASK;
-			--m_MacroPracticePendingPrevWeaponTransitions;
-		}
-		TickInput.m_NextWeapon = m_MacroPracticeInput.m_NextWeapon;
-		TickInput.m_PrevWeapon = m_MacroPracticeInput.m_PrevWeapon;
-		m_MacroPracticeInput.m_WantedWeapon = TickInput.m_WantedWeapon;
 	}
 
 	SMacroFrame NewFrame;
@@ -1387,33 +1361,25 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		NewFrame.m_ClientId = m_MacroPracticeLocalId;
 	}
 
-	// Match DDNet's normal prediction order: direct input handles weapon
-	// presses/switches; predicted input updates movement, jump, hook and aim.
+	// Apply the selected input only to the controlled practice tee. The other
+	// local tee receives an idle input; it is still simulated so interactions,
+	// momentum and map objects are reproduced when the timeline is rebuilt.
 	pCharacter->OnDirectInput(&TickInput);
 	pCharacter->OnPredictedInput(&TickInput);
-	const int OtherLocalId = GameClient()->m_aLocalIds[!g_Config.m_ClDummy];
-	CCharacter *pPracticeDummy = m_MacroPracticeWorld.GetCharacterById(OtherLocalId);
-	if(!m_MacroPlaying && pPracticeDummy && pPracticeDummy != pCharacter &&
-		(m_MacroPracticeDummyEnabled || g_Config.m_ClDummyControl || g_Config.m_ClDummyCopyMoves))
+
+	const int OwnId0 = GameClient()->m_aLocalIds[0];
+	const int OwnId1 = GameClient()->m_aLocalIds[1];
+	const int OtherLocalId = OwnId0 == m_MacroPracticeLocalId ? OwnId1 : OwnId0;
+	CCharacter *pPracticeOther = m_MacroPracticeWorld.GetCharacterById(OtherLocalId);
+	if(pPracticeOther && pPracticeOther != pCharacter)
 	{
-		CNetObj_PlayerInput DummyTickInput = DummyInput;
-		DummyTickInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
-		if(m_MacroPracticeDummyEnabled)
-		{
-			DummyTickInput = m_MacroPracticeDummyInput;
-			DummyTickInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
-			DummyTickInput.m_Direction = m_MacroPracticeDummyLeft == m_MacroPracticeDummyRight ? 0 :
-				(m_MacroPracticeDummyLeft ? -1 : 1);
-			const vec2 Aim = pCharacter->Core()->m_Pos - pPracticeDummy->Core()->m_Pos;
-			DummyTickInput.m_TargetX = round_to_int(Aim.x);
-			DummyTickInput.m_TargetY = round_to_int(Aim.y);
-			if(DummyTickInput.m_TargetX == 0 && DummyTickInput.m_TargetY == 0)
-				DummyTickInput.m_TargetX = 1;
-		}
-		pPracticeDummy->m_IsMacroPracticeStatic = false;
-		pPracticeDummy->OnDirectInput(&DummyTickInput);
-		pPracticeDummy->OnPredictedInput(&DummyTickInput);
+		CNetObj_PlayerInput IdleInput{};
+		IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+		IdleInput.m_TargetX = 1;
+		pPracticeOther->OnDirectInput(&IdleInput);
+		pPracticeOther->OnPredictedInput(&IdleInput);
 	}
+
 	++m_MacroPracticeWorld.m_GameTick;
 	m_MacroPracticeWorld.Tick();
 	++m_MacroPracticeTick;
