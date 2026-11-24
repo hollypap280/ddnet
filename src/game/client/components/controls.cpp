@@ -1728,8 +1728,7 @@ bool CControls::PlayMacro(const char *pName)
 	const int64_t HeaderBytes = (int64_t)sizeof(Magic) + sizeof(Version) + sizeof(Count) +
 		(Version >= 3 ? (int64_t)sizeof(aRecordedMapName) : 0) +
 		(Version >= 9 ? (int64_t)sizeof(RecordedRate) : 0);
-	const int LoadedPlaybackRate = Version >= 9 ? (int)RecordedRate : MacroPracticeRate();
-	const int64_t RemainingBytes = Valid && FileLength >= HeaderBytes ? FileLength - HeaderBytes : 0;
+		const int64_t RemainingBytes = Valid && FileLength >= HeaderBytes ? FileLength - HeaderBytes : 0;
 	if(Valid && FileLength < HeaderBytes)
 		Valid = false;
 	const int64_t CurrentFrameBytes = (int64_t)Count * sizeof(SMacroFrame);
@@ -1995,7 +1994,7 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroRecording = false;
 	m_MacroRecordingPaused = false;
 	m_MacroPlaybackLive = true;
-	m_MacroPlaybackRate = LoadedPlaybackRate;
+	m_MacroPlaybackRate = MacroPracticeRate();
 	m_MacroPlaybackOwnsPractice = false;
 	m_MacroPlaybackOwnsDummy = false;
 	m_MacroPlaybackDummy = PlaybackDummy;
@@ -2020,7 +2019,7 @@ bool CControls::PlayMacro(const char *pName)
 	SendMacroFrame(StartFrameIndex, EMacroFrameMode::STEP);
 
 	char aStartMessage[192];
-	str_format(aStartMessage, sizeof(aStartMessage), "Макрос «%s» запущен на настоящем персонаже. Практика включается автоматически; рекорд не засчитывается. Скорость: %d тиков/с.",
+	str_format(aStartMessage, sizeof(aStartMessage), "Макрос «%s» запущен. Вручную включать /practice или вступать в команду не нужно; рекорд не засчитывается. Скорость: %d тиков/с.",
 		pName, m_MacroPlaybackRate);
 	GameClient()->Echo(aStartMessage);
 	return true;

@@ -800,7 +800,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		CUIRect PracticeInfo;
 		if(AddSettingRow(44.0f, PracticeInfo))
 			Ui()->DoLabel(&PracticeInfo,
-				Localize("Запись идёт в отдельной локальной копии, чтобы не двигать серверного персонажа. Сохранённый макрос запускается на настоящем персонаже; на время воспроизведения практика включается автоматически и рекорд не засчитывается."),
+				Localize("Запись идёт в отдельной локальной копии, чтобы не двигать серверного персонажа. Сохранённый макрос запускается на настоящем персонаже — вручную включать /practice или вступать в команду не нужно. Рекорд не засчитывается."),
 				11.0f, TEXTALIGN_ML);
 
 		CUIRect ShowOthersRow;
@@ -813,7 +813,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		CUIRect PracticeRateRow;
 		if(AddSettingRow(28.0f, PracticeRateRow))
 			Ui()->DoScrollbarOption(&g_Config.m_ClMacroPracticeRate, &g_Config.m_ClMacroPracticeRate,
-				&PracticeRateRow, Localize("Скорость записи и воспроизведения (тиков/с)"), 1, 50);
+				&PracticeRateRow, Localize("Скорость записи и воспроизведения (до 50 тиков/с)"), 1, 50);
 
 		AddSection("ПЕРЕХОД ПО ТИКАМ");
 		CUIRect StepHint;
@@ -826,7 +826,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		CUIRect InfoRow;
 		if(AddSettingRow(48.0f, InfoRow))
 			Ui()->DoLabel(&InfoRow,
-				Localize("Во время записи используются обычные бинды DDNet. Скорость задаёт частоту обработки ввода; выбор хаммера, пистолета, шотгана, рокета и лазера доступен отдельными клавишами. Практика включается автоматически, рекорд не засчитывается."),
+				Localize("Во время записи используются обычные бинды DDNet. При воспроизведении действия выполняются на настоящем персонаже; вручную включать /practice или вступать в команду не нужно. Скорость задаётся ползунком, максимум — 50 тиков/с."),
 				12.0f, TEXTALIGN_ML);
 
 		s_MacroSettingsScrollRegion.End();
