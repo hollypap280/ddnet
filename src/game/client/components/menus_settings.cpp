@@ -523,6 +523,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	static CButtonContainer s_ShowOthers;
 	static CButtonContainer s_RecordToggle;
 	static CButtonContainer s_PlayToggle, s_Delete, s_Refresh, s_PauseToggle;
+	static CButtonContainer s_MacroGotoTick, s_MacroStepBack, s_MacroStepForward;
 	static CButtonContainer s_MacroLoop;
 	static CScrollRegion s_MacroListScrollRegion;
 	static CScrollRegion s_MacroSettingsScrollRegion;
@@ -594,7 +595,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		// library below is scrollable, so its length cannot hide Stop.
 		CUIRect Header;
 		MainView.HSplitTop(24.0f, &Header, &MainView);
-		Ui()->DoLabel(&Header, Localize("Клиент 1 — запись и воспроизведение"), 17.0f, TEXTALIGN_ML);
+		Ui()->DoLabel(&Header, Localize("Макросы — запись и воспроизведение"), 17.0f, TEXTALIGN_ML);
 
 		CUIRect NameRow;
 		MainView.HSplitTop(27.0f, &NameRow, &MainView);
@@ -605,6 +606,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		const bool Recording = GameClient()->m_Controls.MacroRecording();
 		const bool Playing = GameClient()->m_Controls.MacroPlaying();
 		const bool PracticeActive = GameClient()->m_Controls.MacroPracticeActive();
+		const bool LivePlayback = GameClient()->m_Controls.MacroPlaybackLive();
 
 		CUIRect RecordingRow;
 		MainView.HSplitTop(28.0f, &RecordingRow, &MainView);
@@ -633,7 +635,8 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			}
 		}
 		const char *pPracticeHint = Recording ? GameClient()->m_Controls.MacroRecordingName() :
-			PracticeActive ? Localize("FP-тренировка активна") : Localize("Настоящий тии остаётся неподвижен на сервере");
+			LivePlayback ? Localize("Настоящий персонаж управляется макросом (/practice)") :
+			PracticeActive ? Localize("Локальная запись; серверный персонаж неподвижен") : Localize("Воспроизведение идёт в живом мире");
 		Ui()->DoLabel(&Row, pPracticeHint, 11.0f, TEXTALIGN_ML);
 
 		CUIRect PlaybackRow;
@@ -664,6 +667,38 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 					GameClient()->m_Controls.PlayMacro(aPlaybackName);
 			}
 		}
+		if(!s_StartTickInitialized)
+		{
+			s_StartTick.SetInteger(g_Config.m_ClMacroStartTick);
+			s_StartTickInitialized = true;
+		}
+		CUIRect StartTickRow;
+		MainView.HSplitTop(27.0f, &StartTickRow, &MainView);
+		StartTickRow.VSplitLeft(106.0f, &Label, &NameRect);
+		Ui()->DoLabel(&Label, Localize("Стартовый тик"), 12.0f, TEXTALIGN_ML);
+		NameRect.VSplitRight(82.0f, &NameRect, &Button);
+		Ui()->DoEditBox(&s_StartTick, &NameRect, 13.0f);
+		if(s_StartTick.WasChanged())
+		{
+			const int StartTick = s_StartTick.GetInteger();
+			if(StartTick >= 1 && StartTick <= 18000)
+				g_Config.m_ClMacroStartTick = StartTick;
+			else
+				s_StartTick.SetInteger(g_Config.m_ClMacroStartTick);
+		}
+		if(DoButton_Menu(&s_MacroGotoTick, Localize("Перейти"), 0, &Button))
+			GameClient()->m_Controls.SeekMacroToTick(s_StartTick.GetInteger());
+
+		CUIRect SeekRow;
+		MainView.HSplitTop(27.0f, &SeekRow, &MainView);
+		SeekRow.VSplitLeft(142.0f, &Button, &Row);
+		if(DoButton_Menu(&s_MacroStepBack, Localize("← Назад"), 0, &Button))
+			GameClient()->m_Controls.SeekMacroBy(-GameClient()->m_Controls.MacroSeekStep());
+		Row.VSplitLeft(6.0f, nullptr, &Row);
+		Row.VSplitLeft(142.0f, &Button, nullptr);
+		if(DoButton_Menu(&s_MacroStepForward, Localize("Вперёд →"), 0, &Button))
+			GameClient()->m_Controls.SeekMacroBy(GameClient()->m_Controls.MacroSeekStep());
+
 		if(Recording || Playing)
 		{
 			CUIRect PauseRow;
@@ -802,7 +837,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		CUIRect PracticeInfo;
 		if(AddSettingRow(44.0f, PracticeInfo))
 			Ui()->DoLabel(&PracticeInfo,
-				Localize("Нажми «Начать макрос» во вкладке Макрос: игра переключится на локальную тренировочную копию, а настоящий персонаж останется неподвижен на сервере. При завершении запись сохранится автоматически, а копия исчезнет."),
+				Localize("Запись идёт в отдельной локальной копии, чтобы не двигать серверного персонажа. После сохранения копия удаляется. Сохранённый макрос запускается на настоящем серверном персонаже и требует /practice в команде."),
 				11.0f, TEXTALIGN_ML);
 
 		CUIRect ShowOthersRow;
@@ -864,7 +899,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		CUIRect InfoRow;
 		if(AddSettingRow(48.0f, InfoRow))
 			Ui()->DoLabel(&InfoRow,
-				Localize("В FP-практике можно использовать обычные игровые бинды или отдельные +macro_left/right/jump/hook/fire. Сохранённый макрос запускается в локальном мире; /practice не нужен."),
+				Localize("Во время записи используются обычные бинды DDNet. Скорость задаёт частоту обработки ввода; быстрые переключения оружия сохраняются. Воспроизведение идёт на серверном персонаже в /practice; удары и их анимация видны другим игрокам и наблюдателям."),
 				12.0f, TEXTALIGN_ML);
 
 		s_MacroSettingsScrollRegion.End();
