@@ -1912,14 +1912,6 @@ bool CControls::PlayMacro(const char *pName)
 	if(m_MacroPlaying)
 		StopMacroRecording();
 
-	const int LocalId = GameClient()->m_aLocalIds[g_Config.m_ClDummy];
-	if(LocalId < 0 || LocalId >= MAX_CLIENTS ||
-		(!m_MacroPracticeActive && !GameClient()->m_PredictedWorld.GetCharacterById(LocalId)))
-	{
-		GameClient()->Echo("Для FP-макроса нужен доступный локальный тии (основной или дамми).");
-		return false;
-	}
-
 	char aCurrentMapName[64] = "Неизвестная карта";
 	const char *pCurrentMapName = Client()->MapDownloadName();
 	if(pCurrentMapName && pCurrentMapName[0])
