@@ -1219,10 +1219,6 @@ bool CControls::SwitchMacroPracticeCharacter(int ClientId)
 		g_Config.m_ClDummy = 0;
 	else if(ClientId == GameClient()->m_aLocalIds[1])
 		g_Config.m_ClDummy = 1;
-	if(ClientId == GameClient()->m_aLocalIds[0])
-		g_Config.m_ClDummy = 0;
-	else if(ClientId == GameClient()->m_aLocalIds[1])
-		g_Config.m_ClDummy = 1;
 	m_MacroPracticeLocalId = ClientId;
 	m_MacroPracticeWorld.m_LocalClientId = ClientId;
 	m_MacroPracticePendingFireTransitions = 0;
@@ -1354,6 +1350,26 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		m_MacroPracticeWaiting = false;
 		TickInput = Frame.m_Input;
 		TickInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+
+		// Manual input replaces only the action that the player has touched.
+		const int MacroDummy = g_Config.m_ClDummy;
+		TickInput.m_Fire = (TickInput.m_Fire + m_aMacroLiveFireOffset[MacroDummy]) & INPUT_STATE_MASK;
+		TickInput.m_NextWeapon = (TickInput.m_NextWeapon + m_aMacroLiveNextWeaponOffset[MacroDummy]) & INPUT_STATE_MASK;
+		TickInput.m_PrevWeapon = (TickInput.m_PrevWeapon + m_aMacroLivePrevWeaponOffset[MacroDummy]) & INPUT_STATE_MASK;
+		if(m_aMacroManualDirectionActive[MacroDummy])
+			TickInput.m_Direction = m_MacroPracticeDirectionLeft == m_MacroPracticeDirectionRight ? 0 :
+				(m_MacroPracticeDirectionLeft ? -1 : 1);
+		if(m_aMacroManualJumpActive[MacroDummy])
+			TickInput.m_Jump = m_MacroPracticeInput.m_Jump;
+		if(m_aMacroManualHookActive[MacroDummy])
+			TickInput.m_Hook = m_MacroPracticeInput.m_Hook;
+		if(m_aMacroManualAimActive[MacroDummy])
+		{
+			TickInput.m_TargetX = LiveInput.m_TargetX;
+			TickInput.m_TargetY = LiveInput.m_TargetY;
+		}
+		if(m_aMacroPlaybackWeaponOverride[MacroDummy] > 0)
+			TickInput.m_WantedWeapon = m_aMacroPlaybackWeaponOverride[MacroDummy];
 		ReplayRecordedFrame = true;
 	}
 
