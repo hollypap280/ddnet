@@ -966,50 +966,27 @@ void CControls::PopulateMacroPracticeWorld()
 			m_MacroPracticeWorld.InsertEntity(pPracticeCharacter);
 		}
 
-		const bool IsFlightDummy = !m_MacroPlaying &&
-			ClientId == GameClient()->m_aLocalIds[!g_Config.m_ClDummy] &&
-			(m_MacroPracticeDummyEnabled || g_Config.m_ClDummyControl || g_Config.m_ClDummyCopyMoves);
-		const bool WasMovingDummy = m_aMacroPracticeSnapshotInitialized[ClientId] &&
-			!pPracticeCharacter->m_IsMacroPracticeStatic;
-
-		// Only the first import may read the server snapshot. Keep the moving
-		// dummy's copied prediction state when fly is enabled.
+		// A non-controlled local tee is always input-AFK. It is imported only
+		// once, then its state is preserved inside the practice world. It can
+		// still receive forces from the controlled tee, projectiles and map tiles.
 		if(!m_aMacroPracticeSnapshotInitialized[ClientId])
 		{
-			if(!IsFlightDummy)
-			{
-				pPracticeCharacter->Read(&GameClient()->m_Snap.m_aCharacters[ClientId].m_Cur,
-					Info.m_HasExtendedData ? &GameClient()->m_Snap.m_aCharacters[ClientId].m_ExtendedData : nullptr, false);
-				CCharacterCore StaticCore = pPracticeCharacter->GetCore();
-				StaticCore.m_Vel = vec2(0.0f, 0.0f);
-				pPracticeCharacter->SetCore(StaticCore);
-				pPracticeCharacter->ReleaseHook();
-				CNetObj_PlayerInput IdleInput{};
-				IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
-				IdleInput.m_TargetX = 1;
-				pPracticeCharacter->SetInput(&IdleInput);
-			}
-			m_aMacroPracticeSnapshotInitialized[ClientId] = true;
-		}
-
-		// When fly/copy-moves is turned off, stop the cloned dummy at the
-		// position it reached locally. Do not import its old server position.
-		if(WasMovingDummy && !IsFlightDummy)
-		{
-			CCharacterCore StoppedCore = pPracticeCharacter->GetCore();
-			StoppedCore.m_Vel = vec2(0.0f, 0.0f);
-			pPracticeCharacter->SetCore(StoppedCore);
-			pPracticeCharacter->m_Pos = StoppedCore.m_Pos;
-			pPracticeCharacter->m_PrevPos = StoppedCore.m_Pos;
-			pPracticeCharacter->m_PrevPrevPos = StoppedCore.m_Pos;
+			pPracticeCharacter->Read(&GameClient()->m_Snap.m_aCharacters[ClientId].m_Cur,
+				Info.m_HasExtendedData ? &GameClient()->m_Snap.m_aCharacters[ClientId].m_ExtendedData : nullptr, false);
+			CCharacterCore StaticCore = pPracticeCharacter->GetCore();
+			StaticCore.m_Vel = vec2(0.0f, 0.0f);
+			pPracticeCharacter->SetCore(StaticCore);
 			pPracticeCharacter->ReleaseHook();
 			CNetObj_PlayerInput IdleInput{};
 			IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
 			IdleInput.m_TargetX = 1;
 			pPracticeCharacter->SetInput(&IdleInput);
+			pPracticeCharacter->OnDirectInput(&IdleInput);
+			pPracticeCharacter->OnPredictedInput(&IdleInput);
+			m_aMacroPracticeSnapshotInitialized[ClientId] = true;
 		}
 
-		pPracticeCharacter->m_IsMacroPracticeStatic = !IsFlightDummy;
+		pPracticeCharacter->m_IsMacroPracticeStatic = true;
 		pPracticeCharacter->m_GameTeam = GameTeam;
 	}
 
