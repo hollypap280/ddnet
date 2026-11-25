@@ -546,26 +546,9 @@ int CGameClient::OnSnapInput(int *pData, bool Dummy, bool Force)
 		return 0;
 	}
 
-	// Triplefly sends the dummy's normal copied movement while flying. On
-	// its scheduled hammer ticks it sends one hammer pulse; during the short
-	// hook window it sends the copied input with the third-tee aim instead.
-	if(m_Controls.TripleflyAssistActive() && m_Controls.TripleflyHammerPending())
-	{
-		m_DummyFire = 0;
-		m_DummyFire++;
-		m_HammerInput.m_Fire = (m_HammerInput.m_Fire + 1) | 1;
-		m_HammerInput.m_WantedWeapon = WEAPON_HAMMER + 1;
-		if(!g_Config.m_ClDummyRestoreWeapon)
-			m_DummyInput.m_WantedWeapon = WEAPON_HAMMER + 1;
-
-		const vec2 Dir = m_LocalCharacterPos - m_aClients[m_aLocalIds[!g_Config.m_ClDummy]].m_Predicted.m_Pos;
-		m_HammerInput.m_TargetX = (int)Dir.x;
-		m_HammerInput.m_TargetY = (int)Dir.y;
-		mem_copy(pData, &m_HammerInput, sizeof(m_HammerInput));
-		m_Controls.OnTripleflyHammerSent();
-		return sizeof(m_HammerInput);
-	}
-
+	// Triplefly only adds a direction-sensitive hook window. Keep the normal
+	// dummy hammer/copy-move configuration running so an existing flight is
+	// not interrupted when the helper grabs the third tee.
 	if(m_Controls.TripleflyAssistActive() && m_Controls.TripleflyHookActive())
 	{
 		// Keep the hook pressed only for the calculated directional window.
