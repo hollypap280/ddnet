@@ -68,6 +68,9 @@ private:
 	CScrollRegion m_SettingsScrollRegion;
 	CButtonContainer m_ResetToDefaultButton;
 	CButtonContainer m_ImportMacroBindsButton;
+	CButtonContainer m_AddMacroBindButton;
+	CLineInputBuffered<512> m_MacroBindInput;
+	char m_aMacroBindStatus[192] = "Вставь bind KEY \"команда\" и нажми «Добавить»";
 	CLineInputBuffered<128> m_FilterInput;
 	int m_CurrentSearchMatch = 0;
 	std::vector<int> m_vSearchMatches;
@@ -83,6 +86,7 @@ private:
 
 	float MeasureSettingsMacroHeight() const;
 	void RenderSettingsMacro(CUIRect View);
+	bool AddMacroBindFromText();
 
 	float MeasureSettingsMouseHeight() const;
 	void RenderSettingsMouse(CUIRect View);
