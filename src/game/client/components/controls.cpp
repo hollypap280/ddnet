@@ -1500,7 +1500,7 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 		pCharacter->m_PrevPos = Core.m_Pos;
 		pCharacter->m_PrevPrevPos = Core.m_Pos;
 		pCharacter->SetActiveWeapon(Frame.m_Weapon);
-		pCharacter->SetAttackTick(Frame.m_AttackTick);
+		pCharacter->m_AttackTick = Frame.m_AttackTick;
 		pCharacter->m_FreezeTime = Frame.m_FreezeTime;
 		pCharacter->m_FrozenLastTick = Frame.m_FrozenLastTick != 0;
 
@@ -1522,7 +1522,7 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 				pSecondary->m_PrevPos = SecondaryCore.m_Pos;
 				pSecondary->m_PrevPrevPos = SecondaryCore.m_Pos;
 				pSecondary->SetActiveWeapon(Frame.m_SecondaryWeapon);
-				pSecondary->SetAttackTick(Frame.m_SecondaryAttackTick);
+				pSecondary->m_AttackTick = Frame.m_SecondaryAttackTick;
 				pSecondary->m_FreezeTime = Frame.m_SecondaryFreezeTime;
 				pSecondary->m_FrozenLastTick = Frame.m_SecondaryFrozenLastTick != 0;
 			}
