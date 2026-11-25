@@ -1981,7 +1981,7 @@ bool CControls::PlayMacro(const char *pName)
 		return false;
 	}
 	const int BaseRecordingRate = RecordedRate > 0 ? (int)RecordedRate : MacroPracticeRate();
-	const int FasterPlaybackRate = std::clamp((BaseRecordingRate * 3 + 1) / 2, 1, SERVER_TICK_SPEED);
+	const int FasterPlaybackRate = std::clamp((BaseRecordingRate * 3 + 1) / 2, 1, (int)SERVER_TICK_SPEED);
 
 	if(Client()->State() != IClient::STATE_ONLINE)
 	{
@@ -2643,7 +2643,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 			if(Score >= BestScore)
 				continue;
 
-			const float HookSpeed = std::max(1.0f, HookerCore.m_Tuning.m_HookFireSpeed);
+			const float HookSpeed = std::max(1.0f, (float)HookerCore.m_Tuning.m_HookFireSpeed);
 			const float FlightTicks = std::clamp(std::sqrt(DistanceSquared) / HookSpeed, 1.0f, 6.0f);
 			vec2 Lead = (TargetCore.m_Vel - HookerVel) * FlightTicks;
 			const float LeadLength = length(Lead);
