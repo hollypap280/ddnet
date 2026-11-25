@@ -852,6 +852,26 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 		}
 		s_MacroSeekBindsCleared = true;
 	}
+	// Convert the old toggle-style Triplefly key to the hold-style helper.
+	// Keep the user's chosen key; the + command automatically sends - on release.
+	static bool s_TripleflyBindsMigrated = false;
+	if(!s_TripleflyBindsMigrated)
+	{
+		for(int ModifierMask = 0; ModifierMask < KeyModifier::COMBINATION_COUNT; ++ModifierMask)
+		{
+			for(int Key = KEY_FIRST; Key < KEY_LAST; ++Key)
+			{
+				const CBindSlot Candidate(Key, ModifierMask);
+				const char *pCommand = GameClient()->m_Binds.Get(Candidate);
+				if(str_comp(pCommand, "toggle cl_auto_triplefly 0 1") == 0 ||
+					str_comp(pCommand, "toggle_auto_triplefly") == 0)
+				{
+					GameClient()->m_Binds.Bind(Key, "+auto_triplefly", false, ModifierMask);
+				}
+			}
+		}
+		s_TripleflyBindsMigrated = true;
+	}
 	MainView.HSplitTop(28.0f, &Label, &MainView);
 	Ui()->DoLabel(&Label, Localize("Назначение клавиш для функций"), 20.0f, TEXTALIGN_ML);
 	MainView.HSplitTop(5.0f, nullptr, &MainView);
