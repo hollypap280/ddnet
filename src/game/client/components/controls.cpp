@@ -269,27 +269,25 @@ void CControls::ConAutoTriplefly(IConsole::IResult *pResult, void *pUserData)
 		pSelf->m_AutoTripleflyPreviousDummyHook = g_Config.m_ClDummyHook;
 		pSelf->m_AutoTripleflyPreviousDummyFire = g_Config.m_ClDummyFire;
 		pSelf->m_AutoTripleflyPreviousDummyJump = g_Config.m_ClDummyJump;
-		pSelf->m_AutoTripleflyPreviousDummyHammer = g_Config.m_ClDummyHammer;
 
 		pSelf->m_AutoTripleflyBindActive = true;
 		g_Config.m_ClAutoTriplefly = 1;
 		g_Config.m_ClDummyCopyMoves = 1;
-		// Keep normal copy movement enabled, but disable the regular hammer
-		// timer: Triplefly schedules one controlled hammer pulse per flight cycle.
 		g_Config.m_ClDummyControl = 1;
 		g_Config.m_ClDummyHook = 0;
 		g_Config.m_ClDummyFire = 0;
 		g_Config.m_ClDummyJump = 0;
-		g_Config.m_ClDummyHammer = 0;
-		pSelf->m_TripleflyHammerPending = false;
+		// Keep cl_dummy_hammer exactly as the player configured it. The
+		// assist only adds brief hook windows; it must not break the flight.
 		pSelf->m_TripleflyFlightActive = false;
-		pSelf->m_TripleflyNextHammerTick = -1;
+		pSelf->m_TripleflyNextHookTick = -1;
 		pSelf->m_TripleflyHookStartTick = -1;
 		pSelf->m_TripleflyHookEndTick = -1;
 		pSelf->m_TripleflyHookDuration = 3;
+		pSelf->m_TripleflyHookSent = false;
 		std::fill(std::begin(pSelf->m_aTripleflyTargetFound), std::end(pSelf->m_aTripleflyTargetFound), false);
 		std::fill(std::begin(pSelf->m_aTripleflyTargetClientId), std::end(pSelf->m_aTripleflyTargetClientId), -1);
-		pSelf->GameClient()->Echo("Triplefly включён: начни флайт, дамми сам будет чередовать удар и короткий хук третьего тии.");
+		pSelf->GameClient()->Echo("Triplefly включён: начни флайт — дамми сам подхватит третьего тии коротким хуком.");
 	}
 	else
 	{
@@ -300,10 +298,8 @@ void CControls::ConAutoTriplefly(IConsole::IResult *pResult, void *pUserData)
 		g_Config.m_ClDummyHook = pSelf->m_AutoTripleflyPreviousDummyHook;
 		g_Config.m_ClDummyFire = pSelf->m_AutoTripleflyPreviousDummyFire;
 		g_Config.m_ClDummyJump = pSelf->m_AutoTripleflyPreviousDummyJump;
-		g_Config.m_ClDummyHammer = pSelf->m_AutoTripleflyPreviousDummyHammer;
-		pSelf->m_TripleflyHammerPending = false;
 		pSelf->m_TripleflyFlightActive = false;
-		pSelf->m_TripleflyNextHammerTick = -1;
+		pSelf->m_TripleflyNextHookTick = -1;
 		pSelf->m_TripleflyHookStartTick = -1;
 		pSelf->m_TripleflyHookEndTick = -1;
 		std::fill(std::begin(pSelf->m_aTripleflyTargetFound), std::end(pSelf->m_aTripleflyTargetFound), false);
@@ -314,23 +310,10 @@ void CControls::ConAutoTriplefly(IConsole::IResult *pResult, void *pUserData)
 	}
 }
 
-void CControls::OnTripleflyHammerSent()
-{
-	if(!m_AutoTripleflyBindActive)
-		return;
-
-	const int Dummy = 1 - g_Config.m_ClDummy;
-	const int CurrentTick = Client()->GameTick(Dummy);
-	const int HoldTicks = std::clamp(m_TripleflyHookDuration, 1, 5);
-	m_TripleflyHammerPending = false;
-	m_TripleflyHookStartTick = CurrentTick + 1;
-	m_TripleflyHookEndTick = m_TripleflyHookStartTick + HoldTicks;
-	m_TripleflyNextHammerTick = CurrentTick + 18;
-}
-
 bool CControls::TripleflyHookActive() const
 {
-	if(!m_AutoTripleflyBindActive || m_TripleflyHookStartTick < 0 || m_TripleflyHookEndTick <= m_TripleflyHookStartTick)
+	if(!m_AutoTripleflyBindActive || !m_TripleflyFlightActive ||
+		m_TripleflyHookStartTick < 0 || m_TripleflyHookEndTick <= m_TripleflyHookStartTick)
 		return false;
 
 	const int ActiveTee = g_Config.m_ClDummy;
@@ -2941,26 +2924,21 @@ void CControls::ApplyHookAutomation(int Dummy)
 		const int HookerTick = Client()->GameTick(!Dummy);
 		if(!m_TripleflyFlightActive && FlightSpeed >= 3.0f)
 		{
-			// First movement after enabling Triplefly starts the first cycle.
+			// The player starts the flight manually. As soon as real movement
+			// begins, the dummy may hook the third tee; no extra Fire press or
+			// dummy hammer pulse is required to start the assist.
 			m_TripleflyFlightActive = true;
-			m_TripleflyHammerPending = true;
-			m_TripleflyNextHammerTick = -1;
+			m_TripleflyNextHookTick = HookerTick;
 			m_TripleflyHookStartTick = -1;
 			m_TripleflyHookEndTick = -1;
 		}
 		else if(m_TripleflyFlightActive && FlightSpeed <= 1.5f)
 		{
-			// A clear stop ends the cycle; the next flight will start fresh.
+			// A clear stop ends the hook cycle; the next flight starts fresh.
 			m_TripleflyFlightActive = false;
-			m_TripleflyHammerPending = false;
-			m_TripleflyNextHammerTick = -1;
+			m_TripleflyNextHookTick = -1;
 			m_TripleflyHookStartTick = -1;
 			m_TripleflyHookEndTick = -1;
-		}
-		else if(m_TripleflyFlightActive && !m_TripleflyHammerPending &&
-			m_TripleflyNextHammerTick >= 0 && HookerTick >= m_TripleflyNextHammerTick)
-		{
-			m_TripleflyHammerPending = true;
 		}
 
 		const bool HookerAvailable = DummyId >= 0 && DummyId < MAX_CLIENTS &&
@@ -2968,6 +2946,10 @@ void CControls::ApplyHookAutomation(int Dummy)
 		const CCharacter *pPracticeHooker = PracticeActive ? m_MacroPracticeWorld.GetCharacterById(DummyId) : nullptr;
 		if(!HookerAvailable || (PracticeActive && !pPracticeHooker))
 		{
+			m_aTripleflyTargetFound[Dummy] = false;
+			m_aTripleflyTargetClientId[Dummy] = -1;
+			m_TripleflyHookStartTick = -1;
+			m_TripleflyHookEndTick = -1;
 			m_aAutoHookActive[Dummy] = false;
 			m_aAutoHookFireActive[Dummy] = false;
 			m_aAutoAvoidActive[Dummy] = false;
@@ -3038,6 +3020,29 @@ void CControls::ApplyHookAutomation(int Dummy)
 		m_aTripleflyTargetClientId[Dummy] = BestClientId;
 		m_aTripleflyAimX[Dummy] = round_to_int(BestAim.x);
 		m_aTripleflyAimY[Dummy] = round_to_int(BestAim.y);
+
+		if(!m_aTripleflyTargetFound[Dummy])
+		{
+			m_TripleflyHookStartTick = -1;
+			m_TripleflyHookEndTick = -1;
+			m_TripleflyNextHookTick = HookerTick + 3;
+		}
+		else if(m_TripleflyFlightActive && m_TripleflyNextHookTick >= 0 &&
+			HookerTick >= m_TripleflyNextHookTick &&
+			(HookerTick >= m_TripleflyHookEndTick || m_TripleflyHookStartTick < 0))
+		{
+			m_TripleflyHookStartTick = HookerTick + 1;
+			m_TripleflyHookEndTick = m_TripleflyHookStartTick + m_TripleflyHookDuration;
+			m_TripleflyNextHookTick = HookerTick + 18;
+		}
+		else if(m_TripleflyHookStartTick >= 0 && HookerTick >= m_TripleflyHookStartTick &&
+			HookerTick < m_TripleflyHookEndTick)
+		{
+			// Re-evaluate duration as the flight direction changes. A turn down
+			// or sideways can shorten the current hook immediately.
+			m_TripleflyHookEndTick = m_TripleflyHookStartTick + m_TripleflyHookDuration;
+		}
+
 		m_aAutoHookActive[Dummy] = false;
 		m_aAutoHookFireActive[Dummy] = false;
 		m_aAutoAvoidActive[Dummy] = false;
