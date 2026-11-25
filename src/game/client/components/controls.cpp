@@ -1477,7 +1477,15 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 	{
 		CCharacterCore Core = pCharacter->GetCore();
 		Core.Read(&Frame.m_Core);
-		if(Frame.m_HasDDNetState)
+		if(Frame.m_HasWeaponInventoryState)
+		{
+			for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+			{
+				Core.m_aWeapons[Weapon].m_Got = Frame.m_aWeaponGot[Weapon] != 0;
+				Core.m_aWeapons[Weapon].m_Ammo = Frame.m_aWeaponAmmo[Weapon];
+			}
+		}
+		else if(Frame.m_HasDDNetState)
 		{
 			for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
 				Core.m_aWeapons[Weapon].m_Ammo = Frame.m_aWeaponAmmo[Weapon];
@@ -1500,7 +1508,10 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 				CCharacterCore SecondaryCore = pSecondary->GetCore();
 				SecondaryCore.Read(&Frame.m_SecondaryCore);
 				for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+				{
+					SecondaryCore.m_aWeapons[Weapon].m_Got = Frame.m_aSecondaryWeaponGot[Weapon] != 0;
 					SecondaryCore.m_aWeapons[Weapon].m_Ammo = Frame.m_aSecondaryWeaponAmmo[Weapon];
+				}
 				pSecondary->SetCore(SecondaryCore);
 				pSecondary->m_Pos = SecondaryCore.m_Pos;
 				pSecondary->m_PrevPos = SecondaryCore.m_Pos;
@@ -1757,8 +1768,12 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		NewFrame.m_Tick = m_MacroPracticeTick;
 		NewFrame.m_FreezeTime = pCharacter->m_FreezeTime;
 		NewFrame.m_FrozenLastTick = pCharacter->m_FrozenLastTick ? 1 : 0;
+		NewFrame.m_HasWeaponInventoryState = 1;
 		for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+		{
+			NewFrame.m_aWeaponGot[Weapon] = pCharacter->Core()->m_aWeapons[Weapon].m_Got ? 1 : 0;
 			NewFrame.m_aWeaponAmmo[Weapon] = pCharacter->Core()->m_aWeapons[Weapon].m_Ammo;
+		}
 		static_cast<CNetObj_CharacterCore &>(NewFrame.m_Character) = NewFrame.m_Core;
 		NewFrame.m_Character.m_Weapon = NewFrame.m_Weapon;
 		NewFrame.m_Character.m_AttackTick = NewFrame.m_AttackTick;
@@ -1774,7 +1789,10 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 			NewFrame.m_SecondaryFreezeTime = pSecondary->m_FreezeTime;
 			NewFrame.m_SecondaryFrozenLastTick = pSecondary->m_FrozenLastTick ? 1 : 0;
 			for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+			{
+				NewFrame.m_aSecondaryWeaponGot[Weapon] = pSecondary->Core()->m_aWeapons[Weapon].m_Got ? 1 : 0;
 				NewFrame.m_aSecondaryWeaponAmmo[Weapon] = pSecondary->Core()->m_aWeapons[Weapon].m_Ammo;
+			}
 		}
 		m_vMacroFrames.push_back(NewFrame);
 		if(m_vMacroFrames.size() >= MACRO_MAX_FRAMES)
