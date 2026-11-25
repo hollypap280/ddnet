@@ -2433,9 +2433,11 @@ bool CControls::PlayMacro(const char *pName)
 		GameClient()->Echo(aMessage);
 		return false;
 	}
-	// A saved frame is one recorded practice step. Replay exactly one frame
-	// per real DDNet server tick (20 ms at the standard 50 tick/s rate).
-	const int FasterPlaybackRate = SERVER_TICK_SPEED;
+	// Version 9+ stores the rate used to create the macro. Reuse that
+	// rate so a slow recording is not silently accelerated on playback.
+	// Legacy macros without a saved rate retain the standard 50 tick/s speed.
+	const int PlaybackRate = Version >= 9 ?
+		std::clamp((int)RecordedRate, 1, (int)SERVER_TICK_SPEED) : (int)SERVER_TICK_SPEED;
 
 	if(Client()->State() != IClient::STATE_ONLINE)
 	{
@@ -2513,7 +2515,7 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroPlaybackHistoryAvailable = true;
 	m_MacroPlaybackStartPending = true;
 	m_MacroPlaybackManualDummyOverride = false;
-	m_MacroPlaybackRate = FasterPlaybackRate;
+	m_MacroPlaybackRate = PlaybackRate;
 	m_MacroPlaybackDummy = PlaybackDummy;
 	m_MacroPlaybackOwnsPractice = false;
 	m_MacroPlaybackOwnsDummy = false;
@@ -2562,7 +2564,7 @@ bool CControls::PlayMacro(const char *pName)
 	m_aInputDirectionRight[PlaybackDummy] = 0;
 	m_aManualHook[PlaybackDummy] = false;
 
-	m_MacroPlaybackRate = FasterPlaybackRate;
+	m_MacroPlaybackRate = PlaybackRate;
 	m_MacroPracticeAccumulator = 0.0;
 	m_MacroPracticeLastServerTick = Client()->GameTick(g_Config.m_ClDummy);
 
@@ -3808,10 +3810,8 @@ void CControls::OnUpdate()
 	// A saved frame is one logical game tick. Recording can run at a slower
 	// fraction of confirmed server ticks, while playback consumes exactly one
 	// saved frame per server tick.
-	const int PracticeRate = m_MacroPlaying ? (int)SERVER_TICK_SPEED :
+	const int PracticeRate = m_MacroPlaying ? m_MacroPlaybackRate :
 		(m_MacroRecording ? m_MacroRecordingRate : MacroPracticeRate());
-	if(m_MacroPlaying)
-		m_MacroPlaybackRate = SERVER_TICK_SPEED;
 	m_MacroPracticeAccumulator += (double)ServerTickDelta * (double)PracticeRate / (double)SERVER_TICK_SPEED;
 
 	int Steps = 0;
