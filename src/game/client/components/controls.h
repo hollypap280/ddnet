@@ -154,6 +154,9 @@ private:
 		int m_SecondaryFreezeTime = 0;
 		int m_SecondaryFrozenLastTick = 0;
 		int m_aSecondaryWeaponAmmo[NUM_WEAPONS]{};
+		int m_HasWeaponInventoryState = 0;
+		int m_aWeaponGot[NUM_WEAPONS]{};
+		int m_aSecondaryWeaponGot[NUM_WEAPONS]{};
 	};
 	// Version 9 frame layout is kept for loading existing .dmacro files.
 	struct SMacroFrameV9
