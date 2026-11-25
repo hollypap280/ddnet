@@ -2606,22 +2606,10 @@ void CControls::ConMacroGotoConfigured(IConsole::IResult *pResult, void *pUserDa
 		pSelf->GameClient()->Echo("Укажи тик перехода в пределах длины макроса.");
 		return;
 	}
-	if(pSelf->m_MacroPlaybackLive && pSelf->m_MacroPlaying)
-	{
-		// Queue an absolute seek for the next confirmed server tick. Do not
-		// send a second STEP before the server has advanced the previous one.
-		pSelf->m_MacroPlaybackSeekTargetIndex = TargetTick - 1;
-		pSelf->m_MacroPracticeAccumulator = 0.0;
-		char aMessage[96];
-		str_format(aMessage, sizeof(aMessage), "Переход к тику %d запланирован.", TargetTick);
-		pSelf->GameClient()->Echo(aMessage);
-		return;
-	}
-
 	const int CurrentTick = pSelf->m_MacroRecording ? pSelf->MacroFrameCount() :
 		(pSelf->m_MacroDisplayedTick > 0 ? pSelf->m_MacroDisplayedTick : (int)pSelf->m_MacroPlaybackIndex);
 	if(!pSelf->SeekMacro(TargetTick - CurrentTick, true, true))
-		pSelf->GameClient()->Echo("Не удалось перейти к выбранному тику макроса.");
+		pSelf->GameClient()->Echo("Не удалось восстановить выбранный тик. Проверь, что макрос содержит данные состояния.");
 }
 
 int CControls::ImportMacroBinds()
@@ -2970,22 +2958,46 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 
 	if(m_MacroPlaybackLive)
 	{
-		// Seeking live playback selects another input frame. The real tee is
-		// never rewound or teleported; replay continues from its current position.
-		m_MacroPlaybackSeekTargetIndex = Target;
+		// The server cannot be rewound by a client. Switch to the isolated FP
+		// world and restore the exact saved tee state there instead.
+		const int RecordedClientId = m_vMacroFrames[Target].m_ClientId;
+		if(RecordedClientId == GameClient()->m_aLocalIds[0])
+			g_Config.m_ClDummy = 0;
+		else if(RecordedClientId == GameClient()->m_aLocalIds[1])
+			g_Config.m_ClDummy = 1;
+
+		StopMacroRecording();
+		if(!StartMacroPractice())
+			return false;
+		if(!RestoreMacroPracticeFrame(Target))
+		{
+			StopMacroPractice();
+			GameClient()->Echo("Не удалось восстановить сохранённое состояние тии на выбранном тике.");
+			return false;
+		}
+		m_MacroPlaybackLive = false;
+		m_MacroPlaying = true;
+		m_MacroPlaybackPaused = true;
+		m_MacroPlaybackOwnsPractice = true;
+		m_MacroPlaybackIndex = (std::size_t)Target + 1;
+		m_MacroDisplayedTick = Target + 1;
 		m_MacroPracticeAccumulator = 0.0;
+		m_MacroPracticeLastTime = time_get();
 	}
 	else
 	{
-		if(!RebuildMacroWorldToPosition(Target + 1))
+		if(m_MacroPracticeBaselineValid)
+		{
+			if(!RebuildMacroWorldToPosition(Target + 1))
+				return false;
+		}
+		else if(!RestoreMacroPracticeFrame(Target))
 			return false;
+
 		m_MacroPlaybackIndex = (std::size_t)Target + 1;
 		m_MacroDisplayedTick = Target + 1;
-		if(!WasPlayingBeforeSeek)
-		{
-			m_MacroPlaying = true;
-			m_MacroPlaybackPaused = true;
-		}
+		m_MacroPlaying = true;
+		m_MacroPlaybackPaused = true;
 	}
 
 	if(ShowMessage)
@@ -3948,8 +3960,29 @@ void CControls::OnRender()
 							}
 							else
 							{
-								GameClient()->Echo("Макрос завершён; управление возвращено обычному DDNet.");
-								StopMacroRecording();
+								// Stop live input but keep the loaded frame history so
+								// rewind/goto can still open it in the local FP world.
+								const int FinishedDummy = m_MacroPlaybackDummy;
+								m_aInputDirectionLeft[FinishedDummy] = false;
+								m_aInputDirectionRight[FinishedDummy] = false;
+								m_aInputData[FinishedDummy].m_Direction = 0;
+								m_aInputData[FinishedDummy].m_Jump = 0;
+								m_aInputData[FinishedDummy].m_Hook = 0;
+								if(m_aInputData[FinishedDummy].m_Fire & 1)
+									++m_aInputData[FinishedDummy].m_Fire;
+								if(m_aInputData[FinishedDummy].m_NextWeapon & 1)
+									++m_aInputData[FinishedDummy].m_NextWeapon;
+								if(m_aInputData[FinishedDummy].m_PrevWeapon & 1)
+									++m_aInputData[FinishedDummy].m_PrevWeapon;
+								m_aInputData[FinishedDummy].m_Fire &= INPUT_STATE_MASK;
+								m_aInputData[FinishedDummy].m_NextWeapon &= INPUT_STATE_MASK;
+								m_aInputData[FinishedDummy].m_PrevWeapon &= INPUT_STATE_MASK;
+								m_aInputData[FinishedDummy].m_WantedWeapon = 0;
+								m_MacroPlaying = false;
+								m_MacroPlaybackPaused = true;
+								m_MacroPlaybackStartPending = false;
+								m_MacroPlaybackLastTick = -1;
+								GameClient()->Echo("Макрос завершён. История сохранена: можно перемотать её в локальную FP-тренировку.");
 							}
 						}
 
