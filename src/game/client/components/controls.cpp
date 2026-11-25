@@ -2743,7 +2743,7 @@ void CControls::ConMacroGotoConfigured(IConsole::IResult *pResult, void *pUserDa
 	CControls *pSelf = (CControls *)pUserData;
 	if(pSelf->GameClient()->m_Chat.IsActive() || pSelf->GameClient()->m_Menus.IsActive())
 		return;
-	if((!pSelf->m_MacroPracticeActive && !pSelf->m_MacroPlaybackLive) || pSelf->m_vMacroFrames.empty())
+	if((!pSelf->m_MacroPracticeActive && !pSelf->m_MacroPlaybackLive && !pSelf->m_MacroPlaybackHistoryAvailable) || pSelf->m_vMacroFrames.empty())
 	{
 		pSelf->GameClient()->Echo("Сначала начни запись или запусти сохранённый макрос.");
 		return;
@@ -2796,14 +2796,15 @@ int CControls::ImportMacroBinds()
 			size_t TokenStart = SegmentStart;
 			while(TokenStart < SegmentEnd && std::isspace((unsigned char)Original[TokenStart]))
 				++TokenStart;
-			size_t TokenEnd = SegmentEnd;
-			while(TokenEnd > TokenStart && std::isspace((unsigned char)Original[TokenEnd - 1]))
-				--TokenEnd;
+			size_t TokenEnd = TokenStart;
+			while(TokenEnd < SegmentEnd && !std::isspace((unsigned char)Original[TokenEnd]))
+				++TokenEnd;
 
+			const std::string CommandName = Original.substr(TokenStart, TokenEnd - TokenStart);
 			const SImportEntry *pMatched = nullptr;
 			for(const SImportEntry &Entry : s_aEntries)
 			{
-				if(Original.compare(TokenStart, TokenEnd - TokenStart, Entry.m_pOriginal) == 0)
+				if(str_comp_nocase(CommandName.c_str(), Entry.m_pOriginal) == 0)
 				{
 					pMatched = &Entry;
 					break;
@@ -3149,6 +3150,7 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 	}
 	else
 	{
+		const bool WasPlaybackPaused = m_MacroPlaybackPaused;
 		if(m_MacroPracticeBaselineValid)
 		{
 			if(!RebuildMacroWorldToPosition(Target + 1))
@@ -3160,7 +3162,8 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 		m_MacroPlaybackIndex = (std::size_t)Target + 1;
 		m_MacroDisplayedTick = Target + 1;
 		m_MacroPlaying = true;
-		m_MacroPlaybackPaused = true;
+		m_MacroPlaybackPaused = WasPlaybackPaused;
+		m_MacroPracticeLastTime = time_get();
 	}
 
 	if(ShowMessage)
@@ -4154,29 +4157,10 @@ void CControls::AdvanceMacroPlaybackAfterInput()
 							}
 							else
 							{
-								// Stop live input but keep the loaded frame history so
-								// rewind/goto can still open it in the local FP world.
-								const int FinishedDummy = m_MacroPlaybackDummy;
-								m_aInputDirectionLeft[FinishedDummy] = false;
-								m_aInputDirectionRight[FinishedDummy] = false;
-								m_aInputData[FinishedDummy].m_Direction = 0;
-								m_aInputData[FinishedDummy].m_Jump = 0;
-								m_aInputData[FinishedDummy].m_Hook = 0;
-								if(m_aInputData[FinishedDummy].m_Fire & 1)
-									++m_aInputData[FinishedDummy].m_Fire;
-								if(m_aInputData[FinishedDummy].m_NextWeapon & 1)
-									++m_aInputData[FinishedDummy].m_NextWeapon;
-								if(m_aInputData[FinishedDummy].m_PrevWeapon & 1)
-									++m_aInputData[FinishedDummy].m_PrevWeapon;
-								m_aInputData[FinishedDummy].m_Fire &= INPUT_STATE_MASK;
-								m_aInputData[FinishedDummy].m_NextWeapon &= INPUT_STATE_MASK;
-								m_aInputData[FinishedDummy].m_PrevWeapon &= INPUT_STATE_MASK;
-								m_aInputData[FinishedDummy].m_WantedWeapon = 0;
+								// Finish through the same cleanup path as a manual stop.
 								m_MacroPlaying = false;
-								m_MacroPlaybackPaused = true;
-								m_MacroPlaybackStartPending = false;
-								m_MacroPlaybackLastTick = -1;
-								GameClient()->Echo("Макрос завершён. История сохранена: можно перемотать её в локальную FP-тренировку.");
+								GameClient()->Echo("Макрос завершён. Управление возвращено в обычный DDNet.");
+								StopMacroRecording();
 							}
 						}
 
@@ -4200,7 +4184,7 @@ void CControls::OnRender()
 		return;
 
 	if(m_MacroRewindHeld && !m_vMacroFrames.empty() &&
-		(m_MacroPracticeActive || m_MacroPlaybackLive) &&
+		(m_MacroPracticeActive || m_MacroPlaybackLive || m_MacroPlaybackHistoryAvailable) &&
 		!GameClient()->m_Chat.IsActive() && !GameClient()->m_Menus.IsActive())
 	{
 		const int64_t Now = time_get();

@@ -103,7 +103,7 @@ public:
 	void StopMacroPractice();
 	void ResetMacroPracticeCharacter();
 	bool StartMacroRecording(const char *pName = nullptr);
-	void StopMacroRecording();
+	void StopMacroRecording(bool RestorePlaybackView = true);
 	bool SaveMacro(const char *pName);
 	bool PlayMacro(const char *pName);
 	bool DeleteMacro(const char *pName);
