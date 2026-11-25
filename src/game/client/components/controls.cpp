@@ -3799,7 +3799,7 @@ void CControls::OnUpdate()
 	}
 	if(MacroPaused)
 	{
-		m_MacroPracticeLastServerTick = CurrentTime;
+		m_MacroPracticeLastServerTick = CurrentServerTick;
 		return;
 	}
 
