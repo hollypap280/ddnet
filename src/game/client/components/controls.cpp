@@ -3068,11 +3068,6 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 		return true;
 	}
 
-	const bool WasPlayingBeforeSeek = m_MacroPlaying;
-	if(!m_MacroPlaying && !m_MacroPlaybackLive &&
-		(!m_MacroPracticeActive || !m_MacroPracticeBaselineValid))
-		return false;
-
 	const int CurrentIndex = m_MacroPlaybackLive && m_MacroPlaybackSeekTargetIndex >= 0 ?
 		m_MacroPlaybackSeekTargetIndex :
 		(m_MacroDisplayedTick > 0 ? m_MacroDisplayedTick - 1 :
