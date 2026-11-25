@@ -813,7 +813,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		CUIRect PracticeRateRow;
 		if(AddSettingRow(28.0f, PracticeRateRow))
 			Ui()->DoScrollbarOption(&g_Config.m_ClMacroPracticeRate, &g_Config.m_ClMacroPracticeRate,
-				&PracticeRateRow, Localize("Скорость записи и воспроизведения (до 50 тиков/с)"), 1, 50);
+				&PracticeRateRow, Localize("Скорость FP-записи: 1–50 тиков/с; сохранённый макрос запускается в 50 тиков/с"), 1, 50);
 
 		AddSection("ПЕРЕХОД ПО ТИКАМ");
 		CUIRect StepHint;
@@ -826,7 +826,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		CUIRect InfoRow;
 		if(AddSettingRow(48.0f, InfoRow))
 			Ui()->DoLabel(&InfoRow,
-				Localize("Повторяются движение, прыжок, крюк, прицел, стрельба и смена оружия. Второй локальный тии остаётся AFK, пока ты не переключил управление на него. Скорость — от 1 до 50 тиков/с; перемотка и стартовый тик используют ту же FP-физику."),
+				Localize("Каждый кадр FP-записи хранит действия и состояние тии. При запуске сохранённого макроса кадры идут по одному на каждый серверный тик — обычно 50 тиков/с. Второй локальный тии сохраняется отдельно и остаётся без собственного ввода."),
 				12.0f, TEXTALIGN_ML);
 
 		s_MacroSettingsScrollRegion.End();
@@ -862,7 +862,7 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 		const char *m_pCommand;
 	};
 	static const SHotkey s_aHotkeys[] = {
-		{ "Автотрёххук", "toggle cl_auto_triplefly 0 1" },
+		{ "Тройной флай (удерживать)", "+auto_triplefly" },
 		{ "Автохук", "toggle cl_auto_hook 0 1" },
 		{ "Защита от фриза", "toggle cl_auto_avoid 0 1" },
 		{ "Точная наводка на край", "toggle cl_auto_edge 0 1" },

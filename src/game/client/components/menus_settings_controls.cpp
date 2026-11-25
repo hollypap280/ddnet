@@ -218,7 +218,7 @@ void CMenusSettingsControls::Render(CUIRect MainView)
 	RenderSettingsBindsBlock(EBindOptionGroup::MISCELLANEOUS, &RightColumn, Localize("Miscellaneous"));
 	if(std::any_of(m_vBindOptions.begin(), m_vBindOptions.end(), [](const CBindOption &Option) { return Option.m_Group == EBindOptionGroup::CUSTOM; }))
 	{
-		RenderSettingsBindsBlock(EBindOptionGroup::CUSTOM, &RightColumn, Localize("Custom"));
+		RenderSettingsBindsBlock(EBindOptionGroup::CUSTOM, &RightColumn, Localize("Пользовательские бинды (можно удалить)"));
 	}
 
 	m_SettingsScrollRegion.End();
