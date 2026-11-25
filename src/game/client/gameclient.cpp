@@ -546,8 +546,33 @@ int CGameClient::OnSnapInput(int *pData, bool Dummy, bool Force)
 		return 0;
 	}
 
-	const bool TripleflyHammer = m_Controls.TripleflyHammerPending();
-	if(!g_Config.m_ClDummyHammer && !TripleflyHammer)
+	// Triplefly sends the dummy's normal copied movement while flying. On
+	// its scheduled hammer ticks it sends one hammer pulse; during the short
+	// hook window it sends the copied input with the third-tee aim instead.
+	if(m_Controls.TripleflyAssistActive() && m_Controls.TripleflyHammerPending())
+	{
+		m_DummyFire = 0;
+		m_DummyFire++;
+		m_HammerInput.m_Fire = (m_HammerInput.m_Fire + 1) | 1;
+		m_HammerInput.m_WantedWeapon = WEAPON_HAMMER + 1;
+		if(!g_Config.m_ClDummyRestoreWeapon)
+			m_DummyInput.m_WantedWeapon = WEAPON_HAMMER + 1;
+
+		const vec2 Dir = m_LocalCharacterPos - m_aClients[m_aLocalIds[!g_Config.m_ClDummy]].m_Predicted.m_Pos;
+		m_HammerInput.m_TargetX = (int)Dir.x;
+		m_HammerInput.m_TargetY = (int)Dir.y;
+		mem_copy(pData, &m_HammerInput, sizeof(m_HammerInput));
+		m_Controls.OnTripleflyHammerSent();
+		return sizeof(m_HammerInput);
+	}
+
+	if(m_Controls.TripleflyAssistActive() && m_Controls.TripleflyHookActive())
+	{
+		mem_copy(pData, &m_DummyInput, sizeof(m_DummyInput));
+		return sizeof(m_DummyInput);
+	}
+
+	if(!g_Config.m_ClDummyHammer)
 	{
 		if(m_DummyFire != 0)
 		{
@@ -565,12 +590,7 @@ int CGameClient::OnSnapInput(int *pData, bool Dummy, bool Force)
 	}
 	else
 	{
-		// A Triplefly Fire press requests one immediate hammer hit. The old
-		// cl_dummy_hammer timer waited for its 25-call interval, so quick taps
-		// frequently ended before the dummy ever hit the driver.
-		if(TripleflyHammer)
-			m_DummyFire = 0;
-		else if(m_DummyFire % 25 != 0)
+		if(m_DummyFire % 25 != 0)
 		{
 			m_DummyFire++;
 			return 0;
@@ -589,8 +609,6 @@ int CGameClient::OnSnapInput(int *pData, bool Dummy, bool Force)
 		m_HammerInput.m_TargetY = (int)Dir.y;
 
 		mem_copy(pData, &m_HammerInput, sizeof(m_HammerInput));
-		if(TripleflyHammer)
-			m_Controls.OnTripleflyHammerSent();
 		return sizeof(m_HammerInput);
 	}
 }
