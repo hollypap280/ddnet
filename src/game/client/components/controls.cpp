@@ -267,18 +267,12 @@ void CControls::ConAutoTriplefly(IConsole::IResult *pResult, void *pUserData)
 
 		pSelf->m_AutoTripleflyPreviousAuto = g_Config.m_ClAutoTriplefly;
 		pSelf->m_AutoTripleflyPreviousDummyCopyMoves = g_Config.m_ClDummyCopyMoves;
-		pSelf->m_AutoTripleflyPreviousDummyControl = g_Config.m_ClDummyControl;
 		pSelf->m_AutoTripleflyPreviousDummyHook = g_Config.m_ClDummyHook;
-		pSelf->m_AutoTripleflyPreviousDummyFire = g_Config.m_ClDummyFire;
-		pSelf->m_AutoTripleflyPreviousDummyJump = g_Config.m_ClDummyJump;
 
 		pSelf->m_AutoTripleflyBindActive = true;
 		g_Config.m_ClAutoTriplefly = 1;
 		g_Config.m_ClDummyCopyMoves = 1;
-		g_Config.m_ClDummyControl = 1;
 		g_Config.m_ClDummyHook = 0;
-		g_Config.m_ClDummyFire = 0;
-		g_Config.m_ClDummyJump = 0;
 		// Keep cl_dummy_hammer exactly as the player configured it. The
 		// assist only adds brief hook windows; it must not break the flight.
 		pSelf->m_TripleflyFlightActive = false;
@@ -296,10 +290,7 @@ void CControls::ConAutoTriplefly(IConsole::IResult *pResult, void *pUserData)
 		pSelf->m_AutoTripleflyBindActive = false;
 		g_Config.m_ClAutoTriplefly = pSelf->m_AutoTripleflyPreviousAuto;
 		g_Config.m_ClDummyCopyMoves = pSelf->m_AutoTripleflyPreviousDummyCopyMoves;
-		g_Config.m_ClDummyControl = pSelf->m_AutoTripleflyPreviousDummyControl;
 		g_Config.m_ClDummyHook = pSelf->m_AutoTripleflyPreviousDummyHook;
-		g_Config.m_ClDummyFire = pSelf->m_AutoTripleflyPreviousDummyFire;
-		g_Config.m_ClDummyJump = pSelf->m_AutoTripleflyPreviousDummyJump;
 		pSelf->m_TripleflyFlightActive = false;
 		pSelf->m_TripleflyNextHookTick = -1;
 		pSelf->m_TripleflyHookStartTick = -1;
