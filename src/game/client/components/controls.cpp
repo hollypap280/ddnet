@@ -248,59 +248,74 @@ void CControls::ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData)
 
 void CControls::ConAutoTriplefly(IConsole::IResult *pResult, void *pUserData)
 {
+	(void)pResult;
 	CControls *pSelf = (CControls *)pUserData;
-	const bool Toggle = pResult->NumArguments() == 0;
-	const bool Enable = Toggle ? !pSelf->m_AutoTripleflyBindActive : pResult->GetInteger(0) != 0;
+	pSelf->SetAutoTriplefly(!pSelf->m_AutoTripleflyBindActive);
+}
 
-	if(Enable == pSelf->m_AutoTripleflyBindActive)
+void CControls::ConAutoTripleflyEnable(IConsole::IResult *pResult, void *pUserData)
+{
+	(void)pResult;
+	((CControls *)pUserData)->SetAutoTriplefly(true);
+}
+
+void CControls::ConAutoTripleflyDisable(IConsole::IResult *pResult, void *pUserData)
+{
+	(void)pResult;
+	((CControls *)pUserData)->SetAutoTriplefly(false);
+}
+
+void CControls::SetAutoTriplefly(bool Enable)
+{
+	if(Enable == m_AutoTripleflyBindActive)
 		return;
 
 	if(Enable)
 	{
-		if(pSelf->Client()->State() != IClient::STATE_ONLINE ||
-			!pSelf->Client()->DummyConnected() ||
-			pSelf->GameClient()->m_aLocalIds[0] < 0 ||
-			pSelf->GameClient()->m_aLocalIds[1] < 0)
+		if(Client()->State() != IClient::STATE_ONLINE ||
+			!Client()->DummyConnected() ||
+			GameClient()->m_aLocalIds[0] < 0 ||
+			GameClient()->m_aLocalIds[1] < 0)
 		{
-			pSelf->GameClient()->Echo("Для Triplefly подключи основной тии и дамми.");
+			GameClient()->Echo("Для Triplefly подключи основной тии и дамми.");
 			return;
 		}
 
-		pSelf->m_AutoTripleflyPreviousAuto = g_Config.m_ClAutoTriplefly;
-		pSelf->m_AutoTripleflyPreviousDummyCopyMoves = g_Config.m_ClDummyCopyMoves;
-		pSelf->m_AutoTripleflyPreviousDummyHook = g_Config.m_ClDummyHook;
+		m_AutoTripleflyPreviousAuto = g_Config.m_ClAutoTriplefly;
+		m_AutoTripleflyPreviousDummyCopyMoves = g_Config.m_ClDummyCopyMoves;
+		m_AutoTripleflyPreviousDummyHook = g_Config.m_ClDummyHook;
 
-		pSelf->m_AutoTripleflyBindActive = true;
+		m_AutoTripleflyBindActive = true;
 		g_Config.m_ClAutoTriplefly = 1;
 		g_Config.m_ClDummyCopyMoves = 1;
 		g_Config.m_ClDummyHook = 0;
-		// Keep cl_dummy_hammer exactly as the player configured it. The
-		// assist only adds brief hook windows; it must not break the flight.
-		pSelf->m_TripleflyFlightActive = false;
-		pSelf->m_TripleflyNextHookTick = -1;
-		pSelf->m_TripleflyHookStartTick = -1;
-		pSelf->m_TripleflyHookEndTick = -1;
-		pSelf->m_TripleflyHookDuration = 3;
-		pSelf->m_TripleflyHookSent = false;
-		std::fill(std::begin(pSelf->m_aTripleflyTargetFound), std::end(pSelf->m_aTripleflyTargetFound), false);
-		std::fill(std::begin(pSelf->m_aTripleflyTargetClientId), std::end(pSelf->m_aTripleflyTargetClientId), -1);
-		pSelf->GameClient()->Echo("Triplefly включён: начни флайт — дамми сам подхватит третьего тии коротким хуком.");
+		// The helper adds brief hook windows and leaves hammer/fire/jump
+		// settings untouched so the user's normal flight continues.
+		m_TripleflyFlightActive = false;
+		m_TripleflyNextHookTick = -1;
+		m_TripleflyHookStartTick = -1;
+		m_TripleflyHookEndTick = -1;
+		m_TripleflyHookDuration = 3;
+		m_TripleflyHookSent = false;
+		std::fill(std::begin(m_aTripleflyTargetFound), std::end(m_aTripleflyTargetFound), false);
+		std::fill(std::begin(m_aTripleflyTargetClientId), std::end(m_aTripleflyTargetClientId), -1);
+		GameClient()->Echo("Triplefly активен, пока удерживается бинд. Начни флайт — дамми сам ищет третьего тии.");
 	}
 	else
 	{
-		pSelf->m_AutoTripleflyBindActive = false;
-		g_Config.m_ClAutoTriplefly = pSelf->m_AutoTripleflyPreviousAuto;
-		g_Config.m_ClDummyCopyMoves = pSelf->m_AutoTripleflyPreviousDummyCopyMoves;
-		g_Config.m_ClDummyHook = pSelf->m_AutoTripleflyPreviousDummyHook;
-		pSelf->m_TripleflyFlightActive = false;
-		pSelf->m_TripleflyNextHookTick = -1;
-		pSelf->m_TripleflyHookStartTick = -1;
-		pSelf->m_TripleflyHookEndTick = -1;
-		std::fill(std::begin(pSelf->m_aTripleflyTargetFound), std::end(pSelf->m_aTripleflyTargetFound), false);
-		std::fill(std::begin(pSelf->m_aTripleflyTargetClientId), std::end(pSelf->m_aTripleflyTargetClientId), -1);
-		pSelf->GameClient()->m_DummyInput.m_Hook = 0;
-		pSelf->m_aInputData[!g_Config.m_ClDummy].m_Hook = 0;
-		pSelf->GameClient()->Echo("Triplefly выключен; настройки дамми восстановлены.");
+		m_AutoTripleflyBindActive = false;
+		g_Config.m_ClAutoTriplefly = m_AutoTripleflyPreviousAuto;
+		g_Config.m_ClDummyCopyMoves = m_AutoTripleflyPreviousDummyCopyMoves;
+		g_Config.m_ClDummyHook = m_AutoTripleflyPreviousDummyHook;
+		m_TripleflyFlightActive = false;
+		m_TripleflyNextHookTick = -1;
+		m_TripleflyHookStartTick = -1;
+		m_TripleflyHookEndTick = -1;
+		std::fill(std::begin(m_aTripleflyTargetFound), std::end(m_aTripleflyTargetFound), false);
+		std::fill(std::begin(m_aTripleflyTargetClientId), std::end(m_aTripleflyTargetClientId), -1);
+		GameClient()->m_DummyInput.m_Hook = 0;
+		m_aInputData[!g_Config.m_ClDummy].m_Hook = 0;
+		GameClient()->Echo("Triplefly остановлен; настройки дамми восстановлены.");
 	}
 }
 
@@ -722,7 +737,8 @@ void CControls::OnConsoleInit()
 
 	Console()->Register("tp_to_cursor", "", CFGFLAG_CLIENT, ConTpToCursor, this, "Practice: teleport yourself to your cursor");
 	Console()->Register("tp_dummy_to_cursor", "", CFGFLAG_CLIENT, ConTpDummyToCursor, this, "Practice: teleport the other tee to your cursor");
-	Console()->Register("+auto_triplefly", "", CFGFLAG_CLIENT, ConAutoTriplefly, this, "Hold to assist Triplefly with dummy copy and timed third-tee hook");
+	Console()->Register("+auto_triplefly", "", CFGFLAG_CLIENT, ConAutoTripleflyEnable, this, "Hold to assist Triplefly with dummy copy and timed third-tee hook");
+	Console()->Register("-auto_triplefly", "", CFGFLAG_CLIENT, ConAutoTripleflyDisable, this, "Release to stop Triplefly assist");
 	Console()->Register("toggle_auto_triplefly", "", CFGFLAG_CLIENT, ConAutoTriplefly, this, "Toggle Triplefly assist on or off");
 
 	Console()->Register("macro_practice", "", CFGFLAG_CLIENT, ConMacroPractice, this, "Toggle isolated FP practice");
@@ -3073,6 +3089,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 
 	if(m_AutoTripleflyBindActive)
 	{
+		const int PreviousTargetClientId = m_aTripleflyTargetClientId[Dummy];
 		m_aTripleflyTargetFound[Dummy] = false;
 		m_aTripleflyTargetClientId[Dummy] = -1;
 		m_aTripleflyAimX[Dummy] = 1;
@@ -3160,6 +3177,18 @@ void CControls::ApplyHookAutomation(int Dummy)
 			if(DistanceSquared < 1.0f || DistanceSquared > RangeSquared)
 				continue;
 
+			// Do not pick a target if the controlled tee is physically
+			// between the dummy hooker and the third tee: the hook would grab
+			// the driver instead of the intended teammate.
+			const vec2 DriverDelta = LocalPos - HookerPos;
+			const float DriverProjection = dot(DriverDelta, Delta) / DistanceSquared;
+			if(DriverProjection > 0.0f && DriverProjection < 1.0f)
+			{
+				const vec2 ClosestPoint = HookerPos + Delta * DriverProjection;
+				if(distance(ClosestPoint, LocalPos) < 36.0f)
+					continue;
+			}
+
 			vec2 CollisionPos;
 			vec2 BeforeCollision;
 			if(Collision()->IntersectLineTeleHook(HookerPos, TargetPos, &CollisionPos, &BeforeCollision) != 0)
@@ -3171,7 +3200,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 				const float AlongFlight = dot(normalize(Delta), normalize(LocalVel));
 				Score *= 1.0f - 0.20f * AlongFlight;
 			}
-			if(ClientId == m_aTripleflyTargetClientId[Dummy])
+			if(ClientId == PreviousTargetClientId)
 				Score *= 0.85f;
 			if(Score >= BestScore)
 				continue;
