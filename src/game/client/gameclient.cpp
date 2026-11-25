@@ -568,7 +568,20 @@ int CGameClient::OnSnapInput(int *pData, bool Dummy, bool Force)
 
 	if(m_Controls.TripleflyAssistActive() && m_Controls.TripleflyHookActive())
 	{
+		// Keep the hook pressed only for the calculated directional window.
+		// Track that a hook packet has reached the dummy connection so the
+		// release packet is sent even if the copied movement is idle.
+		m_DummyInput.m_Hook = 1;
+		m_Controls.OnTripleflyHookPacketSent(true);
 		mem_copy(pData, &m_DummyInput, sizeof(m_DummyInput));
+		return sizeof(m_DummyInput);
+	}
+
+	if(m_Controls.TripleflyHookReleasePending())
+	{
+		m_DummyInput.m_Hook = 0;
+		mem_copy(pData, &m_DummyInput, sizeof(m_DummyInput));
+		m_Controls.OnTripleflyHookPacketSent(false);
 		return sizeof(m_DummyInput);
 	}
 
