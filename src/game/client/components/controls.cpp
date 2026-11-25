@@ -2869,8 +2869,10 @@ void CControls::OnMessage(int Msg, void *pRawMsg)
 	if(Msg == NETMSGTYPE_SV_WEAPONPICKUP)
 	{
 		CNetMsg_Sv_WeaponPickup *pMsg = (CNetMsg_Sv_WeaponPickup *)pRawMsg;
-		if(g_Config.m_ClAutoswitchWeapons && m_MacroPlaybackLive)
+		if(m_MacroPlaybackLive)
 		{
+			// A recorded pickup is part of the macro timeline. Re-select it
+			// during playback even if live autoswitch is currently disabled.
 			m_aMacroPickupWeaponOverride[m_MacroPlaybackDummy] = pMsg->m_Weapon + 1;
 		}
 		else if(g_Config.m_ClAutoswitchWeapons && m_MacroPracticeActive)
@@ -3640,6 +3642,13 @@ int CControls::SnapInput(int *pData)
 		{
 			CNetObj_PlayerInput MacroInput = m_MacroCurrentFrame.m_Input;
 			MacroInput.m_PlayerFlags = m_aInputData[MacroDummy].m_PlayerFlags;
+			if(m_MacroCurrentFrame.m_HasDDNetState &&
+				m_MacroCurrentFrame.m_Weapon != m_MacroCurrentFrame.m_PreWeapon)
+			{
+				// Repeat weapon changes caused by pickups as well as explicit key
+				// presses. The server still validates weapon ownership/ammo.
+				MacroInput.m_WantedWeapon = m_MacroCurrentFrame.m_Weapon + 1;
+			}
 			MacroInput.m_Fire = (MacroInput.m_Fire + m_aMacroLiveFireOffset[MacroDummy]) & INPUT_STATE_MASK;
 			MacroInput.m_NextWeapon = (MacroInput.m_NextWeapon + m_aMacroLiveNextWeaponOffset[MacroDummy]) & INPUT_STATE_MASK;
 			MacroInput.m_PrevWeapon = (MacroInput.m_PrevWeapon + m_aMacroLivePrevWeaponOffset[MacroDummy]) & INPUT_STATE_MASK;
