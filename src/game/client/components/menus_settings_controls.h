@@ -13,8 +13,8 @@
 
 enum class EBindOptionGroup
 {
-	MOVEMENT,
-	WEAPON,
+	GAME,
+	MACRO,
 	VOTING,
 	CHAT,
 	DUMMY,
@@ -79,6 +79,9 @@ private:
 	void RenderSettingsBindsBlock(EBindOptionGroup Group, CUIRect *pParentRect, const char *pTitle);
 	float MeasureSettingsBindsHeight(EBindOptionGroup Group) const;
 	void RenderSettingsBinds(EBindOptionGroup Group, CUIRect View);
+
+	float MeasureSettingsMacroHeight() const;
+	void RenderSettingsMacro(CUIRect View);
 
 	float MeasureSettingsMouseHeight() const;
 	void RenderSettingsMouse(CUIRect View);
