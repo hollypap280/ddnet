@@ -545,7 +545,8 @@ int CGameClient::OnSnapInput(int *pData, bool Dummy, bool Force)
 		return 0;
 	}
 
-	if(!g_Config.m_ClDummyHammer)
+	const bool TripleflyHammer = m_Controls.TripleflyHammerPending();
+	if(!g_Config.m_ClDummyHammer && !TripleflyHammer)
 	{
 		if(m_DummyFire != 0)
 		{
@@ -563,7 +564,12 @@ int CGameClient::OnSnapInput(int *pData, bool Dummy, bool Force)
 	}
 	else
 	{
-		if(m_DummyFire % 25 != 0)
+		// A Triplefly Fire press requests one immediate hammer hit. The old
+		// cl_dummy_hammer timer waited for its 25-call interval, so quick taps
+		// frequently ended before the dummy ever hit the driver.
+		if(TripleflyHammer)
+			m_DummyFire = 0;
+		else if(m_DummyFire % 25 != 0)
 		{
 			m_DummyFire++;
 			return 0;
@@ -582,6 +588,8 @@ int CGameClient::OnSnapInput(int *pData, bool Dummy, bool Force)
 		m_HammerInput.m_TargetY = (int)Dir.y;
 
 		mem_copy(pData, &m_HammerInput, sizeof(m_HammerInput));
+		if(TripleflyHammer)
+			m_Controls.OnTripleflyHammerSent();
 		return sizeof(m_HammerInput);
 	}
 }
