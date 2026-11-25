@@ -306,10 +306,7 @@ private:
 	bool m_AutoTripleflyBindActive = false;
 	int m_AutoTripleflyPreviousAuto = 0;
 	int m_AutoTripleflyPreviousDummyCopyMoves = 0;
-	int m_AutoTripleflyPreviousDummyControl = 0;
 	int m_AutoTripleflyPreviousDummyHook = 0;
-	int m_AutoTripleflyPreviousDummyFire = 0;
-	int m_AutoTripleflyPreviousDummyJump = 0;
 	bool m_TripleflyFlightActive = false;
 	int m_TripleflyNextHookTick = -1;
 	int m_TripleflyHookStartTick = -1;
