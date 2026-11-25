@@ -2421,6 +2421,13 @@ void CControls::OnMacroPracticeDummySwap()
 	if(RequestedLocalId >= 0 && RequestedLocalId < MAX_CLIENTS)
 		SwitchMacroPracticeCharacter(RequestedLocalId);
 }
+void CControls::OnMacroObserverInputSent(const CNetObj_PlayerInput &Input)
+{
+	const int ObserverDummy = 1 - g_Config.m_ClDummy;
+	if(ObserverDummy >= 0 && ObserverDummy < NUM_DUMMIES)
+		m_aLastData[ObserverDummy] = Input;
+}
+
 vec2 CControls::MacroPracticePosition()
 {
 	if(m_MacroPracticeActive)
