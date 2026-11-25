@@ -67,6 +67,7 @@ private:
 
 	CScrollRegion m_SettingsScrollRegion;
 	CButtonContainer m_ResetToDefaultButton;
+	CButtonContainer m_ImportMacroBindsButton;
 	CLineInputBuffered<128> m_FilterInput;
 	int m_CurrentSearchMatch = 0;
 	std::vector<int> m_vSearchMatches;
