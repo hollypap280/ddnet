@@ -111,6 +111,9 @@ private:
 	static void ConKeyInputState(IConsole::IResult *pResult, void *pUserData);
 	static void ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData);
 	static void ConAutoTriplefly(IConsole::IResult *pResult, void *pUserData);
+	static void ConAutoTripleflyEnable(IConsole::IResult *pResult, void *pUserData);
+	static void ConAutoTripleflyDisable(IConsole::IResult *pResult, void *pUserData);
+	void SetAutoTriplefly(bool Enable);
 	static void ConKeyInputSet(IConsole::IResult *pResult, void *pUserData);
 	static void ConKeyInputNextPrevWeapon(IConsole::IResult *pResult, void *pUserData);
 	static void ConTpToCursor(IConsole::IResult *pResult, void *pUserData);
@@ -132,6 +135,39 @@ private:
 		// Tee controlled in this private-world frame, or -1 in older macros.
 		int m_ClientId = -1;
 		// Freeze state is separate from CCharacterCore and must be replayed too.
+		int m_PreFreezeTime = 0;
+		int m_FreezeTime = 0;
+		int m_PreFrozenLastTick = 0;
+		int m_FrozenLastTick = 0;
+		int m_PreAttackTick = 0;
+		int m_HasDDNetState = 0;
+		CNetObj_DDNetCharacter m_PreDDNetCharacter{};
+		int m_aPreWeaponAmmo[NUM_WEAPONS]{};
+		int m_aWeaponAmmo[NUM_WEAPONS]{};
+		// The second local tee is saved separately so a seek restores both
+		// positions, velocities, weapon inventory and freeze state.
+		int m_SecondaryHasState = 0;
+		int m_SecondaryClientId = -1;
+		CNetObj_CharacterCore m_SecondaryCore{};
+		int m_SecondaryWeapon = WEAPON_HAMMER;
+		int m_SecondaryAttackTick = 0;
+		int m_SecondaryFreezeTime = 0;
+		int m_SecondaryFrozenLastTick = 0;
+		int m_aSecondaryWeaponAmmo[NUM_WEAPONS]{};
+	};
+	// Version 9 frame layout is kept for loading existing .dmacro files.
+	struct SMacroFrameV9
+	{
+		CNetObj_PlayerInput m_Input{};
+		CNetObj_CharacterCore m_PreCore{};
+		CNetObj_CharacterCore m_Core{};
+		CNetObj_Character m_Character{};
+		int m_PreWeapon = WEAPON_HAMMER;
+		int m_Weapon = WEAPON_HAMMER;
+		int m_AttackTick = 0;
+		int m_Tick = 0;
+		int m_HasCoordinates = 1;
+		int m_ClientId = -1;
 		int m_PreFreezeTime = 0;
 		int m_FreezeTime = 0;
 		int m_PreFrozenLastTick = 0;
