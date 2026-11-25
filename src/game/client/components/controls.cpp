@@ -2986,8 +2986,10 @@ void CControls::ApplyHookAutomation(int Dummy)
 	}
 
 	const CCharacterCore &LocalCore = pPracticeLocal ? *pPracticeLocal->Core() : GameClient()->m_PredictedChar;
-	const vec2 LocalPos = pPracticeLocal ? LocalCore.m_Pos : vec2((float)pLocal->m_X, (float)pLocal->m_Y);
-	const vec2 LocalVel = pPracticeLocal ? LocalCore.m_Vel : vec2(pLocal->m_VelX / 256.0f, pLocal->m_VelY / 256.0f);
+	// Use the same predicted core for flight detection and hook target scoring.
+	// Snapshot velocity can lag behind the driver's real direction by a tick.
+	const vec2 LocalPos = LocalCore.m_Pos;
+	const vec2 LocalVel = LocalCore.m_Vel;
 	const int LocalId = GameClient()->m_Snap.m_LocalClientId;
 	const int DummyId = GameClient()->m_aLocalIds[!g_Config.m_ClDummy];
 	const bool PracticeActive = pPracticeLocal != nullptr;
