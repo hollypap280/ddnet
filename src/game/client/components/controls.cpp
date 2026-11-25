@@ -1251,8 +1251,8 @@ void CControls::StopMacroPractice()
 	m_aRecordingMacroName[0] = '\0';
 	if(m_MacroPlaybackSavedMousePosValid)
 	{
-		for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
-			m_aMousePos[Dummy] = m_aMacroPlaybackSavedMousePos[Dummy];
+		for(int SavedDummy = 0; SavedDummy < NUM_DUMMIES; ++SavedDummy)
+			m_aMousePos[SavedDummy] = m_aMacroPlaybackSavedMousePos[SavedDummy];
 		g_Config.m_ClDummy = m_MacroPlaybackOriginalDummy;
 	}
 	m_MacroPlaybackSavedMousePosValid = false;
