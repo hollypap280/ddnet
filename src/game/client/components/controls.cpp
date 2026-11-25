@@ -333,8 +333,12 @@ bool CControls::TripleflyHookActive() const
 	if(!m_AutoTripleflyBindActive || m_TripleflyHookStartTick < 0 || m_TripleflyHookEndTick <= m_TripleflyHookStartTick)
 		return false;
 
-	const int Dummy = 1 - g_Config.m_ClDummy;
-	const int CurrentTick = Client()->GameTick(Dummy);
+	const int ActiveTee = g_Config.m_ClDummy;
+	if(ActiveTee < 0 || ActiveTee >= NUM_DUMMIES || !m_aTripleflyTargetFound[ActiveTee])
+		return false;
+
+	const int HookerConnection = 1 - ActiveTee;
+	const int CurrentTick = Client()->GameTick(HookerConnection);
 	return CurrentTick >= m_TripleflyHookStartTick && CurrentTick < m_TripleflyHookEndTick;
 }
 void CControls::ConMacroPracticeInput(IConsole::IResult *pResult, void *pUserData)
