@@ -511,6 +511,8 @@ void CControls::ConMacroPracticeDummyInput(IConsole::IResult *pResult, void *pUs
 			Fire = (Fire + 1) & INPUT_STATE_MASK;
 		break;
 	}
+	default:
+		break;
 	}
 }
 
