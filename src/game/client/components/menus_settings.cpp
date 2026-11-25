@@ -18,6 +18,10 @@
 #include <game/localization.h>
 
 #include <iterator>
+#include <algorithm>
+#include <cctype>
+#include <string>
+#include <vector>
 
 void CMenus::SetNeedSendInfo()
 {
@@ -520,6 +524,11 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	static CButtonContainer s_RecordToggle;
 	static CButtonContainer s_PlayToggle, s_Delete, s_Refresh, s_PauseToggle;
 	static CButtonContainer s_MacroLoop;
+	static CLineInputBuffered<512> s_MacroBindInput;
+	static CButtonContainer s_AddMacroBindButton;
+	static std::vector<CBindSlot> s_vAddedMacroBindSlots;
+	static std::vector<CButtonContainer> s_vRemoveMacroBindButtons;
+	static char s_aMacroBindStatus[192] = "Вставь bind KEY \"команда\" и нажми «Добавить».";
 	static CScrollRegion s_MacroListScrollRegion;
 	static CScrollRegion s_MacroSettingsScrollRegion;
 
@@ -826,8 +835,128 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		CUIRect InfoRow;
 		if(AddSettingRow(48.0f, InfoRow))
 			Ui()->DoLabel(&InfoRow,
-				Localize("Каждый кадр FP-записи хранит действия и состояние тии. При запуске сохранённого макроса кадры идут по одному на каждый серверный тик — обычно 50 тиков/с. Второй локальный тии сохраняется отдельно и остаётся без собственного ввода."),
+				Localize("Каждый кадр FP-записи хранит действия и состояние тии. Воспроизведение идёт обычными игровыми нажатиями без телепортации; для точного повтора нужна та же начальная позиция и состояние."),
 				12.0f, TEXTALIGN_ML);
+
+		AddSection("БИНДЫ ДЛЯ МАКРОСА");
+		CUIRect BindHint;
+		if(AddSettingRow(24.0f, BindHint))
+			Ui()->DoLabel(&BindHint, Localize("Вставь строку вида bind KEY \"команда\". Поддерживаемые игровые команды автоматически подключаются к FP-макросу."), 11.0f, TEXTALIGN_ML);
+
+		CUIRect BindEntryRow;
+		const bool BindEntryVisible = AddSettingRow(28.0f, BindEntryRow);
+		if(BindEntryVisible)
+		{
+			CUIRect BindEdit, AddButton;
+			BindEntryRow.VSplitRight(100.0f, &BindEdit, &AddButton);
+			Ui()->DoEditBox(&s_MacroBindInput, &BindEdit, 12.0f);
+			if(DoButton_Menu(&s_AddMacroBindButton, Localize("Добавить бинд"), 0, &AddButton))
+			{
+				std::string Line = s_MacroBindInput.GetString();
+				auto Trim = [](std::string &Value) {
+					const size_t First = Value.find_first_not_of(" \t\r\n");
+					if(First == std::string::npos) { Value.clear(); return; }
+					const size_t Last = Value.find_last_not_of(" \t\r\n");
+					Value = Value.substr(First, Last - First + 1);
+				};
+				Trim(Line);
+				if(Line.rfind("bind ", 0) == 0 || Line.rfind("BIND ", 0) == 0)
+					Line = Line.substr(5);
+				const size_t Separator = Line.find_first_of(" \t");
+				if(Separator == std::string::npos)
+					str_copy(s_aMacroBindStatus, "Нужны и клавиша, и команда.");
+				else
+				{
+					std::string KeySpec = Line.substr(0, Separator);
+					std::string Command = Line.substr(Separator + 1);
+					Trim(Command);
+					if(Command.size() >= 2 && Command.front() == '"' && Command.back() == '"')
+						Command = Command.substr(1, Command.size() - 2);
+					int ModifierMask = KeyModifier::NONE;
+					bool ValidModifier = true;
+					size_t Plus = KeySpec.find('+');
+					while(Plus != std::string::npos)
+					{
+						std::string Modifier = KeySpec.substr(0, Plus);
+						std::transform(Modifier.begin(), Modifier.end(), Modifier.begin(), [](unsigned char Ch) { return (char)std::tolower(Ch); });
+						if(Modifier == "shift") ModifierMask |= 1 << KeyModifier::SHIFT;
+						else if(Modifier == "ctrl") ModifierMask |= 1 << KeyModifier::CTRL;
+						else if(Modifier == "alt") ModifierMask |= 1 << KeyModifier::ALT;
+						else if(Modifier == "gui") ModifierMask |= 1 << KeyModifier::GUI;
+						else { ValidModifier = false; break; }
+						KeySpec.erase(0, Plus + 1);
+						Plus = KeySpec.find('+');
+					}
+					const int KeyId = Input()->FindKeyByName(KeySpec.c_str());
+					if(!ValidModifier || KeyId == KEY_UNKNOWN || KeyId == KEY_ESCAPE || Command.empty())
+						str_copy(s_aMacroBindStatus, "Не удалось разобрать клавишу или команду.");
+					else
+					{
+						GameClient()->m_Binds.Bind(KeyId, Command.c_str(), false, ModifierMask);
+						const CBindSlot Slot(KeyId, ModifierMask);
+						if(std::find(s_vAddedMacroBindSlots.begin(), s_vAddedMacroBindSlots.end(), Slot) == s_vAddedMacroBindSlots.end())
+							s_vAddedMacroBindSlots.push_back(Slot);
+						GameClient()->m_Controls.ImportMacroBinds();
+						str_copy(s_aMacroBindStatus, "Бинд добавлен. Поддерживаемые игровые действия подключены к записи.");
+						s_MacroBindInput.Clear();
+					}
+				}
+			}
+		}
+
+		CUIRect BindStatus;
+		if(AddSettingRow(22.0f, BindStatus))
+			Ui()->DoLabel(&BindStatus, s_aMacroBindStatus, 11.0f, TEXTALIGN_ML);
+
+		struct SMacroBindRow
+		{
+			CBindSlot m_Slot;
+			std::string m_Command;
+			char m_aKeyName[64]{};
+		};
+		std::vector<SMacroBindRow> vMacroBindRows;
+		for(int ModifierMask = 0; ModifierMask < KeyModifier::COMBINATION_COUNT; ++ModifierMask)
+		{
+			for(int Key = KEY_FIRST; Key < KEY_LAST; ++Key)
+			{
+				const CBindSlot Slot(Key, ModifierMask);
+				const char *pCommand = GameClient()->m_Binds.Get(Slot);
+				const bool ImportedMacroBind = str_find(pCommand, "+macro_") != nullptr;
+				const bool AddedHere = std::find(s_vAddedMacroBindSlots.begin(), s_vAddedMacroBindSlots.end(), Slot) != s_vAddedMacroBindSlots.end();
+				if(!pCommand[0] || (!ImportedMacroBind && !AddedHere))
+					continue;
+				SMacroBindRow Item;
+				Item.m_Slot = Slot;
+				Item.m_Command = pCommand;
+				GameClient()->m_Binds.GetKeyBindName(Key, ModifierMask, Item.m_aKeyName, sizeof(Item.m_aKeyName));
+				vMacroBindRows.push_back(Item);
+			}
+		}
+		s_vRemoveMacroBindButtons.resize(std::max(s_vRemoveMacroBindButtons.size(), vMacroBindRows.size()));
+		if(vMacroBindRows.empty())
+		{
+			CUIRect EmptyBinds;
+			if(AddSettingRow(22.0f, EmptyBinds))
+				Ui()->DoLabel(&EmptyBinds, Localize("Пока нет добавленных макро-биндов."), 11.0f, TEXTALIGN_ML);
+		}
+		for(std::size_t i = 0; i < vMacroBindRows.size(); ++i)
+		{
+			CUIRect BindRow;
+			if(!AddSettingRow(25.0f, BindRow))
+				continue;
+			CUIRect Description, RemoveButton;
+			BindRow.VSplitRight(76.0f, &Description, &RemoveButton);
+			char aDescription[256];
+			str_format(aDescription, sizeof(aDescription), "%s  |  %s",
+				vMacroBindRows[i].m_aKeyName, vMacroBindRows[i].m_Command.c_str());
+			Ui()->DoLabel(&Description, aDescription, 10.0f, TEXTALIGN_ML);
+			if(DoButton_Menu(&s_vRemoveMacroBindButtons[i], Localize("Удалить"), 0, &RemoveButton))
+			{
+				const CBindSlot Slot = vMacroBindRows[i].m_Slot;
+				GameClient()->m_Binds.Bind(Slot.m_Key, "", false, Slot.m_ModifierMask);
+				s_vAddedMacroBindSlots.erase(std::remove(s_vAddedMacroBindSlots.begin(), s_vAddedMacroBindSlots.end(), Slot), s_vAddedMacroBindSlots.end());
+			}
+		}
 
 		s_MacroSettingsScrollRegion.End();
 	}
@@ -835,25 +964,24 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 
 void CMenus::RenderSettingsButtons(CUIRect MainView)
 {
-	CUIRect Row, Label, KeyRect;
-	// Remove obsolete seek binds saved by older client versions.
-	static bool s_MacroSeekBindsCleared = false;
-	if(!s_MacroSeekBindsCleared)
+	CUIRect Row, Label, KeyRect, TabRow, MacroTab, TabGap, GameTab;
+	// Preserve old seek binds. Convert the previous forward-seek helper to the
+	// new one-shot command instead of silently deleting the user's key.
+	static bool s_MacroSeekBindsMigrated = false;
+	if(!s_MacroSeekBindsMigrated)
 	{
 		for(int ModifierMask = 0; ModifierMask < KeyModifier::COMBINATION_COUNT; ++ModifierMask)
 		{
 			for(int Key = KEY_FIRST; Key < KEY_LAST; ++Key)
 			{
 				const CBindSlot Candidate(Key, ModifierMask);
-				const char *pCommand = GameClient()->m_Binds.Get(Candidate);
-				if(str_comp(pCommand, "+macro_rewind") == 0 || str_comp(pCommand, "+macro_seek") == 0)
-					GameClient()->m_Binds.Bind(Key, "", false, ModifierMask);
+				if(str_comp(GameClient()->m_Binds.Get(Candidate), "+macro_seek") == 0)
+					GameClient()->m_Binds.Bind(Key, "macro_forward_step", false, ModifierMask);
 			}
 		}
-		s_MacroSeekBindsCleared = true;
+		s_MacroSeekBindsMigrated = true;
 	}
-	// Convert the old toggle-style Triplefly key to the hold-style helper.
-	// Keep the user's chosen key; the + command automatically sends - on release.
+
 	static bool s_TripleflyBindsMigrated = false;
 	if(!s_TripleflyBindsMigrated)
 	{
@@ -865,15 +993,24 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 				const char *pCommand = GameClient()->m_Binds.Get(Candidate);
 				if(str_comp(pCommand, "toggle cl_auto_triplefly 0 1") == 0 ||
 					str_comp(pCommand, "toggle_auto_triplefly") == 0)
-				{
 					GameClient()->m_Binds.Bind(Key, "+auto_triplefly", false, ModifierMask);
-				}
 			}
 		}
 		s_TripleflyBindsMigrated = true;
 	}
-	MainView.HSplitTop(28.0f, &Label, &MainView);
-	Ui()->DoLabel(&Label, Localize("Назначение клавиш для функций"), 20.0f, TEXTALIGN_ML);
+
+	static int s_ButtonSubPage = 0;
+	static CButtonContainer s_MacroTab, s_GameTab;
+	MainView.HSplitTop(28.0f, &TabRow, &MainView);
+	TabRow.VSplitLeft(TabRow.w * 0.5f - 2.0f, &MacroTab, &TabGap);
+	TabGap.VSplitLeft(4.0f, nullptr, &GameTab);
+	if(DoButton_Menu(&s_MacroTab, Localize("Макросы"), s_ButtonSubPage == 0, &MacroTab))
+		s_ButtonSubPage = 0;
+	if(DoButton_Menu(&s_GameTab, Localize("Игровые функции"), s_ButtonSubPage == 1, &GameTab))
+		s_ButtonSubPage = 1;
+
+	MainView.HSplitTop(24.0f, &Label, &MainView);
+	Ui()->DoLabel(&Label, s_ButtonSubPage == 0 ? Localize("Клавиши управления макросами") : Localize("Клавиши игровых функций"), 18.0f, TEXTALIGN_ML);
 	MainView.HSplitTop(5.0f, nullptr, &MainView);
 
 	struct SHotkey
@@ -881,104 +1018,107 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 		const char *m_pLabel;
 		const char *m_pCommand;
 	};
-	static const SHotkey s_aHotkeys[] = {
-		{ "Тройной флай (удерживать)", "+auto_triplefly" },
-		{ "Автохук", "toggle cl_auto_hook 0 1" },
-		{ "Защита от фриза", "toggle cl_auto_avoid 0 1" },
-		{ "Точная наводка на край", "toggle cl_auto_edge 0 1" },
-		{ "Подхват крюком у края", "toggle cl_auto_edge_hook 0 1" },
-		{ "Полёт дамми (хаммерфлай)", "toggle cl_dummy_hammer 0 1" },
-		{ "Начать запись макроса", "macro_record" },
-		{ "Запустить первый сохранённый макрос", "macro_play_first" },
-		{ "Остановить макрос", "macro_stop" },
-		{ "Остановить макрос на выбранном тике", "macro_stop_at_tick" },
-		{ "Перейти к выбранному тику макроса", "macro_goto_configured" },
-		{ "Пауза/продолжить макрос", "macro_pause" },
-		{ "Макрос: выбрать хаммер", "+weapon1" },
-		{ "Макрос: выбрать пистолет", "+weapon2" },
-		{ "Макрос: выбрать шотган", "+weapon3" },
-		{ "Макрос: выбрать рокет", "+weapon4" },
-		{ "Макрос: выбрать лазер", "+weapon5" },
+	static const SHotkey s_aMacroHotkeys[] = {
+		{"Начать запись макроса", "macro_record"},
+		{"Запустить первый сохранённый макрос", "macro_play_first"},
+		{"Остановить макрос", "macro_stop"},
+		{"Пауза / продолжить макрос", "macro_pause"},
+		{"Отмотать назад (удерживать)", "+macro_rewind"},
+		{"Перейти к выбранному тику", "macro_goto_configured"},
+		{"Остановить на выбранном тике", "macro_stop_at_tick"},
+		{"Перейти вперёд", "macro_forward_step"},
+		{"Выбрать молот", "+weapon1"},
+		{"Выбрать пистолет", "+weapon2"},
+		{"Выбрать дробовик", "+weapon3"},
+		{"Выбрать гранату", "+weapon4"},
+		{"Выбрать лазер", "+weapon5"},
 	};
-	static CButtonContainer s_aKeyReaders[std::size(s_aHotkeys)];
-	static CButtonContainer s_aKeyClearButtons[std::size(s_aHotkeys)];
+	static const SHotkey s_aGameHotkeys[] = {
+		{"Тройной флай (удерживать)", "+auto_triplefly"},
+		{"Автохук", "toggle cl_auto_hook 0 1"},
+		{"Защита от фриза", "toggle cl_auto_avoid 0 1"},
+		{"Точная наводка на край", "toggle cl_auto_edge 0 1"},
+		{"Подхват крюком у края", "toggle cl_auto_edge_hook 0 1"},
+		{"Полёт дамми (хаммерфлай)", "toggle cl_dummy_hammer 0 1"},
+	};
+	static CButtonContainer s_aMacroKeyReaders[std::size(s_aMacroHotkeys)];
+	static CButtonContainer s_aMacroKeyClearButtons[std::size(s_aMacroHotkeys)];
+	static CButtonContainer s_aGameKeyReaders[std::size(s_aGameHotkeys)];
+	static CButtonContainer s_aGameKeyClearButtons[std::size(s_aGameHotkeys)];
 
-	for(std::size_t i = 0; i < std::size(s_aHotkeys); ++i)
-	{
-		MainView.HSplitTop(26.0f, &Row, &MainView);
-		Row.VSplitLeft(250.0f, &Label, &KeyRect);
-		Ui()->DoLabel(&Label, Localize(s_aHotkeys[i].m_pLabel), 14.0f, TEXTALIGN_ML);
-
-		CBindSlot CurrentBind = EMPTY_BIND_SLOT;
-		bool Found = false;
-		for(int ModifierMask = 0; ModifierMask < KeyModifier::COMBINATION_COUNT && !Found; ++ModifierMask)
+	auto RenderHotkeys = [&](const SHotkey *pHotkeys, std::size_t Count, CButtonContainer *pReaders, CButtonContainer *pClearButtons) {
+		for(std::size_t i = 0; i < Count; ++i)
 		{
-			for(int Key = KEY_FIRST; Key < KEY_LAST; ++Key)
+			MainView.HSplitTop(26.0f, &Row, &MainView);
+			Row.VSplitLeft(250.0f, &Label, &KeyRect);
+			Ui()->DoLabel(&Label, Localize(pHotkeys[i].m_pLabel), 13.0f, TEXTALIGN_ML);
+
+			CBindSlot CurrentBind = EMPTY_BIND_SLOT;
+			bool Found = false;
+			for(int ModifierMask = 0; ModifierMask < KeyModifier::COMBINATION_COUNT && !Found; ++ModifierMask)
 			{
-				const CBindSlot Candidate(Key, ModifierMask);
-				if(str_comp(GameClient()->m_Binds.Get(Candidate), s_aHotkeys[i].m_pCommand) == 0)
+				for(int Key = KEY_FIRST; Key < KEY_LAST; ++Key)
 				{
-					CurrentBind = Candidate;
-					Found = true;
-					break;
+					const CBindSlot Candidate(Key, ModifierMask);
+					if(str_comp(GameClient()->m_Binds.Get(Candidate), pHotkeys[i].m_pCommand) == 0)
+					{
+						CurrentBind = Candidate;
+						Found = true;
+						break;
+					}
 				}
 			}
+
+			const CKeyBinder::CKeyReaderResult Result = GameClient()->m_KeyBinder.DoKeyReader(
+				&pReaders[i], &pClearButtons[i], &KeyRect, CurrentBind, false);
+			if(Result.m_Aborted || Result.m_Bind == CurrentBind)
+				continue;
+
+			if(CurrentBind.m_Key != KEY_UNKNOWN || Result.m_Bind.m_Key == KEY_UNKNOWN)
+				GameClient()->m_Binds.Bind(CurrentBind.m_Key, "", false, CurrentBind.m_ModifierMask);
+			if(Result.m_Bind.m_Key != KEY_UNKNOWN)
+				GameClient()->m_Binds.Bind(Result.m_Bind.m_Key, pHotkeys[i].m_pCommand, false, Result.m_Bind.m_ModifierMask);
 		}
+	};
 
-		const CKeyBinder::CKeyReaderResult Result = GameClient()->m_KeyBinder.DoKeyReader(
-			&s_aKeyReaders[i], &s_aKeyClearButtons[i], &KeyRect, CurrentBind, false);
-		if(Result.m_Aborted || Result.m_Bind == CurrentBind)
-			continue;
-
-		if(CurrentBind.m_Key != KEY_UNKNOWN || Result.m_Bind.m_Key == KEY_UNKNOWN)
-			GameClient()->m_Binds.Bind(CurrentBind.m_Key, "", false, CurrentBind.m_ModifierMask);
-		if(Result.m_Bind.m_Key != KEY_UNKNOWN)
-			GameClient()->m_Binds.Bind(Result.m_Bind.m_Key, s_aHotkeys[i].m_pCommand, false, Result.m_Bind.m_ModifierMask);
-	}
-
-	static CLineInputNumber s_MacroStopTick;
-	static CLineInputNumber s_MacroGotoTick;
-	static bool s_MacroStopTickInitialized = false;
-	static bool s_MacroGotoTickInitialized = false;
-	if(!s_MacroStopTickInitialized)
+	if(s_ButtonSubPage == 0)
 	{
-		s_MacroStopTick.SetInteger(g_Config.m_ClMacroStopTick);
-		s_MacroStopTickInitialized = true;
-	}
-	if(!s_MacroGotoTickInitialized)
-	{
-		s_MacroGotoTick.SetInteger(g_Config.m_ClMacroGotoTick);
-		s_MacroGotoTickInitialized = true;
-	}
+		RenderHotkeys(s_aMacroHotkeys, std::size(s_aMacroHotkeys), s_aMacroKeyReaders, s_aMacroKeyClearButtons);
 
-	MainView.HSplitTop(26.0f, &Row, &MainView);
-	Row.VSplitLeft(250.0f, &Label, &KeyRect);
-	Ui()->DoLabel(&Label, Localize("Остановить на тике (0 — выкл.)"), 13.0f, TEXTALIGN_ML);
-	Ui()->DoEditBox(&s_MacroStopTick, &KeyRect, 13.0f);
-	if(s_MacroStopTick.WasChanged())
-	{
-		const int Tick = s_MacroStopTick.GetInteger();
-		if(Tick >= 0 && Tick <= 18000)
-			g_Config.m_ClMacroStopTick = Tick;
-		else
-			s_MacroStopTick.SetInteger(g_Config.m_ClMacroStopTick);
-	}
+		static CLineInputNumber s_MacroRewindStep;
+		static CLineInputNumber s_MacroStopTick;
+		static CLineInputNumber s_MacroGotoTick;
+		static bool s_RewindInitialized = false;
+		static bool s_StopInitialized = false;
+		static bool s_GotoInitialized = false;
+		if(!s_RewindInitialized) { s_MacroRewindStep.SetInteger(g_Config.m_ClMacroRewindStep); s_RewindInitialized = true; }
+		if(!s_StopInitialized) { s_MacroStopTick.SetInteger(g_Config.m_ClMacroStopTick); s_StopInitialized = true; }
+		if(!s_GotoInitialized) { s_MacroGotoTick.SetInteger(g_Config.m_ClMacroGotoTick); s_GotoInitialized = true; }
 
-	MainView.HSplitTop(26.0f, &Row, &MainView);
-	Row.VSplitLeft(250.0f, &Label, &KeyRect);
-	Ui()->DoLabel(&Label, Localize("Перейти к тику"), 13.0f, TEXTALIGN_ML);
-	Ui()->DoEditBox(&s_MacroGotoTick, &KeyRect, 13.0f);
-	if(s_MacroGotoTick.WasChanged())
-	{
-		const int Tick = s_MacroGotoTick.GetInteger();
-		if(Tick >= 1 && Tick <= 18000)
-			g_Config.m_ClMacroGotoTick = Tick;
-		else
-			s_MacroGotoTick.SetInteger(g_Config.m_ClMacroGotoTick);
+		auto RenderNumber = [&](const char *pLabel, CLineInputNumber *pInput, int *pConfig, int Minimum, int Maximum) {
+			MainView.HSplitTop(26.0f, &Row, &MainView);
+			Row.VSplitLeft(250.0f, &Label, &KeyRect);
+			Ui()->DoLabel(&Label, Localize(pLabel), 12.0f, TEXTALIGN_ML);
+			Ui()->DoEditBox(pInput, &KeyRect, 13.0f);
+			if(pInput->WasChanged())
+			{
+				const int Value = pInput->GetInteger();
+				if(Value >= Minimum && Value <= Maximum)
+					*pConfig = Value;
+				else
+					pInput->SetInteger(*pConfig);
+			}
+		};
+		RenderNumber("Сколько тиков отматывать назад", &s_MacroRewindStep, &g_Config.m_ClMacroRewindStep, 1, 18000);
+		RenderNumber("Начать воспроизведение с тика", &s_MacroGotoTick, &g_Config.m_ClMacroGotoTick, 1, 18000);
+		RenderNumber("Остановить на тике (0 — выкл.)", &s_MacroStopTick, &g_Config.m_ClMacroStopTick, 0, 18000);
+		MainView.HSplitTop(24.0f, nullptr, &MainView);
+		Ui()->DoLabel(&MainView, Localize("Перемотка работает во время записи и воспроизведения. Стартовый тик применяется при запуске выбранного макроса."), 11.0f, TEXTALIGN_ML);
 	}
-
-	MainView.HSplitTop(30.0f, nullptr, &MainView);
-	Ui()->DoLabel(&MainView,
-		Localize("Клавиша остановки завершит макрос на выбранном тике. Клавиша перехода восстановит состояние на указанном тике. Оружие можно выбирать отдельными клавишами во время записи."),
-		12.0f, TEXTALIGN_ML);
+	else
+	{
+		RenderHotkeys(s_aGameHotkeys, std::size(s_aGameHotkeys), s_aGameKeyReaders, s_aGameKeyClearButtons);
+		MainView.HSplitTop(24.0f, nullptr, &MainView);
+		Ui()->DoLabel(&MainView, Localize("Авто-триплфлай работает, пока удерживается назначенная клавиша."), 11.0f, TEXTALIGN_ML);
+	}
 }

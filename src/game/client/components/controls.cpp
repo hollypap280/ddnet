@@ -150,21 +150,21 @@ void CControls::ConKeyInputState(IConsole::IResult *pResult, void *pUserData)
 		if(pState->m_IsDirectionLeft)
 		{
 			pSelf->m_MacroPracticeDirectionLeft = Stroke != 0;
-			if(Stroke && pSelf->MacroPracticeRate() < SERVER_TICK_SPEED)
+			if(Stroke)
 				pSelf->m_MacroPracticePendingDirectionLeft = true;
 			HandledPracticeInput = true;
 		}
 		if(pState->m_IsDirectionRight)
 		{
 			pSelf->m_MacroPracticeDirectionRight = Stroke != 0;
-			if(Stroke && pSelf->MacroPracticeRate() < SERVER_TICK_SPEED)
+			if(Stroke)
 				pSelf->m_MacroPracticePendingDirectionRight = true;
 			HandledPracticeInput = true;
 		}
 		if(pState->m_IsJumpAction)
 		{
 			pSelf->m_MacroPracticeInput.m_Jump = Stroke;
-			if(Stroke && pSelf->MacroPracticeRate() < SERVER_TICK_SPEED)
+			if(Stroke)
 				pSelf->m_MacroPracticePendingJump = true;
 			HandledPracticeInput = true;
 		}
@@ -172,7 +172,7 @@ void CControls::ConKeyInputState(IConsole::IResult *pResult, void *pUserData)
 		{
 			pSelf->m_MacroPracticeInput.m_Hook = Stroke;
 			pSelf->m_aManualHook[Dummy] = Stroke != 0;
-			if(Stroke && pSelf->MacroPracticeRate() < SERVER_TICK_SPEED)
+			if(Stroke)
 				pSelf->m_MacroPracticePendingHook = true;
 			HandledPracticeInput = true;
 		}
@@ -221,7 +221,7 @@ void CControls::ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData)
 		if((Fire & 1) != Stroke)
 		{
 			++Fire;
-			if(Stroke && !pSelf->m_MacroPlaying)
+			if(!pSelf->m_MacroPlaying)
 				++pSelf->m_MacroPracticePendingFireTransitions;
 			if(pSelf->m_MacroPlaying)
 				++pSelf->m_aMacroLiveFireOffset[Dummy];
@@ -365,10 +365,8 @@ void CControls::ConMacroPracticeInput(IConsole::IResult *pResult, void *pUserDat
 			pSelf->m_aMacroPlaybackWeaponOverride[Dummy] = WantedWeapon;
 		else if(pSelf->m_MacroPracticeActive)
 		{
-			if(pSelf->MacroPracticeRate() < SERVER_TICK_SPEED)
-				pSelf->m_MacroPracticePendingWantedWeapon = WantedWeapon;
-			else
-				pSelf->m_MacroPracticeInput.m_WantedWeapon = WantedWeapon;
+			pSelf->m_MacroPracticePendingWantedWeapon = WantedWeapon;
+			pSelf->m_MacroPracticeInput.m_WantedWeapon = 0;
 		}
 		else
 			pSelf->m_aInputData[Dummy].m_WantedWeapon = WantedWeapon;
@@ -504,23 +502,23 @@ void CControls::ConMacroPracticeInput(IConsole::IResult *pResult, void *pUserDat
 	{
 	case EMacroPracticeDummyAction::LEFT:
 		pSelf->m_MacroPracticeDirectionLeft = Pressed;
-		if(Pressed && pSelf->MacroPracticeRate() < SERVER_TICK_SPEED)
+		if(Pressed)
 			pSelf->m_MacroPracticePendingDirectionLeft = true;
 		break;
 	case EMacroPracticeDummyAction::RIGHT:
 		pSelf->m_MacroPracticeDirectionRight = Pressed;
-		if(Pressed && pSelf->MacroPracticeRate() < SERVER_TICK_SPEED)
+		if(Pressed)
 			pSelf->m_MacroPracticePendingDirectionRight = true;
 		break;
 	case EMacroPracticeDummyAction::JUMP:
 		pSelf->m_MacroPracticeInput.m_Jump = Pressed ? 1 : 0;
-		if(Pressed && pSelf->MacroPracticeRate() < SERVER_TICK_SPEED)
+		if(Pressed)
 			pSelf->m_MacroPracticePendingJump = true;
 		break;
 	case EMacroPracticeDummyAction::HOOK:
 		pSelf->m_MacroPracticeInput.m_Hook = Pressed ? 1 : 0;
 		pSelf->m_aManualHook[Dummy] = Pressed;
-		if(Pressed && pSelf->MacroPracticeRate() < SERVER_TICK_SPEED)
+		if(Pressed)
 			pSelf->m_MacroPracticePendingHook = true;
 		break;
 	case EMacroPracticeDummyAction::FIRE:
@@ -530,8 +528,7 @@ void CControls::ConMacroPracticeInput(IConsole::IResult *pResult, void *pUserDat
 		{
 			++Fire;
 			Fire &= INPUT_STATE_MASK;
-			if(Pressed)
-				++pSelf->m_MacroPracticePendingFireTransitions;
+			++pSelf->m_MacroPracticePendingFireTransitions;
 		}
 		break;
 	}
@@ -615,15 +612,8 @@ void CControls::ConKeyInputSet(IConsole::IResult *pResult, void *pUserData)
 	if(pSelf->m_MacroPracticeActive &&
 		pSet->m_apVariables[0] == &pSelf->m_aInputData[0].m_WantedWeapon)
 	{
-		if(pSelf->MacroPracticeRate() < SERVER_TICK_SPEED)
-		{
-			pSelf->m_MacroPracticePendingWantedWeapon = pSet->m_Value;
-			pSelf->m_MacroPracticeInput.m_WantedWeapon = 0;
-		}
-		else
-		{
-			pSelf->m_MacroPracticeInput.m_WantedWeapon = pSet->m_Value;
-		}
+		pSelf->m_MacroPracticePendingWantedWeapon = pSet->m_Value;
+		pSelf->m_MacroPracticeInput.m_WantedWeapon = 0;
 		return;
 	}
 
@@ -1711,9 +1701,9 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		ReplayRecordedFrame = true;
 	}
 
-	if(!ReplayRecordedFrame && MacroPracticeRate() < SERVER_TICK_SPEED)
+	if(!ReplayRecordedFrame)
 	{
-		// At a slower recording rate preserve short movement/jump/hook taps.
+		// Preserve short movement/jump/hook taps at both slow and normal recording rates.
 		if(TickInput.m_Direction == 0)
 		{
 			if(m_MacroPracticePendingDirectionLeft && !m_MacroPracticePendingDirectionRight)
@@ -1745,8 +1735,7 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 	{
 		if(m_MacroPracticePendingFireTransitions > 0)
 		{
-			int NextFire = m_MacroPracticeFireCounter;
-			NextFire = (NextFire + ((NextFire & 1) ? 2 : 1)) & INPUT_STATE_MASK;
+			const int NextFire = (m_MacroPracticeFireCounter + 1) & INPUT_STATE_MASK;
 			TickInput.m_Fire = NextFire;
 			m_MacroPracticeFireCounter = NextFire;
 			--m_MacroPracticePendingFireTransitions;
@@ -3220,16 +3209,16 @@ void CControls::ApplyHookAutomation(int Dummy)
 		const float SpeedY = std::abs(LocalVel.y);
 		const float FlightSpeed = length(LocalVel);
 
-		// The hook window is shorter when the driver is moving sideways or
-		// downward, and longer while climbing so the third tee is not dropped.
+		// Keep the hook engaged for most of the cycle. Downward and sideways
+		// flights need a longer window because the tees separate more quickly.
 		if(LocalVel.y < -std::max(2.0f, SpeedX * 0.65f))
-			m_TripleflyHookDuration = 5; // upward
+			m_TripleflyHookDuration = 9; // upward
 		else if(LocalVel.y > std::max(2.0f, SpeedX * 0.65f))
-			m_TripleflyHookDuration = 1; // downward
+			m_TripleflyHookDuration = 8; // downward
 		else if(SpeedX > std::max(2.0f, SpeedY * 1.25f))
-			m_TripleflyHookDuration = 2; // sideways
+			m_TripleflyHookDuration = 8; // sideways
 		else
-			m_TripleflyHookDuration = 3; // diagonal / transitioning
+			m_TripleflyHookDuration = 8; // diagonal / transitioning
 
 		const int HookerTick = Client()->GameTick(!Dummy);
 		if(!m_TripleflyFlightActive && FlightSpeed >= 5.0f && !Collision()->IsOnGround(LocalPos, 14.0f))
@@ -3315,14 +3304,17 @@ void CControls::ApplyHookAutomation(int Dummy)
 			if(Collision()->IntersectLineTeleHook(HookerPos, TargetPos, &CollisionPos, &BeforeCollision) != 0)
 				continue;
 
-			float Score = DistanceSquared;
+			// Prefer the third tee about 4–5 tiles from the dummy (32 units/tile).
+			// This keeps the tether useful without rejecting a farther valid target.
+			const float DistanceError = std::sqrt(DistanceSquared) - 144.0f;
+			float Score = DistanceError * DistanceError;
 			if(FlightSpeed > 2.0f)
 			{
 				const float AlongFlight = dot(normalize(Delta), normalize(LocalVel));
 				Score *= 1.0f - 0.20f * AlongFlight;
 			}
 			if(ClientId == PreviousTargetClientId)
-				Score *= 0.85f;
+				Score *= 0.8f;
 			if(Score >= BestScore)
 				continue;
 
@@ -3347,7 +3339,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 		{
 			m_TripleflyHookStartTick = -1;
 			m_TripleflyHookEndTick = -1;
-			m_TripleflyNextHookTick = HookerTick + 3;
+			m_TripleflyNextHookTick = HookerTick + 2;
 		}
 		else if(m_TripleflyFlightActive && m_TripleflyNextHookTick >= 0 &&
 			HookerTick >= m_TripleflyNextHookTick &&
@@ -3355,7 +3347,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 		{
 			m_TripleflyHookStartTick = HookerTick + 1;
 			m_TripleflyHookEndTick = m_TripleflyHookStartTick + m_TripleflyHookDuration;
-			m_TripleflyNextHookTick = HookerTick + 18;
+			m_TripleflyNextHookTick = HookerTick + m_TripleflyHookDuration + 3;
 		}
 		else if(m_TripleflyHookStartTick >= 0 && HookerTick >= m_TripleflyHookStartTick &&
 			HookerTick < m_TripleflyHookEndTick)
