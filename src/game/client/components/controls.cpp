@@ -1538,7 +1538,7 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 	pPrimary->m_PrevPos = Core.m_Pos;
 	pPrimary->m_PrevPrevPos = Core.m_Pos;
 	pPrimary->SetActiveWeapon(Frame.m_Weapon);
-	pPrimary->m_AttackTick = Frame.m_AttackTick;
+	pPrimary->SetAttackTick(Frame.m_AttackTick);
 	pPrimary->m_FreezeTime = Frame.m_FreezeTime;
 	pPrimary->m_FrozenLastTick = Frame.m_FrozenLastTick != 0;
 	pPrimary->SetInput(&Frame.m_Input);
@@ -1583,7 +1583,7 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 		pSecondary->m_PrevPos = SecondaryCore.m_Pos;
 		pSecondary->m_PrevPrevPos = SecondaryCore.m_Pos;
 		pSecondary->SetActiveWeapon(Frame.m_SecondaryWeapon);
-		pSecondary->m_AttackTick = Frame.m_SecondaryAttackTick;
+		pSecondary->SetAttackTick(Frame.m_SecondaryAttackTick);
 		pSecondary->m_FreezeTime = Frame.m_SecondaryFreezeTime;
 		pSecondary->m_FrozenLastTick = Frame.m_SecondaryFrozenLastTick != 0;
 		pSecondary->m_IsLocal = false;
@@ -1762,6 +1762,7 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		}
 	}
 
+	const int RecordedConnection = m_MacroPracticeLocalId == GameClient()->m_aLocalIds[1] ? 1 : 0;
 	SMacroFrame NewFrame;
 	if(m_MacroRecording)
 	{
@@ -1811,7 +1812,7 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		DDNet.m_TargetY = PreCore.m_Input.m_TargetY;
 		DDNet.m_TuneZoneOverride = pCharacter->GetTuneZoneOverride();
 		NewFrame.m_HasCoordinates = 1;
-		const int RecordedConnection = m_MacroPracticeLocalId == GameClient()->m_aLocalIds[1] ? 1 : 0;
+
 		NewFrame.m_ClientId = -2 - RecordedConnection;
 	}
 

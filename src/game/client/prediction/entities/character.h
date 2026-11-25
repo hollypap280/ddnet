@@ -114,6 +114,7 @@ public:
 	}
 	int GetJumped() const { return m_Core.m_Jumped; }
 	int GetAttackTick() const { return m_AttackTick; }
+	void SetAttackTick(int Tick) { m_AttackTick = Tick; }
 	int GetStrongWeakId() const { return m_StrongWeakId; }
 
 	CCharacter(CGameWorld *pGameWorld, int Id, CNetObj_Character *pChar, CNetObj_DDNetCharacter *pExtended = nullptr);
