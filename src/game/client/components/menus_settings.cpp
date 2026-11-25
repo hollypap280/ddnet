@@ -925,9 +925,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 				const bool AddedHere = std::find(s_vAddedMacroBindSlots.begin(), s_vAddedMacroBindSlots.end(), Slot) != s_vAddedMacroBindSlots.end();
 				if(!pCommand[0] || (!ImportedMacroBind && !AddedHere))
 					continue;
-				SMacroBindRow Item;
-				Item.m_Slot = Slot;
-				Item.m_Command = pCommand;
+				SMacroBindRow Item{Slot, pCommand, {}};
 				GameClient()->m_Binds.GetKeyBindName(Key, ModifierMask, Item.m_aKeyName, sizeof(Item.m_aKeyName));
 				vMacroBindRows.push_back(Item);
 			}
