@@ -2387,7 +2387,7 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroPlaying = true;
 	m_MacroStartFrameIndex = StartFrameIndex;
 	m_MacroPlaybackIndex = (std::size_t)StartFrameIndex;
-	m_MacroDisplayedTick = StartFrameIndex;
+	m_MacroDisplayedTick = StartFrameIndex + 1;
 	m_MacroCurrentFrame = {};
 	m_MacroHasCurrentFrame = false;
 	m_MacroHoldCurrentFrame = false;
@@ -2575,7 +2575,7 @@ void CControls::ConMacroGoto(IConsole::IResult *pResult, void *pUserData)
 		return;
 	}
 	const int CurrentTick = pSelf->m_MacroRecording ? pSelf->MacroFrameCount() :
-		(pSelf->m_MacroDisplayedTick > 0 ? pSelf->m_MacroDisplayedTick : (int)pSelf->m_MacroPlaybackIndex);
+		(pSelf->m_MacroDisplayedTick > 0 ? pSelf->m_MacroDisplayedTick : (int)pSelf->m_MacroPlaybackIndex + 1);
 	pSelf->SeekMacro(TargetTick - CurrentTick, true, true);
 }
 
@@ -2940,7 +2940,15 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 		const int CurrentPosition = (int)m_vMacroFrames.size();
 		const int TargetPosition = std::clamp(CurrentPosition + Offset, 0, CurrentPosition);
 		if(TargetPosition == CurrentPosition)
-			return false;
+		{
+			if(ShowMessage)
+			{
+				char aMessage[96];
+				str_format(aMessage, sizeof(aMessage), "Запись уже находится на тике %d.", TargetPosition);
+				GameClient()->Echo(aMessage);
+			}
+			return true;
+		}
 		m_MacroRecordingPaused = true;
 		if(!RebuildMacroWorldToPosition(TargetPosition))
 			return false;
@@ -2969,7 +2977,15 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 	const int Current = std::clamp(CurrentIndex, 0, (int)m_vMacroFrames.size() - 1);
 	const int Target = std::clamp(Current + Offset, 0, (int)m_vMacroFrames.size() - 1);
 	if(Target == Current)
-		return false;
+	{
+		if(ShowMessage)
+		{
+			char aMessage[96];
+			str_format(aMessage, sizeof(aMessage), "Макрос уже находится на тике %d.", Target + 1);
+			GameClient()->Echo(aMessage);
+		}
+		return true;
+	}
 
 	if(m_MacroPlaybackLive)
 	{
