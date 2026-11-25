@@ -61,28 +61,46 @@ void CMenusSettingsControls::OnInterfacesInit(CGameClient *pClient)
 	CComponentInterfaces::OnInterfacesInit(pClient);
 
 	m_vBindOptions = {
-		{EBindOptionGroup::MOVEMENT, Localizable("Move left"), "+left"},
-		{EBindOptionGroup::MOVEMENT, Localizable("Move right"), "+right"},
-		{EBindOptionGroup::MOVEMENT, Localizable("Jump"), "+jump"},
-		{EBindOptionGroup::MOVEMENT, Localizable("Fire"), "+fire"},
-		{EBindOptionGroup::MOVEMENT, Localizable("Hook"), "+hook"},
-		{EBindOptionGroup::MOVEMENT, Localizable("Hook collisions"), "+showhookcoll"},
-		{EBindOptionGroup::MOVEMENT, Localizable("Pause"), "say /pause"},
-		{EBindOptionGroup::MOVEMENT, Localizable("Kill"), "kill"},
-		{EBindOptionGroup::MOVEMENT, Localizable("Zoom in"), "zoom+"},
-		{EBindOptionGroup::MOVEMENT, Localizable("Zoom out"), "zoom-"},
-		{EBindOptionGroup::MOVEMENT, Localizable("Default zoom"), "zoom"},
-		{EBindOptionGroup::MOVEMENT, Localizable("Show others"), "say /showothers"},
-		{EBindOptionGroup::MOVEMENT, Localizable("Show all"), "say /showall"},
-		{EBindOptionGroup::MOVEMENT, Localizable("Toggle dyncam"), "toggle cl_dyncam 0 1"},
-		{EBindOptionGroup::MOVEMENT, Localizable("Toggle ghost"), "toggle cl_race_show_ghost 0 1"},
-		{EBindOptionGroup::WEAPON, Localizable("Hammer"), "+weapon1"},
-		{EBindOptionGroup::WEAPON, Localizable("Pistol"), "+weapon2"},
-		{EBindOptionGroup::WEAPON, Localizable("Shotgun"), "+weapon3"},
-		{EBindOptionGroup::WEAPON, Localizable("Grenade"), "+weapon4"},
-		{EBindOptionGroup::WEAPON, Localizable("Laser"), "+weapon5"},
-		{EBindOptionGroup::WEAPON, Localizable("Next weapon"), "+nextweapon"},
-		{EBindOptionGroup::WEAPON, Localizable("Prev. weapon"), "+prevweapon"},
+		{EBindOptionGroup::GAME, Localizable("Move left"), "+left"},
+		{EBindOptionGroup::GAME, Localizable("Move right"), "+right"},
+		{EBindOptionGroup::GAME, Localizable("Jump"), "+jump"},
+		{EBindOptionGroup::GAME, Localizable("Fire"), "+fire"},
+		{EBindOptionGroup::GAME, Localizable("Hook"), "+hook"},
+		{EBindOptionGroup::GAME, Localizable("Hook collisions"), "+showhookcoll"},
+		{EBindOptionGroup::GAME, Localizable("Pause"), "say /pause"},
+		{EBindOptionGroup::GAME, Localizable("Kill"), "kill"},
+		{EBindOptionGroup::GAME, Localizable("Zoom in"), "zoom+"},
+		{EBindOptionGroup::GAME, Localizable("Zoom out"), "zoom-"},
+		{EBindOptionGroup::GAME, Localizable("Default zoom"), "zoom"},
+		{EBindOptionGroup::GAME, Localizable("Show others"), "say /showothers"},
+		{EBindOptionGroup::GAME, Localizable("Show all"), "say /showall"},
+		{EBindOptionGroup::GAME, Localizable("Toggle dyncam"), "toggle cl_dyncam 0 1"},
+		{EBindOptionGroup::GAME, Localizable("Toggle ghost"), "toggle cl_race_show_ghost 0 1"},
+		{EBindOptionGroup::GAME, Localizable("Hammer"), "+weapon1"},
+		{EBindOptionGroup::GAME, Localizable("Pistol"), "+weapon2"},
+		{EBindOptionGroup::GAME, Localizable("Shotgun"), "+weapon3"},
+		{EBindOptionGroup::GAME, Localizable("Grenade"), "+weapon4"},
+		{EBindOptionGroup::GAME, Localizable("Laser"), "+weapon5"},
+		{EBindOptionGroup::GAME, Localizable("Next weapon"), "+nextweapon"},
+		{EBindOptionGroup::GAME, Localizable("Prev. weapon"), "+prevweapon"},
+		{EBindOptionGroup::MACRO, Localizable("Move left in macro"), "+macro_left"},
+		{EBindOptionGroup::MACRO, Localizable("Move right in macro"), "+macro_right"},
+		{EBindOptionGroup::MACRO, Localizable("Jump in macro"), "+macro_jump"},
+		{EBindOptionGroup::MACRO, Localizable("Hook in macro"), "+macro_hook"},
+		{EBindOptionGroup::MACRO, Localizable("Fire in macro"), "+macro_fire"},
+		{EBindOptionGroup::MACRO, Localizable("Hammer in macro"), "+macro_weapon1"},
+		{EBindOptionGroup::MACRO, Localizable("Gun in macro"), "+macro_weapon2"},
+		{EBindOptionGroup::MACRO, Localizable("Shotgun in macro"), "+macro_weapon3"},
+		{EBindOptionGroup::MACRO, Localizable("Grenade in macro"), "+macro_weapon4"},
+		{EBindOptionGroup::MACRO, Localizable("Laser in macro"), "+macro_weapon5"},
+		{EBindOptionGroup::MACRO, Localizable("Next weapon in macro"), "+macro_nextweapon"},
+		{EBindOptionGroup::MACRO, Localizable("Previous weapon in macro"), "+macro_prevweapon"},
+		{EBindOptionGroup::MACRO, Localizable("Record macro"), "macro_record"},
+		{EBindOptionGroup::MACRO, Localizable("Stop macro"), "macro_stop"},
+		{EBindOptionGroup::MACRO, Localizable("Play macro"), "macro_play_first"},
+		{EBindOptionGroup::MACRO, Localizable("Pause macro"), "macro_pause"},
+		{EBindOptionGroup::MACRO, Localizable("Rewind macro by step"), "macro_rewind_step"},
+		{EBindOptionGroup::MACRO, Localizable("Forward macro by step"), "macro_forward_step"},
 		{EBindOptionGroup::VOTING, Localizable("Vote yes"), "vote yes"},
 		{EBindOptionGroup::VOTING, Localizable("Vote no"), "vote no"},
 		{EBindOptionGroup::CHAT, Localizable("Chat"), "+show_chat; chat all"},
@@ -186,10 +204,12 @@ void CMenusSettingsControls::Render(CUIRect MainView)
 		Localize("Mouse"), nullptr, nullptr, std::bind_front(&CMenusSettingsControls::RenderSettingsMouse, this));
 	RenderSettingsBlock(MeasureSettingsJoystickHeight(), &LeftColumn,
 		Localize("Controller"), nullptr, nullptr, std::bind_front(&CMenusSettingsControls::RenderSettingsJoystick, this));
-	RenderSettingsBindsBlock(EBindOptionGroup::MOVEMENT, &LeftColumn, Localize("Movement"));
-	RenderSettingsBindsBlock(EBindOptionGroup::WEAPON, &LeftColumn, Localize("Weapon"));
+	RenderSettingsBindsBlock(EBindOptionGroup::GAME, &LeftColumn, Localize("Game functions"));
 
 	// Right column
+	RenderSettingsBlock(MeasureSettingsMacroHeight(), &RightColumn,
+		Localize("Macro settings"), nullptr, nullptr, std::bind_front(&CMenusSettingsControls::RenderSettingsMacro, this));
+	RenderSettingsBindsBlock(EBindOptionGroup::MACRO, &RightColumn, Localize("Macro binds"));
 	RenderSettingsBindsBlock(EBindOptionGroup::VOTING, &RightColumn, Localize("Voting"));
 	RenderSettingsBindsBlock(EBindOptionGroup::CHAT, &RightColumn, Localize("Chat"));
 	RenderSettingsBindsBlock(EBindOptionGroup::DUMMY, &RightColumn, Localize("Dummy"));
@@ -432,6 +452,27 @@ void CMenusSettingsControls::RenderSettingsBlock(float Height, CUIRect *pParentR
 		{
 			RenderContentFunction(SettingsBlock);
 		}
+	}
+}
+
+float CMenusSettingsControls::MeasureSettingsMacroHeight() const
+{
+	return 2.0f * (BUTTON_HEIGHT + BUTTON_SPACING);
+}
+
+void CMenusSettingsControls::RenderSettingsMacro(CUIRect View)
+{
+	CUIRect Button;
+	View.HSplitTop(BUTTON_HEIGHT, &Button, &View);
+	Ui()->DoScrollbarOption(&g_Config.m_ClMacroRewindStep, &g_Config.m_ClMacroRewindStep,
+		&Button, Localize("Ticks to rewind / advance"), 1, 18000);
+
+	View.HSplitTop(BUTTON_SPACING, nullptr, &View);
+	View.HSplitTop(BUTTON_HEIGHT, &Button, &View);
+	if(GameClient()->m_Menus.DoButton_Menu(&m_ImportMacroBindsButton,
+		Localize("Import current game binds"), 0, &Button))
+	{
+		GameClient()->m_Controls.ImportMacroBinds();
 	}
 }
 
