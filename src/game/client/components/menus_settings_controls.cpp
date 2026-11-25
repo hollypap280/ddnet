@@ -83,24 +83,24 @@ void CMenusSettingsControls::OnInterfacesInit(CGameClient *pClient)
 		{EBindOptionGroup::GAME, Localizable("Laser"), "+weapon5"},
 		{EBindOptionGroup::GAME, Localizable("Next weapon"), "+nextweapon"},
 		{EBindOptionGroup::GAME, Localizable("Prev. weapon"), "+prevweapon"},
-		{EBindOptionGroup::MACRO, Localizable("Move left in macro"), "+macro_left"},
-		{EBindOptionGroup::MACRO, Localizable("Move right in macro"), "+macro_right"},
-		{EBindOptionGroup::MACRO, Localizable("Jump in macro"), "+macro_jump"},
-		{EBindOptionGroup::MACRO, Localizable("Hook in macro"), "+macro_hook"},
-		{EBindOptionGroup::MACRO, Localizable("Fire in macro"), "+macro_fire"},
-		{EBindOptionGroup::MACRO, Localizable("Hammer in macro"), "+macro_weapon1"},
-		{EBindOptionGroup::MACRO, Localizable("Gun in macro"), "+macro_weapon2"},
-		{EBindOptionGroup::MACRO, Localizable("Shotgun in macro"), "+macro_weapon3"},
-		{EBindOptionGroup::MACRO, Localizable("Grenade in macro"), "+macro_weapon4"},
-		{EBindOptionGroup::MACRO, Localizable("Laser in macro"), "+macro_weapon5"},
-		{EBindOptionGroup::MACRO, Localizable("Next weapon in macro"), "+macro_nextweapon"},
-		{EBindOptionGroup::MACRO, Localizable("Previous weapon in macro"), "+macro_prevweapon"},
-		{EBindOptionGroup::MACRO, Localizable("Record macro"), "macro_record"},
-		{EBindOptionGroup::MACRO, Localizable("Stop macro"), "macro_stop"},
-		{EBindOptionGroup::MACRO, Localizable("Play macro"), "macro_play_first"},
-		{EBindOptionGroup::MACRO, Localizable("Pause macro"), "macro_pause"},
-		{EBindOptionGroup::MACRO, Localizable("Rewind macro by step"), "macro_rewind_step"},
-		{EBindOptionGroup::MACRO, Localizable("Forward macro by step"), "macro_forward_step"},
+		{EBindOptionGroup::MACRO, Localizable("Макрос: влево"), "+macro_left"},
+		{EBindOptionGroup::MACRO, Localizable("Макрос: вправо"), "+macro_right"},
+		{EBindOptionGroup::MACRO, Localizable("Макрос: прыжок"), "+macro_jump"},
+		{EBindOptionGroup::MACRO, Localizable("Макрос: хук"), "+macro_hook"},
+		{EBindOptionGroup::MACRO, Localizable("Макрос: огонь"), "+macro_fire"},
+		{EBindOptionGroup::MACRO, Localizable("Макрос: молот"), "+macro_weapon1"},
+		{EBindOptionGroup::MACRO, Localizable("Макрос: пистолет"), "+macro_weapon2"},
+		{EBindOptionGroup::MACRO, Localizable("Макрос: дробовик"), "+macro_weapon3"},
+		{EBindOptionGroup::MACRO, Localizable("Макрос: граната"), "+macro_weapon4"},
+		{EBindOptionGroup::MACRO, Localizable("Макрос: лазер"), "+macro_weapon5"},
+		{EBindOptionGroup::MACRO, Localizable("Макрос: следующее оружие"), "+macro_nextweapon"},
+		{EBindOptionGroup::MACRO, Localizable("Макрос: предыдущее оружие"), "+macro_prevweapon"},
+		{EBindOptionGroup::MACRO, Localizable("Начать запись макроса"), "macro_record"},
+		{EBindOptionGroup::MACRO, Localizable("Остановить макрос"), "macro_stop"},
+		{EBindOptionGroup::MACRO, Localizable("Запустить макрос"), "macro_play_first"},
+		{EBindOptionGroup::MACRO, Localizable("Пауза макроса"), "macro_pause"},
+		{EBindOptionGroup::MACRO, Localizable("Перемотать макрос назад"), "macro_rewind_step"},
+		{EBindOptionGroup::MACRO, Localizable("Перемотать макрос вперёд"), "macro_forward_step"},
 		{EBindOptionGroup::VOTING, Localizable("Vote yes"), "vote yes"},
 		{EBindOptionGroup::VOTING, Localizable("Vote no"), "vote no"},
 		{EBindOptionGroup::CHAT, Localizable("Chat"), "+show_chat; chat all"},
@@ -204,12 +204,12 @@ void CMenusSettingsControls::Render(CUIRect MainView)
 		Localize("Mouse"), nullptr, nullptr, std::bind_front(&CMenusSettingsControls::RenderSettingsMouse, this));
 	RenderSettingsBlock(MeasureSettingsJoystickHeight(), &LeftColumn,
 		Localize("Controller"), nullptr, nullptr, std::bind_front(&CMenusSettingsControls::RenderSettingsJoystick, this));
-	RenderSettingsBindsBlock(EBindOptionGroup::GAME, &LeftColumn, Localize("Game functions"));
+	RenderSettingsBindsBlock(EBindOptionGroup::GAME, &LeftColumn, Localize("Игровые функции"));
 
 	// Right column
 	RenderSettingsBlock(MeasureSettingsMacroHeight(), &RightColumn,
-		Localize("Macro settings"), nullptr, nullptr, std::bind_front(&CMenusSettingsControls::RenderSettingsMacro, this));
-	RenderSettingsBindsBlock(EBindOptionGroup::MACRO, &RightColumn, Localize("Macro binds"));
+		Localize("Настройки макроса"), nullptr, nullptr, std::bind_front(&CMenusSettingsControls::RenderSettingsMacro, this));
+	RenderSettingsBindsBlock(EBindOptionGroup::MACRO, &RightColumn, Localize("Бинды макроса"));
 	RenderSettingsBindsBlock(EBindOptionGroup::VOTING, &RightColumn, Localize("Voting"));
 	RenderSettingsBindsBlock(EBindOptionGroup::CHAT, &RightColumn, Localize("Chat"));
 	RenderSettingsBindsBlock(EBindOptionGroup::DUMMY, &RightColumn, Localize("Dummy"));
@@ -457,7 +457,7 @@ void CMenusSettingsControls::RenderSettingsBlock(float Height, CUIRect *pParentR
 
 float CMenusSettingsControls::MeasureSettingsMacroHeight() const
 {
-	return 2.0f * (BUTTON_HEIGHT + BUTTON_SPACING);
+	return 3.0f * (BUTTON_HEIGHT + BUTTON_SPACING);
 }
 
 void CMenusSettingsControls::RenderSettingsMacro(CUIRect View)
@@ -465,15 +465,18 @@ void CMenusSettingsControls::RenderSettingsMacro(CUIRect View)
 	CUIRect Button;
 	View.HSplitTop(BUTTON_HEIGHT, &Button, &View);
 	Ui()->DoScrollbarOption(&g_Config.m_ClMacroRewindStep, &g_Config.m_ClMacroRewindStep,
-		&Button, Localize("Ticks to rewind / advance"), 1, 18000);
+		&Button, Localize("Сколько тиков перематывать"), 1, 18000);
 
 	View.HSplitTop(BUTTON_SPACING, nullptr, &View);
 	View.HSplitTop(BUTTON_HEIGHT, &Button, &View);
 	if(GameClient()->m_Menus.DoButton_Menu(&m_ImportMacroBindsButton,
-		Localize("Import current game binds"), 0, &Button))
+		Localize("Импортировать текущие игровые бинды"), 0, &Button))
 	{
 		GameClient()->m_Controls.ImportMacroBinds();
 	}
+	View.HSplitTop(BUTTON_SPACING, nullptr, &View);
+	View.HSplitTop(BUTTON_HEIGHT, &Button, &View);
+	Ui()->DoLabel(&Button, Localize("Обычные бинды останутся рабочими вне FP-записи."), FONT_SIZE, TEXTALIGN_ML);
 }
 
 void CMenusSettingsControls::RenderSettingsBindsBlock(EBindOptionGroup Group, CUIRect *pParentRect, const char *pTitle)
