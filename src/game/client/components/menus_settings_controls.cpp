@@ -582,19 +582,23 @@ bool CMenusSettingsControls::AddMacroBindFromText()
 		return (char)std::tolower(Ch);
 	});
 	const bool Compound = LowerCommand.find(';') != std::string::npos;
-	const char *pKind = "Пользовательский бинд добавлен. Неизвестные команды сохранены, но не исполняются автоматически в FP.";
-	if(LowerCommand.find("fly") != std::string::npos ||
-		LowerCommand.find("dummy_hammer") != std::string::npos ||
-		LowerCommand.find("dummy_copy_moves") != std::string::npos)
-		pKind = "Похоже на флай/управление дамми. Составные действия сохранены.";
-	else if(LowerCommand.find("+left") != std::string::npos ||
-		LowerCommand.find("+right") != std::string::npos ||
-		LowerCommand.find("+jump") != std::string::npos ||
-		LowerCommand.find("+hook") != std::string::npos ||
-		LowerCommand.find("+fire") != std::string::npos ||
+	const bool HasFire = LowerCommand.find("+fire") != std::string::npos;
+	const bool HasJump = LowerCommand.find("+jump") != std::string::npos;
+	const bool HasHook = LowerCommand.find("+hook") != std::string::npos;
+	const bool HasMovement = LowerCommand.find("+left") != std::string::npos ||
+		LowerCommand.find("+right") != std::string::npos;
+	const bool LooksLikeFlight = (HasFire && (HasJump || HasHook)) ||
+		(HasJump && HasHook && HasMovement);
+	const bool HasSupportedAction = HasMovement || HasJump || HasHook || HasFire ||
 		LowerCommand.find("+weapon") != std::string::npos ||
 		LowerCommand.find("+nextweapon") != std::string::npos ||
-		LowerCommand.find("+prevweapon") != std::string::npos)
+		LowerCommand.find("+prevweapon") != std::string::npos;
+	const char *pKind = "Пользовательский бинд добавлен. Неизвестные команды сохранены, но их действие в FP нельзя определить автоматически.";
+	if(LowerCommand.find("fly") != std::string::npos ||
+		LowerCommand.find("dummy_hammer") != std::string::npos ||
+		LowerCommand.find("dummy_copy_moves") != std::string::npos || LooksLikeFlight)
+		pKind = "Похоже на флай: распознаны связанные действия огня/прыжка/хука. Поддерживаемые команды подключены к FP.";
+	else if(HasSupportedAction)
 		pKind = "Распознаны игровые действия. Поддерживаемые кнопки подключены к FP-макросу.";
 	else if(LowerCommand.find("say /") != std::string::npos || LowerCommand.find("chat ") != std::string::npos)
 		pKind = "Серверная/чат-команда сохранена как бинд; её эффект в FP отдельно не симулируется.";
