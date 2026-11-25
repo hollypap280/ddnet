@@ -46,6 +46,11 @@ CControls::CControls()
 
 void CControls::OnReset()
 {
+	// A held +auto_triplefly bind may not receive its release event when the
+	// connection is reset. Restore the user's dummy settings in that case.
+	if(m_AutoTripleflyBindActive)
+		SetAutoTriplefly(false);
+	m_TripleflyHookSent = false;
 	StopMacroPractice();
 	ResetInput(0);
 	ResetInput(1);
