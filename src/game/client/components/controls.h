@@ -362,6 +362,7 @@ private:
 	void ApplyHookAutomation(int Dummy);
 	void ApplyEdgeAssist(int Dummy);
 	void ApplyEdgeHook(int Dummy);
+	int MacroConnectionFromStoredClientId(int StoredClientId) const;
 	bool MacroFilePath(const char *pName, char *pBuffer, unsigned BufferSize) const;
 	static int MacroListCallback(const char *pName, int IsDir, int DirType, void *pUser);
 	bool SeekMacro(int Offset, bool ShowMessage = true, bool TeleportLive = false);

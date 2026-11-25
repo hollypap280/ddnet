@@ -891,6 +891,25 @@ void CControls::RebaseMacroPlaybackCounters(int Dummy, int PreviousFrameIndex)
 		(m_aLastData[Dummy].m_PrevWeapon - PreviousRecordedInput.m_PrevWeapon) & INPUT_STATE_MASK;
 }
 
+int CControls::MacroConnectionFromStoredClientId(int StoredClientId) const
+{
+	// New files store role ids: -2 is main and -3 is dummy. Older files store
+	// the server-assigned client id; keep reading those when it still matches.
+	if(StoredClientId == -2)
+		return 0;
+	if(StoredClientId == -3)
+		return 1;
+	if(StoredClientId < 0 || !GameClient())
+		return -1;
+
+	for(int Connection = 0; Connection < NUM_DUMMIES; ++Connection)
+	{
+		if(GameClient()->m_aLocalIds[Connection] == StoredClientId)
+			return Connection;
+	}
+	return -1;
+}
+
 void CControls::SendMacroFrame(int Index, EMacroFrameMode Mode)
 {
 	(void)Mode;
@@ -901,14 +920,9 @@ void CControls::SendMacroFrame(int Index, EMacroFrameMode Mode)
 
 	// A recording can switch between the main tee and dummy. Select the
 	// matching normal DDNet connection, then let SnapInput send only actions.
-	if(!m_MacroPlaybackManualDummyOverride && Frame.m_ClientId >= 0)
+	if(!m_MacroPlaybackManualDummyOverride)
 	{
-		int RequestedDummy = -1;
-		if(Frame.m_ClientId == GameClient()->m_aLocalIds[0])
-			RequestedDummy = 0;
-		else if(Frame.m_ClientId == GameClient()->m_aLocalIds[1])
-			RequestedDummy = 1;
-
+		const int RequestedDummy = MacroConnectionFromStoredClientId(Frame.m_ClientId);
 		if(RequestedDummy >= 0 && RequestedDummy != m_MacroPlaybackDummy)
 		{
 			m_MacroPlaybackDummy = RequestedDummy;
@@ -1472,69 +1486,133 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 		return false;
 
 	const SMacroFrame &Frame = m_vMacroFrames[Index];
-	if(Frame.m_ClientId >= 0 && !SwitchMacroPracticeCharacter(Frame.m_ClientId))
+	if(!Frame.m_HasCoordinates)
 		return false;
 
-	CCharacter *pCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId);
-	if(!pCharacter)
+	// Saved files identify the main/dummy connection, not a temporary server id.
+	int PrimaryConnection = MacroConnectionFromStoredClientId(Frame.m_ClientId);
+	if(PrimaryConnection < 0)
+		PrimaryConnection = g_Config.m_ClDummy;
+	PrimaryConnection = std::clamp(PrimaryConnection, 0, NUM_DUMMIES - 1);
+	const int PrimaryClientId = GameClient()->m_aLocalIds[PrimaryConnection];
+	if(PrimaryClientId < 0 || PrimaryClientId >= MAX_CLIENTS)
 		return false;
-	if(Frame.m_HasCoordinates)
+
+	PopulateMacroPracticeWorld();
+	CCharacter *pPrimary = m_MacroPracticeWorld.GetCharacterById(PrimaryClientId);
+	if(!pPrimary)
 	{
-		CCharacterCore Core = pCharacter->GetCore();
-		Core.Read(&Frame.m_Core);
-		if(Frame.m_HasWeaponInventoryState)
-		{
-			for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
-			{
-				Core.m_aWeapons[Weapon].m_Got = Frame.m_aWeaponGot[Weapon] != 0;
-				Core.m_aWeapons[Weapon].m_Ammo = Frame.m_aWeaponAmmo[Weapon];
-			}
-		}
-		else if(Frame.m_HasDDNetState)
-		{
-			for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
-				Core.m_aWeapons[Weapon].m_Ammo = Frame.m_aWeaponAmmo[Weapon];
-		}
-		pCharacter->SetCore(Core);
-		pCharacter->m_Pos = Core.m_Pos;
-		pCharacter->m_PrevPos = Core.m_Pos;
-		pCharacter->m_PrevPrevPos = Core.m_Pos;
-		pCharacter->SetActiveWeapon(Frame.m_Weapon);
-		pCharacter->m_AttackTick = Frame.m_AttackTick;
-		pCharacter->m_FreezeTime = Frame.m_FreezeTime;
-		pCharacter->m_FrozenLastTick = Frame.m_FrozenLastTick != 0;
-
-		// Restore the other locally controlled tee from the same historical
-		// frame. It must not keep its present-day position or weapon state.
-		if(Frame.m_SecondaryHasState)
-		{
-			if(CCharacter *pSecondary = m_MacroPracticeWorld.GetCharacterById(Frame.m_SecondaryClientId))
-			{
-				CCharacterCore SecondaryCore = pSecondary->GetCore();
-				SecondaryCore.Read(&Frame.m_SecondaryCore);
-				for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
-				{
-					SecondaryCore.m_aWeapons[Weapon].m_Got = Frame.m_aSecondaryWeaponGot[Weapon] != 0;
-					SecondaryCore.m_aWeapons[Weapon].m_Ammo = Frame.m_aSecondaryWeaponAmmo[Weapon];
-				}
-				pSecondary->SetCore(SecondaryCore);
-				pSecondary->m_Pos = SecondaryCore.m_Pos;
-				pSecondary->m_PrevPos = SecondaryCore.m_Pos;
-				pSecondary->m_PrevPrevPos = SecondaryCore.m_Pos;
-				pSecondary->SetActiveWeapon(Frame.m_SecondaryWeapon);
-				pSecondary->m_AttackTick = Frame.m_SecondaryAttackTick;
-				pSecondary->m_FreezeTime = Frame.m_SecondaryFreezeTime;
-				pSecondary->m_FrozenLastTick = Frame.m_SecondaryFrozenLastTick != 0;
-			}
-		}
-		m_MacroPracticeWorld.m_GameTick = Frame.m_Tick;
-		m_MacroPracticeTick = Frame.m_Tick;
-
-		UpdateMacroPracticeGhost(pCharacter);
+		// If the server assigned new client ids since recording, rebuild the
+		// missing tee from the saved character snapshot.
+		CNetObj_Character SavedCharacter = Frame.m_Character;
+		pPrimary = new CCharacter(&m_MacroPracticeWorld, PrimaryClientId, &SavedCharacter, nullptr);
+		if(!pPrimary)
+			return false;
+		m_MacroPracticeWorld.InsertEntity(pPrimary);
 	}
+	if(PrimaryClientId != m_MacroPracticeLocalId && !SwitchMacroPracticeCharacter(PrimaryClientId))
+		return false;
+	pPrimary = m_MacroPracticeWorld.GetCharacterById(PrimaryClientId);
+	if(!pPrimary)
+		return false;
+	pPrimary->m_IsLocal = true;
+	pPrimary->m_IsMacroPracticeStatic = false;
+
+	CCharacterCore Core = pPrimary->GetCore();
+	Core.Read(&Frame.m_Core);
+	if(Frame.m_HasWeaponInventoryState)
+	{
+		for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+		{
+			Core.m_aWeapons[Weapon].m_Got = Frame.m_aWeaponGot[Weapon] != 0;
+			Core.m_aWeapons[Weapon].m_Ammo = Frame.m_aWeaponAmmo[Weapon];
+		}
+	}
+	else if(Frame.m_HasDDNetState)
+	{
+		for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+			Core.m_aWeapons[Weapon].m_Ammo = Frame.m_aWeaponAmmo[Weapon];
+	}
+	pPrimary->SetCore(Core);
+	pPrimary->m_Pos = Core.m_Pos;
+	pPrimary->m_PrevPos = Core.m_Pos;
+	pPrimary->m_PrevPrevPos = Core.m_Pos;
+	pPrimary->SetActiveWeapon(Frame.m_Weapon);
+	pPrimary->m_AttackTick = Frame.m_AttackTick;
+	pPrimary->m_FreezeTime = Frame.m_FreezeTime;
+	pPrimary->m_FrozenLastTick = Frame.m_FrozenLastTick != 0;
+	pPrimary->SetInput(&Frame.m_Input);
+
+	// Restore the second local tee from the same historical frame. It must not
+	// remain at its present-day position when the macro is rewound or sought.
+	if(Frame.m_SecondaryHasState)
+	{
+		int SecondaryConnection = MacroConnectionFromStoredClientId(Frame.m_SecondaryClientId);
+		if(SecondaryConnection < 0 || SecondaryConnection == PrimaryConnection)
+			SecondaryConnection = 1 - PrimaryConnection;
+		const int SecondaryClientId = GameClient()->m_aLocalIds[SecondaryConnection];
+		if(SecondaryClientId < 0 || SecondaryClientId >= MAX_CLIENTS || SecondaryClientId == PrimaryClientId)
+			return false;
+
+		CCharacter *pSecondary = m_MacroPracticeWorld.GetCharacterById(SecondaryClientId);
+		if(!pSecondary)
+		{
+			CNetObj_Character SavedSecondary{};
+			static_cast<CNetObj_CharacterCore &>(SavedSecondary) = Frame.m_SecondaryCore;
+			SavedSecondary.m_Weapon = Frame.m_SecondaryWeapon;
+			SavedSecondary.m_AttackTick = Frame.m_SecondaryAttackTick;
+			SavedSecondary.m_Tick = Frame.m_Tick;
+			pSecondary = new CCharacter(&m_MacroPracticeWorld, SecondaryClientId, &SavedSecondary, nullptr);
+			if(!pSecondary)
+				return false;
+			pSecondary->m_IsLocal = false;
+			pSecondary->m_IsMacroPracticeStatic = true;
+			m_MacroPracticeWorld.Teams()->Team(SecondaryClientId, m_MacroPracticeWorld.Teams()->Team(PrimaryClientId));
+			m_MacroPracticeWorld.InsertEntity(pSecondary);
+		}
+
+		CCharacterCore SecondaryCore = pSecondary->GetCore();
+		SecondaryCore.Read(&Frame.m_SecondaryCore);
+		for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+		{
+			SecondaryCore.m_aWeapons[Weapon].m_Got = Frame.m_aSecondaryWeaponGot[Weapon] != 0;
+			SecondaryCore.m_aWeapons[Weapon].m_Ammo = Frame.m_aSecondaryWeaponAmmo[Weapon];
+		}
+		pSecondary->SetCore(SecondaryCore);
+		pSecondary->m_Pos = SecondaryCore.m_Pos;
+		pSecondary->m_PrevPos = SecondaryCore.m_Pos;
+		pSecondary->m_PrevPrevPos = SecondaryCore.m_Pos;
+		pSecondary->SetActiveWeapon(Frame.m_SecondaryWeapon);
+		pSecondary->m_AttackTick = Frame.m_SecondaryAttackTick;
+		pSecondary->m_FreezeTime = Frame.m_SecondaryFreezeTime;
+		pSecondary->m_FrozenLastTick = Frame.m_SecondaryFrozenLastTick != 0;
+		pSecondary->m_IsLocal = false;
+		pSecondary->m_IsMacroPracticeStatic = true;
+		CNetObj_PlayerInput IdleInput{};
+		IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+		IdleInput.m_TargetX = 1;
+		pSecondary->SetInput(&IdleInput);
+	}
+
+	m_MacroPracticeWorld.m_GameTick = Frame.m_Tick;
+	m_MacroPracticeTick = Frame.m_Tick;
+	m_MacroPracticeInput = Frame.m_Input;
+	m_MacroPracticeDirectionLeft = Frame.m_Input.m_Direction < 0;
+	m_MacroPracticeDirectionRight = Frame.m_Input.m_Direction > 0;
+	m_MacroPracticeFireCounter = Frame.m_Input.m_Fire & INPUT_STATE_MASK;
+	m_MacroPracticePendingFireTransitions = 0;
+	m_MacroPracticePendingNextWeaponTransitions = 0;
+	m_MacroPracticePendingPrevWeaponTransitions = 0;
+	m_MacroPracticePendingWantedWeapon = 0;
+	m_MacroPracticePendingJump = false;
+	m_MacroPracticePendingHook = false;
+	m_MacroPracticePendingDirectionLeft = false;
+	m_MacroPracticePendingDirectionRight = false;
+
 	m_MacroPlaybackIndex = (std::size_t)Index + 1;
 	m_MacroDisplayedTick = Index + 1;
 	m_MacroPracticeWaiting = false;
+	UpdateMacroPracticeGhost(pPrimary);
 	return true;
 }
 
@@ -1588,8 +1666,10 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 			return;
 		}
 		const SMacroFrame &Frame = m_vMacroFrames[m_MacroPlaybackIndex];
-		if(Frame.m_ClientId >= 0 && Frame.m_ClientId != m_MacroPracticeLocalId &&
-			!SwitchMacroPracticeCharacter(Frame.m_ClientId))
+		const int FrameConnection = MacroConnectionFromStoredClientId(Frame.m_ClientId);
+		const int FrameClientId = FrameConnection >= 0 ? GameClient()->m_aLocalIds[FrameConnection] : m_MacroPracticeLocalId;
+		if(FrameClientId >= 0 && FrameClientId != m_MacroPracticeLocalId &&
+			!SwitchMacroPracticeCharacter(FrameClientId))
 		{
 			GameClient()->Echo("Не удалось переключить тренировочного тии по записи макроса.");
 			StopMacroRecording();
@@ -1731,7 +1811,8 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		DDNet.m_TargetY = PreCore.m_Input.m_TargetY;
 		DDNet.m_TuneZoneOverride = pCharacter->GetTuneZoneOverride();
 		NewFrame.m_HasCoordinates = 1;
-		NewFrame.m_ClientId = m_MacroPracticeLocalId;
+		const int RecordedConnection = m_MacroPracticeLocalId == GameClient()->m_aLocalIds[1] ? 1 : 0;
+		NewFrame.m_ClientId = -2 - RecordedConnection;
 	}
 
 	// Apply the selected input only to the controlled practice tee. The other
@@ -1787,7 +1868,7 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		if(CCharacter *pSecondary = m_MacroPracticeWorld.GetCharacterById(OtherLocalId))
 		{
 			NewFrame.m_SecondaryHasState = 1;
-			NewFrame.m_SecondaryClientId = OtherLocalId;
+			NewFrame.m_SecondaryClientId = -2 - (1 - RecordedConnection);
 			pSecondary->Core()->Write(&NewFrame.m_SecondaryCore);
 			NewFrame.m_SecondaryWeapon = pSecondary->GetActiveWeapon();
 			NewFrame.m_SecondaryAttackTick = pSecondary->GetAttackTick();
@@ -2379,10 +2460,9 @@ bool CControls::PlayMacro(const char *pName)
 	const int StartFrameIndex = std::clamp(g_Config.m_ClMacroGotoTick - 1, 0, (int)Frames.size() - 1);
 	const SMacroFrame &FirstFrame = Frames[StartFrameIndex];
 	int PlaybackDummy = g_Config.m_ClDummy;
-	if(FirstFrame.m_ClientId == GameClient()->m_aLocalIds[0])
-		PlaybackDummy = 0;
-	else if(FirstFrame.m_ClientId == GameClient()->m_aLocalIds[1])
-		PlaybackDummy = 1;
+	const int FirstFrameConnection = MacroConnectionFromStoredClientId(FirstFrame.m_ClientId);
+	if(FirstFrameConnection >= 0)
+		PlaybackDummy = FirstFrameConnection;
 
 	const int PlaybackLocalId = GameClient()->m_aLocalIds[PlaybackDummy];
 	if(PlaybackLocalId < 0 || PlaybackLocalId >= MAX_CLIENTS ||
@@ -3014,11 +3094,9 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 	{
 		// The server cannot be rewound by a client. Switch to the isolated FP
 		// world and restore the exact saved tee state there instead.
-		const int RecordedClientId = m_vMacroFrames[Target].m_ClientId;
-		if(RecordedClientId == GameClient()->m_aLocalIds[0])
-			g_Config.m_ClDummy = 0;
-		else if(RecordedClientId == GameClient()->m_aLocalIds[1])
-			g_Config.m_ClDummy = 1;
+		const int RecordedConnection = MacroConnectionFromStoredClientId(m_vMacroFrames[Target].m_ClientId);
+		if(RecordedConnection >= 0)
+			g_Config.m_ClDummy = RecordedConnection;
 
 		StopMacroRecording();
 		if(!StartMacroPractice())
@@ -3113,6 +3191,15 @@ void CControls::ApplyHookAutomation(int Dummy)
 		m_aAutoHookActive[Dummy] = false;
 		m_aAutoAvoidActive[Dummy] = false;
 		m_aAutoHookFireActive[Dummy] = false;
+		if(m_AutoTripleflyBindActive)
+		{
+			m_TripleflyFlightActive = false;
+			m_TripleflyNextHookTick = -1;
+			m_TripleflyHookStartTick = -1;
+			m_TripleflyHookEndTick = -1;
+			m_aTripleflyTargetFound[Dummy] = false;
+			m_aTripleflyTargetClientId[Dummy] = -1;
+		}
 		return;
 	}
 
@@ -3149,7 +3236,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 			m_TripleflyHookDuration = 3; // diagonal / transitioning
 
 		const int HookerTick = Client()->GameTick(!Dummy);
-		if(!m_TripleflyFlightActive && FlightSpeed >= 3.0f)
+		if(!m_TripleflyFlightActive && FlightSpeed >= 5.0f && !Collision()->IsOnGround(LocalPos, 14.0f))
 		{
 			// The player starts the flight manually. As soon as real movement
 			// begins, the dummy may hook the third tee; no extra Fire press or
@@ -3223,7 +3310,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 			if(DriverProjection > 0.0f && DriverProjection < 1.0f)
 			{
 				const vec2 ClosestPoint = HookerPos + Delta * DriverProjection;
-				if(length(ClosestPoint - LocalPos) < 36.0f)
+				if(length(ClosestPoint - LocalPos) < 48.0f)
 					continue;
 			}
 

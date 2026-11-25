@@ -112,8 +112,7 @@ void CMenusSettingsControls::OnInterfacesInit(CGameClient *pClient)
 		{EBindOptionGroup::DUMMY, Localizable("Toggle dummy"), "toggle cl_dummy 0 1"},
 		{EBindOptionGroup::DUMMY, Localizable("Dummy copy"), "toggle cl_dummy_copy_moves 0 1"},
 		{EBindOptionGroup::DUMMY, Localizable("Hammerfly dummy"), "toggle cl_dummy_hammer 0 1"},
-		{EBindOptionGroup::DUMMY, Localizable("Triplefly assist (hold)"), "+auto_triplefly"},
-		{EBindOptionGroup::DUMMY, Localizable("Triplefly assist (toggle)"), "toggle_auto_triplefly"},
+		{EBindOptionGroup::DUMMY, Localizable("Тройной флай (удерживать)"), "+auto_triplefly"},
 		{EBindOptionGroup::PRACTICE, Localizable("Teleport to cursor"), "tp_to_cursor"},
 		{EBindOptionGroup::PRACTICE, Localizable("Teleport dummy to cursor"), "tp_dummy_to_cursor"},
 		{EBindOptionGroup::MISCELLANEOUS, Localizable("Emoticon"), "+emote"},
@@ -133,7 +132,7 @@ void CMenusSettingsControls::OnInterfacesInit(CGameClient *pClient)
 	m_NumPredefinedBindOptions = m_vBindOptions.size();
 
 	std::fill(std::begin(m_aBindGroupExpanded), std::end(m_aBindGroupExpanded), true);
-	m_aBindGroupExpanded[(int)EBindOptionGroup::CUSTOM] = false;
+	m_aBindGroupExpanded[(int)EBindOptionGroup::CUSTOM] = true;
 
 	m_JoystickDropDownState.m_SelectionPopupContext.m_pScrollRegion = &m_JoystickDropDownScrollRegion;
 }
@@ -459,7 +458,7 @@ void CMenusSettingsControls::RenderSettingsBlock(float Height, CUIRect *pParentR
 
 float CMenusSettingsControls::MeasureSettingsMacroHeight() const
 {
-	return 5.0f * (BUTTON_HEIGHT + BUTTON_SPACING);
+	return 6.0f * (BUTTON_HEIGHT + BUTTON_SPACING);
 }
 
 void CMenusSettingsControls::RenderSettingsMacro(CUIRect View)
@@ -478,12 +477,16 @@ void CMenusSettingsControls::RenderSettingsMacro(CUIRect View)
 	}
 
 	View.HSplitTop(BUTTON_SPACING, nullptr, &View);
+	View.HSplitTop(BUTTON_HEIGHT, &Button, &View);
+	Ui()->DoLabel(&Button, Localize("Вставь сюда: bind KEY \"команда\""), FONT_SIZE, TEXTALIGN_ML);
+
+	View.HSplitTop(BUTTON_SPACING, nullptr, &View);
 	CUIRect BindRow, BindInput, AddButton;
 	View.HSplitTop(BUTTON_HEIGHT, &BindRow, &View);
-	BindRow.VSplitRight(86.0f, &BindInput, &AddButton);
+	BindRow.VSplitRight(122.0f, &BindInput, &AddButton);
 	Ui()->DoEditBox(&m_MacroBindInput, &BindInput, FONT_SIZE);
 	if(GameClient()->m_Menus.DoButton_Menu(&m_AddMacroBindButton,
-		Localize("Добавить"), 0, &AddButton))
+		Localize("Добавить и разобрать"), 0, &AddButton))
 	{
 		AddMacroBindFromText();
 	}
@@ -494,7 +497,7 @@ void CMenusSettingsControls::RenderSettingsMacro(CUIRect View)
 
 	View.HSplitTop(BUTTON_SPACING, nullptr, &View);
 	View.HSplitTop(BUTTON_HEIGHT, &Button, &View);
-	Ui()->DoLabel(&Button, Localize("Поддерживаемые действия станут FP-биндами; остальные команды сохраняются как обычные."), FONT_SIZE, TEXTALIGN_ML);
+	Ui()->DoLabel(&Button, Localize("Новые бинды можно удалить ниже в списке пользовательских биндов."), FONT_SIZE, TEXTALIGN_ML);
 }
 
 bool CMenusSettingsControls::AddMacroBindFromText()
