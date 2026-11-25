@@ -87,6 +87,9 @@ public:
 	int MacroPracticeTick() const { return m_MacroPracticeTick; }
 	vec2 MacroPracticePosition();
 	void OnMacroPracticeDummySwap();
+	bool TripleflyHammerPending() const { return m_TripleflyHammerPending; }
+	void OnTripleflyHammerSent();
+	bool TripleflyHookActive() const;
 	CGameWorld *MacroPracticeWorld() { return m_MacroPracticeActive ? &m_MacroPracticeWorld : nullptr; }
 	float MacroPracticeTickFraction() const { return (float)m_MacroPracticeAccumulator; }
 	bool MacroPracticeWaiting() const { return m_MacroPracticeWaiting; }
@@ -221,6 +224,8 @@ private:
 	bool m_MacroRecordingPaused = false;
 	bool m_MacroPlaying = false;
 	bool m_MacroPlaybackLive = false;
+	bool m_MacroPlaybackStartPending = false;
+	bool m_MacroPlaybackManualDummyOverride = false;
 	bool m_MacroPlaybackPaused = false;
 	bool m_MacroStopAtTickArmed = false;
 	int m_MacroPlaybackSeekTargetIndex = -1;
@@ -303,8 +308,10 @@ private:
 	int m_AutoTripleflyPreviousDummyFire = 0;
 	int m_AutoTripleflyPreviousDummyJump = 0;
 	int m_AutoTripleflyPreviousDummyHammer = 0;
-	int m_TripleflyHookDelayTicks = 0;
-	int m_TripleflyHookHoldTicks = 0;
+	bool m_TripleflyHammerPending = false;
+	int m_TripleflyHookStartTick = -1;
+	int m_TripleflyHookEndTick = -1;
+	int m_TripleflyHookDuration = 4;
 	int m_aTripleflyTargetClientId[NUM_DUMMIES] = {-1, -1};
 	int m_aTripleflyAimX[NUM_DUMMIES]{};
 	int m_aTripleflyAimY[NUM_DUMMIES]{};
@@ -319,6 +326,7 @@ private:
 	static int MacroListCallback(const char *pName, int IsDir, int DirType, void *pUser);
 	bool SeekMacro(int Offset, bool ShowMessage = true, bool TeleportLive = false);
 	bool RebuildMacroWorldToPosition(int Position);
+	void RebaseMacroPlaybackCounters(int Dummy, int PreviousFrameIndex);
 	void SimulateMacroPracticeTick(const CNetObj_PlayerInput &Input, const CNetObj_PlayerInput &DummyInput);
 	bool RestoreMacroPracticeFrame(int Index);
 	void UpdateMacroPracticeGhost(CCharacter *pCharacter);
