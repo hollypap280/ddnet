@@ -342,9 +342,91 @@ void CControls::ConMacroPracticeInput(IConsole::IResult *pResult, void *pUserDat
 	SMacroPracticeDummyBind *pBind = (SMacroPracticeDummyBind *)pUserData;
 	CControls *pSelf = pBind->m_pControls;
 	const bool Pressed = pResult->GetInteger(0) != 0;
-	const int Dummy = g_Config.m_ClDummy;
-	if(!pSelf->m_MacroPracticeActive || pSelf->m_MacroPlaying)
+	const int Dummy = pSelf->m_MacroPlaybackLive ? pSelf->m_MacroPlaybackDummy : g_Config.m_ClDummy;
+
+	// Weapon selection commands are one-tick events and also work while a
+	// macro is playing, where they become manual overrides for that tee.
+	int WantedWeapon = 0;
+	switch(pBind->m_Action)
+	{
+	case EMacroPracticeDummyAction::WEAPON_HAMMER: WantedWeapon = WEAPON_HAMMER + 1; break;
+	case EMacroPracticeDummyAction::WEAPON_GUN: WantedWeapon = WEAPON_GUN + 1; break;
+	case EMacroPracticeDummyAction::WEAPON_SHOTGUN: WantedWeapon = WEAPON_SHOTGUN + 1; break;
+	case EMacroPracticeDummyAction::WEAPON_GRENADE: WantedWeapon = WEAPON_GRENADE + 1; break;
+	case EMacroPracticeDummyAction::WEAPON_LASER: WantedWeapon = WEAPON_LASER + 1; break;
+	default: break;
+	}
+	if(WantedWeapon > 0)
+	{
+		if(!Pressed)
+			return;
+		if(pSelf->m_MacroPlaybackLive || (pSelf->m_MacroPracticeActive && pSelf->m_MacroPlaying))
+			pSelf->m_aMacroPlaybackWeaponOverride[Dummy] = WantedWeapon;
+		else if(pSelf->m_MacroPracticeActive)
+		{
+			if(pSelf->MacroPracticeRate() < SERVER_TICK_SPEED)
+				pSelf->m_MacroPracticePendingWantedWeapon = WantedWeapon;
+			else
+				pSelf->m_MacroPracticeInput.m_WantedWeapon = WantedWeapon;
+		}
+		else
+			pSelf->m_aInputData[Dummy].m_WantedWeapon = WantedWeapon;
 		return;
+	}
+
+	if(pBind->m_Action == EMacroPracticeDummyAction::NEXT_WEAPON ||
+		pBind->m_Action == EMacroPracticeDummyAction::PREV_WEAPON)
+	{
+		int *pCounter = nullptr;
+		if(pSelf->m_MacroPlaybackLive || (pSelf->m_MacroPracticeActive && pSelf->m_MacroPlaying))
+		{
+			pCounter = pBind->m_Action == EMacroPracticeDummyAction::NEXT_WEAPON ?
+				&pSelf->m_aMacroLiveNextWeaponOffset[Dummy] : &pSelf->m_aMacroLivePrevWeaponOffset[Dummy];
+		}
+		else if(pSelf->m_MacroPracticeActive)
+		{
+			pCounter = pBind->m_Action == EMacroPracticeDummyAction::NEXT_WEAPON ?
+				&pSelf->m_MacroPracticeInput.m_NextWeapon : &pSelf->m_MacroPracticeInput.m_PrevWeapon;
+		}
+		else
+		{
+			pCounter = pBind->m_Action == EMacroPracticeDummyAction::NEXT_WEAPON ?
+				&pSelf->m_aInputData[Dummy].m_NextWeapon : &pSelf->m_aInputData[Dummy].m_PrevWeapon;
+		}
+		if(pCounter && ((*pCounter & 1) != (Pressed ? 1 : 0)))
+		{
+			++(*pCounter);
+			*pCounter &= INPUT_STATE_MASK;
+		}
+		return;
+	}
+
+	if(pSelf->m_MacroPlaybackLive || (pSelf->m_MacroPracticeActive && pSelf->m_MacroPlaying))
+		return;
+	if(!pSelf->m_MacroPracticeActive)
+	{
+		// The import button replaces only plain gameplay binds with these
+		// aliases. Outside FP they must behave exactly like the original bind.
+		switch(pBind->m_Action)
+		{
+		case EMacroPracticeDummyAction::LEFT: pSelf->m_aInputDirectionLeft[Dummy] = Pressed; break;
+		case EMacroPracticeDummyAction::RIGHT: pSelf->m_aInputDirectionRight[Dummy] = Pressed; break;
+		case EMacroPracticeDummyAction::JUMP: pSelf->m_aInputData[Dummy].m_Jump = Pressed; break;
+		case EMacroPracticeDummyAction::HOOK:
+			pSelf->m_aInputData[Dummy].m_Hook = Pressed;
+			pSelf->m_aManualHook[Dummy] = Pressed;
+			break;
+		case EMacroPracticeDummyAction::FIRE:
+		{
+			int &Fire = pSelf->m_aInputData[Dummy].m_Fire;
+			if((Fire & 1) != (Pressed ? 1 : 0))
+				Fire = (Fire + 1) & INPUT_STATE_MASK;
+			break;
+		}
+		default: break;
+		}
+		return;
+	}
 
 	// Compatibility aliases write to the exact same isolated input buffer.
 	switch(pBind->m_Action)
@@ -380,6 +462,14 @@ void CControls::ConMacroPracticeInput(IConsole::IResult *pResult, void *pUserDat
 		}
 		break;
 	}
+	case EMacroPracticeDummyAction::WEAPON_HAMMER:
+	case EMacroPracticeDummyAction::WEAPON_GUN:
+	case EMacroPracticeDummyAction::WEAPON_SHOTGUN:
+	case EMacroPracticeDummyAction::WEAPON_GRENADE:
+	case EMacroPracticeDummyAction::WEAPON_LASER:
+	case EMacroPracticeDummyAction::NEXT_WEAPON:
+	case EMacroPracticeDummyAction::PREV_WEAPON:
+		break;
 	}
 }
 
@@ -604,6 +694,20 @@ void CControls::OnConsoleInit()
 	Console()->Register("+macro_jump", "", CFGFLAG_CLIENT, ConMacroPracticeInput, (void *)&s_PlayerJump, "Jump with the FP practice tee");
 	Console()->Register("+macro_hook", "", CFGFLAG_CLIENT, ConMacroPracticeInput, (void *)&s_PlayerHook, "Hook with the FP practice tee");
 	Console()->Register("+macro_fire", "", CFGFLAG_CLIENT, ConMacroPracticeInput, (void *)&s_PlayerFire, "Fire with the FP practice tee");
+	static const SMacroPracticeDummyBind s_MacroWeapon1{this, EMacroPracticeDummyAction::WEAPON_HAMMER};
+	static const SMacroPracticeDummyBind s_MacroWeapon2{this, EMacroPracticeDummyAction::WEAPON_GUN};
+	static const SMacroPracticeDummyBind s_MacroWeapon3{this, EMacroPracticeDummyAction::WEAPON_SHOTGUN};
+	static const SMacroPracticeDummyBind s_MacroWeapon4{this, EMacroPracticeDummyAction::WEAPON_GRENADE};
+	static const SMacroPracticeDummyBind s_MacroWeapon5{this, EMacroPracticeDummyAction::WEAPON_LASER};
+	static const SMacroPracticeDummyBind s_MacroNextWeapon{this, EMacroPracticeDummyAction::NEXT_WEAPON};
+	static const SMacroPracticeDummyBind s_MacroPrevWeapon{this, EMacroPracticeDummyAction::PREV_WEAPON};
+	Console()->Register("+macro_weapon1", "", CFGFLAG_CLIENT, ConMacroPracticeInput, (void *)&s_MacroWeapon1, "Select hammer in macro practice");
+	Console()->Register("+macro_weapon2", "", CFGFLAG_CLIENT, ConMacroPracticeInput, (void *)&s_MacroWeapon2, "Select gun in macro practice");
+	Console()->Register("+macro_weapon3", "", CFGFLAG_CLIENT, ConMacroPracticeInput, (void *)&s_MacroWeapon3, "Select shotgun in macro practice");
+	Console()->Register("+macro_weapon4", "", CFGFLAG_CLIENT, ConMacroPracticeInput, (void *)&s_MacroWeapon4, "Select grenade in macro practice");
+	Console()->Register("+macro_weapon5", "", CFGFLAG_CLIENT, ConMacroPracticeInput, (void *)&s_MacroWeapon5, "Select laser in macro practice");
+	Console()->Register("+macro_nextweapon", "", CFGFLAG_CLIENT, ConMacroPracticeInput, (void *)&s_MacroNextWeapon, "Switch to next weapon in macro practice");
+	Console()->Register("+macro_prevweapon", "", CFGFLAG_CLIENT, ConMacroPracticeInput, (void *)&s_MacroPrevWeapon, "Switch to previous weapon in macro practice");
 
 	static const SMacroPracticeDummyBind s_DummyLeft{this, EMacroPracticeDummyAction::LEFT};
 	static const SMacroPracticeDummyBind s_DummyRight{this, EMacroPracticeDummyAction::RIGHT};
@@ -2343,6 +2447,53 @@ void CControls::ConMacroGotoConfigured(IConsole::IResult *pResult, void *pUserDa
 		(pSelf->m_MacroDisplayedTick > 0 ? pSelf->m_MacroDisplayedTick : (int)pSelf->m_MacroPlaybackIndex);
 	if(!pSelf->SeekMacro(TargetTick - CurrentTick, true, true))
 		pSelf->GameClient()->Echo("Не удалось перейти к выбранному тику макроса.");
+}
+
+int CControls::ImportMacroBinds()
+{
+	struct SImportEntry
+	{
+		const char *m_pOriginal;
+		const char *m_pMacro;
+	};
+	static constexpr SImportEntry s_aEntries[] = {
+		{"+left", "+macro_left"},
+		{"+right", "+macro_right"},
+		{"+jump", "+macro_jump"},
+		{"+hook", "+macro_hook"},
+		{"+fire", "+macro_fire"},
+		{"+weapon1", "+macro_weapon1"},
+		{"+weapon2", "+macro_weapon2"},
+		{"+weapon3", "+macro_weapon3"},
+		{"+weapon4", "+macro_weapon4"},
+		{"+weapon5", "+macro_weapon5"},
+		{"+nextweapon", "+macro_nextweapon"},
+		{"+prevweapon", "+macro_prevweapon"},
+	};
+
+	int Imported = 0;
+	for(int Modifier = KeyModifier::NONE; Modifier < KeyModifier::COMBINATION_COUNT; ++Modifier)
+	{
+		for(int KeyId = KEY_FIRST; KeyId < KEY_LAST; ++KeyId)
+		{
+			const CBindSlot Slot(KeyId, Modifier);
+			const char *pCurrentCommand = GameClient()->m_Binds.Get(Slot);
+			for(const SImportEntry &Entry : s_aEntries)
+			{
+				if(str_comp(pCurrentCommand, Entry.m_pOriginal) == 0)
+				{
+					GameClient()->m_Binds.Bind(KeyId, Entry.m_pMacro, false, Modifier);
+					++Imported;
+					break;
+				}
+			}
+		}
+	}
+
+	char aMessage[128];
+	str_format(aMessage, sizeof(aMessage), "Импортировано игровых биндов для макроса: %d. Они работают и вне FP.", Imported);
+	GameClient()->Echo(aMessage);
+	return Imported;
 }
 
 void CControls::ToggleMacroPause()
