@@ -89,6 +89,7 @@ public:
 	void OnMacroPracticeDummySwap();
 	void OnMacroObserverInputSent(const CNetObj_PlayerInput &Input);
 	bool TripleflyAssistActive() const { return m_AutoTripleflyBindActive; }
+	bool TripleflyHammerPending() const { return m_TripleflyHammerPending; }
 	void OnTripleflyHammerSent();
 	bool TripleflyHookActive() const;
 	CGameWorld *MacroPracticeWorld() { return m_MacroPracticeActive ? &m_MacroPracticeWorld : nullptr; }
@@ -309,6 +310,9 @@ private:
 	int m_AutoTripleflyPreviousDummyFire = 0;
 	int m_AutoTripleflyPreviousDummyJump = 0;
 	int m_AutoTripleflyPreviousDummyHammer = 0;
+	bool m_TripleflyHammerPending = false;
+	bool m_TripleflyFlightActive = false;
+	int m_TripleflyNextHammerTick = -1;
 	int m_TripleflyHookStartTick = -1;
 	int m_TripleflyHookEndTick = -1;
 	int m_TripleflyHookDuration = 4;
