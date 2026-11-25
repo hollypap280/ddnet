@@ -537,6 +537,7 @@ int CGameClient::OnSnapInput(int *pData, bool Dummy, bool Force)
 		CNetObj_PlayerInput ObserverInput{};
 		ObserverInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
 		ObserverInput.m_TargetX = 1;
+		m_Controls.OnMacroObserverInputSent(ObserverInput);
 		mem_copy(pData, &ObserverInput, sizeof(ObserverInput));
 		return sizeof(ObserverInput);
 	}
