@@ -2637,7 +2637,7 @@ int CControls::ImportMacroBinds()
 			if(!AtEnd && Ch == '"')
 				InQuotes = !InQuotes;
 
-			if(Ch == ';' && !InQuotes)
+			if(AtEnd || (Ch == ';' && !InQuotes))
 			{
 				AppendSegment(i);
 				if(!AtEnd)
