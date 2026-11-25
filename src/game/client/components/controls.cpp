@@ -3216,9 +3216,9 @@ void CControls::ApplyHookAutomation(int Dummy)
 		else if(LocalVel.y > std::max(2.0f, SpeedX * 0.65f))
 			m_TripleflyHookDuration = 8; // downward
 		else if(SpeedX > std::max(2.0f, SpeedY * 1.25f))
-			m_TripleflyHookDuration = 8; // sideways
+			m_TripleflyHookDuration = 7; // sideways
 		else
-			m_TripleflyHookDuration = 8; // diagonal / transitioning
+			m_TripleflyHookDuration = 6; // diagonal / transitioning
 
 		const int HookerTick = Client()->GameTick(!Dummy);
 		if(!m_TripleflyFlightActive && FlightSpeed >= 5.0f && !Collision()->IsOnGround(LocalPos, 14.0f))
@@ -4015,20 +4015,23 @@ int CControls::SnapInput(int *pData)
 		Send = Send || (GameClient()->m_Snap.m_pLocalCharacter && GameClient()->m_Snap.m_pLocalCharacter->m_Weapon == WEAPON_NINJA && (m_aInputData[g_Config.m_ClDummy].m_Direction || m_aInputData[g_Config.m_ClDummy].m_Jump || m_aInputData[g_Config.m_ClDummy].m_Hook));
 	}
 
-	// copy and return size
+	// Copy the current frame to the outgoing packet before preparing the next
+	// macro frame. AdvanceMacroPlaybackAfterInput runs on every predicted server
+	// tick, not once per rendered frame, so low FPS cannot desynchronize replay.
 	m_aLastData[g_Config.m_ClDummy] = m_aInputData[g_Config.m_ClDummy];
-
-	if(!Send)
-		return 0;
-
-	m_LastSendTime = time_get();
-	mem_copy(pData, &m_aInputData[g_Config.m_ClDummy], sizeof(m_aInputData[0]));
-	return sizeof(m_aInputData[0]);
+	if(Send)
+	{
+		m_LastSendTime = time_get();
+		mem_copy(pData, &m_aInputData[g_Config.m_ClDummy], sizeof(m_aInputData[0]));
+	}
+	AdvanceMacroPlaybackAfterInput();
+	return Send ? sizeof(m_aInputData[0]) : 0;
 }
 
-void CControls::OnRender()
+
+void CControls::AdvanceMacroPlaybackAfterInput()
 {
-	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
+	if(!m_MacroPlaybackLive || !m_MacroPlaying || Client()->State() != IClient::STATE_ONLINE)
 		return;
 
 	// Send a neutral release packet before the first frame of every run.
@@ -4142,6 +4145,13 @@ void CControls::OnRender()
 			}
 		}
 	}
+}
+
+void CControls::OnRender()
+{
+	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
+		return;
+
 	if(m_MacroRewindHeld && !m_vMacroFrames.empty() &&
 		(m_MacroPracticeActive || m_MacroPlaybackLive) &&
 		!GameClient()->m_Chat.IsActive() && !GameClient()->m_Menus.IsActive())
