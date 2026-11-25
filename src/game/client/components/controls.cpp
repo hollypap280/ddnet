@@ -4413,6 +4413,11 @@ bool CControls::OnCursorMove(float x, float y, IInput::ECursorType CursorType)
 
 	const int Dummy = m_MacroPlaybackLive ? m_MacroPlaybackDummy : g_Config.m_ClDummy;
 
+	// During active playback the recorded per-tick target owns the cursor.
+	// Pausing restores manual mouse movement until playback resumes.
+	if(m_MacroPlaying && !m_MacroPlaybackPaused)
+		return true;
+
 	if(CursorType == IInput::CURSOR_JOYSTICK && g_Config.m_InpControllerAbsolute && GameClient()->m_Snap.m_pGameInfoObj && !GameClient()->m_Snap.m_SpecInfo.m_Active)
 	{
 		vec2 AbsoluteDirection;
