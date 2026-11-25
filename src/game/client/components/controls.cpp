@@ -680,6 +680,12 @@ void CControls::OnConsoleInit()
 	Console()->Register("macro_delete", "s[name]", CFGFLAG_CLIENT, ConMacroDelete, this, "Delete a saved player input macro");
 	Console()->Register("+macro_rewind", "", CFGFLAG_CLIENT, ConMacroRewind, this, "Hold to rewind a macro; repeat speed increases while held");
 	Console()->Register("+macro_seek", "", CFGFLAG_CLIENT, ConMacroSeek, this, "Jump forward by the configured number of macro ticks");
+	Console()->Register("macro_rewind_step", "", CFGFLAG_CLIENT, ConMacroRewindStep, this, "Rewind once by the configured number of macro ticks");
+	Console()->Register("macro_forward_step", "", CFGFLAG_CLIENT, ConMacroForwardStep, this, "Advance once by the configured number of macro ticks");
+	Console()->Register("macro_import_binds", "", CFGFLAG_CLIENT, [](IConsole::IResult *pResult, void *pUserData) {
+		(void)pResult;
+		((CControls *)pUserData)->ImportMacroBinds();
+	}, this, "Import current game input binds into macro practice");
 	Console()->Register("macro_goto", "i[tick]", CFGFLAG_CLIENT, ConMacroGoto, this, "Jump to an exact macro tick");
 	Console()->Register("macro_stop_at_tick", "", CFGFLAG_CLIENT, ConMacroStopAtTick, this, "Stop macro at the configured tick");
 	Console()->Register("macro_goto_configured", "", CFGFLAG_CLIENT, ConMacroGotoConfigured, this, "Jump to the configured macro tick");
@@ -2372,6 +2378,24 @@ void CControls::ConMacroSeek(IConsole::IResult *pResult, void *pUserData)
 	pSelf->SeekMacro(pSelf->MacroSeekStep(), true, true);
 }
 
+void CControls::ConMacroRewindStep(IConsole::IResult *pResult, void *pUserData)
+{
+	(void)pResult;
+	CControls *pSelf = (CControls *)pUserData;
+	if(pSelf->GameClient()->m_Chat.IsActive() || pSelf->GameClient()->m_Menus.IsActive())
+		return;
+	pSelf->SeekMacro(-pSelf->MacroSeekStep(), true, true);
+}
+
+void CControls::ConMacroForwardStep(IConsole::IResult *pResult, void *pUserData)
+{
+	(void)pResult;
+	CControls *pSelf = (CControls *)pUserData;
+	if(pSelf->GameClient()->m_Chat.IsActive() || pSelf->GameClient()->m_Menus.IsActive())
+		return;
+	pSelf->SeekMacro(pSelf->MacroSeekStep(), true, true);
+}
+
 void CControls::ConMacroGoto(IConsole::IResult *pResult, void *pUserData)
 {
 	CControls *pSelf = (CControls *)pUserData;
@@ -3657,8 +3681,11 @@ void CControls::OnRender()
 					m_MacroPracticeAccumulator +=
 						(double)TickDelta * (double)m_MacroPlaybackRate / (double)SERVER_TICK_SPEED;
 
-					while(m_MacroPracticeAccumulator >= 1.0 && m_MacroPlaying && m_MacroPlaybackLive)
+					if(m_MacroPracticeAccumulator >= 1.0 && m_MacroPlaying && m_MacroPlaybackLive)
 					{
+						// Queue at most one input frame per confirmed server tick.
+						// Timing debt is carried forward instead of collapsing multiple
+						// Fire/Hook/weapon transitions into one packet after a hitch.
 						m_MacroPracticeAccumulator -= 1.0;
 						if(m_MacroPlaybackIndex >= m_vMacroFrames.size())
 						{
@@ -3671,7 +3698,6 @@ void CControls::OnRender()
 							{
 								GameClient()->Echo("Макрос завершён; управление возвращено обычному DDNet.");
 								StopMacroRecording();
-								break;
 							}
 						}
 
@@ -3823,7 +3849,7 @@ void CControls::RenderMacroHud()
 			m_MacroPracticeTick, MacroPracticeRate());
 
 	const float BoxWidth = std::min(640.0f, ScreenWidth - 32.0f);
-	const float BoxHeight = 92.0f;
+	const float BoxHeight = 118.0f;
 	const float BoxX = (ScreenWidth - BoxWidth) * 0.5f;
 	const float BoxY = 76.0f;
 	Graphics()->DrawRect(BoxX, BoxY, BoxWidth, BoxHeight,
@@ -3835,12 +3861,73 @@ void CControls::RenderMacroHud()
 	const float ClientFontSize = 15.0f;
 	const float ClientWidth = TextRender()->TextWidth(ClientFontSize, pClientName);
 	TextRender()->TextColor(0.55f, 0.9f, 1.0f, 1.0f);
-	TextRender()->Text((ScreenWidth - ClientWidth) * 0.5f, BoxY + 10.0f, ClientFontSize, pClientName);
+	TextRender()->Text((ScreenWidth - ClientWidth) * 0.5f, BoxY + 7.0f, ClientFontSize, pClientName);
+
+	SMacroFrame DisplayFrame{};
+	const SMacroFrame *pDisplayFrame = nullptr;
+	if(m_MacroRecording && !m_vMacroFrames.empty())
+		pDisplayFrame = &m_vMacroFrames.back();
+	else if(m_MacroPlaying && !m_vMacroFrames.empty())
+	{
+		const int FrameIndex = std::clamp(m_MacroDisplayedTick - 1, 0, (int)m_vMacroFrames.size() - 1);
+		pDisplayFrame = &m_vMacroFrames[FrameIndex];
+	}
+	else if(m_MacroHasCurrentFrame)
+		pDisplayFrame = &m_MacroCurrentFrame;
+	else if(m_MacroPracticeActive)
+	{
+		DisplayFrame.m_Input = m_MacroPracticeInput;
+		if(const CCharacter *pCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId))
+			DisplayFrame.m_Weapon = pCharacter->GetActiveWeapon();
+		pDisplayFrame = &DisplayFrame;
+	}
+
+	char aActionLabel[192];
+	str_copy(aActionLabel, "ДЕЙСТВИЕ: ОЖИДАНИЕ");
+	if(pDisplayFrame)
+	{
+		const CNetObj_PlayerInput &Input = pDisplayFrame->m_Input;
+		const char *pDirection = Input.m_Direction < 0 ? "ВЛЕВО" : Input.m_Direction > 0 ? "ВПРАВО" : "СТОЮ";
+		const int Weapon = std::clamp(pDisplayFrame->m_Weapon, (int)WEAPON_HAMMER, (int)WEAPON_NINJA);
+		const char *pWeapon = "ОРУЖИЕ";
+		switch(Weapon)
+		{
+		case WEAPON_HAMMER: pWeapon = "МОЛОТ"; break;
+		case WEAPON_GUN: pWeapon = "ПИСТОЛЕТ"; break;
+		case WEAPON_SHOTGUN: pWeapon = "ДРОБОВИК"; break;
+		case WEAPON_GRENADE: pWeapon = "ГРАНАТА"; break;
+		case WEAPON_LASER: pWeapon = "ЛАЗЕР"; break;
+		case WEAPON_NINJA: pWeapon = "НИНДЗЯ"; break;
+		}
+		str_format(aActionLabel, sizeof(aActionLabel), "ДЕЙСТВИЕ: %s | %s", pDirection, pWeapon);
+		if(Input.m_Jump)
+		{
+			char aTemp[sizeof(aActionLabel)];
+			str_copy(aTemp, aActionLabel);
+			str_format(aActionLabel, sizeof(aActionLabel), "%s | ПРЫЖОК", aTemp);
+		}
+		if(Input.m_Hook)
+		{
+			char aTemp[sizeof(aActionLabel)];
+			str_copy(aTemp, aActionLabel);
+			str_format(aActionLabel, sizeof(aActionLabel), "%s | ХУК", aTemp);
+		}
+		if(Input.m_Fire & 1)
+		{
+			char aTemp[sizeof(aActionLabel)];
+			str_copy(aTemp, aActionLabel);
+			str_format(aActionLabel, sizeof(aActionLabel), "%s | ОГОНЬ", aTemp);
+		}
+	}
 
 	const float FontSize = ScreenWidth < 700.0f ? 22.0f : 30.0f;
 	const float Width = TextRender()->TextWidth(FontSize, aTickLabel);
 	TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
-	TextRender()->Text((ScreenWidth - Width) * 0.5f, BoxY + 42.0f, FontSize, aTickLabel);
+	TextRender()->Text((ScreenWidth - Width) * 0.5f, BoxY + 34.0f, FontSize, aTickLabel);
+	const float ActionFontSize = ScreenWidth < 700.0f ? 12.0f : 16.0f;
+	const float ActionWidth = TextRender()->TextWidth(ActionFontSize, aActionLabel);
+	TextRender()->TextColor(0.9f, 0.9f, 0.9f, 1.0f);
+	TextRender()->Text((ScreenWidth - ActionWidth) * 0.5f, BoxY + 80.0f, ActionFontSize, aActionLabel);
 	TextRender()->TextColor(TextRender()->DefaultTextColor());
 	Graphics()->MapScreen(PreviousScreen);
 }
