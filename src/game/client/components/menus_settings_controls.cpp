@@ -19,6 +19,7 @@
 #include <game/localization.h>
 
 #include <algorithm>
+#include <cctype>
 #include <functional>
 #include <string>
 #include <vector>
@@ -111,6 +112,7 @@ void CMenusSettingsControls::OnInterfacesInit(CGameClient *pClient)
 		{EBindOptionGroup::DUMMY, Localizable("Toggle dummy"), "toggle cl_dummy 0 1"},
 		{EBindOptionGroup::DUMMY, Localizable("Dummy copy"), "toggle cl_dummy_copy_moves 0 1"},
 		{EBindOptionGroup::DUMMY, Localizable("Hammerfly dummy"), "toggle cl_dummy_hammer 0 1"},
+		{EBindOptionGroup::DUMMY, Localizable("Triplefly assist (hold)"), "+auto_triplefly"},
 		{EBindOptionGroup::DUMMY, Localizable("Triplefly assist (toggle)"), "toggle_auto_triplefly"},
 		{EBindOptionGroup::PRACTICE, Localizable("Teleport to cursor"), "tp_to_cursor"},
 		{EBindOptionGroup::PRACTICE, Localizable("Teleport dummy to cursor"), "tp_dummy_to_cursor"},
@@ -457,7 +459,7 @@ void CMenusSettingsControls::RenderSettingsBlock(float Height, CUIRect *pParentR
 
 float CMenusSettingsControls::MeasureSettingsMacroHeight() const
 {
-	return 3.0f * (BUTTON_HEIGHT + BUTTON_SPACING);
+	return 5.0f * (BUTTON_HEIGHT + BUTTON_SPACING);
 }
 
 void CMenusSettingsControls::RenderSettingsMacro(CUIRect View)
@@ -474,9 +476,134 @@ void CMenusSettingsControls::RenderSettingsMacro(CUIRect View)
 	{
 		GameClient()->m_Controls.ImportMacroBinds();
 	}
+
+	View.HSplitTop(BUTTON_SPACING, nullptr, &View);
+	CUIRect BindRow, BindInput, AddButton;
+	View.HSplitTop(BUTTON_HEIGHT, &BindRow, &View);
+	BindRow.VSplitRight(86.0f, &BindInput, &AddButton);
+	Ui()->DoEditBox(&m_MacroBindInput, &BindInput, FONT_SIZE);
+	if(GameClient()->m_Menus.DoButton_Menu(&m_AddMacroBindButton,
+		Localize("Добавить"), 0, &AddButton))
+	{
+		AddMacroBindFromText();
+	}
+
 	View.HSplitTop(BUTTON_SPACING, nullptr, &View);
 	View.HSplitTop(BUTTON_HEIGHT, &Button, &View);
-	Ui()->DoLabel(&Button, Localize("Обычные бинды останутся рабочими вне FP-записи."), FONT_SIZE, TEXTALIGN_ML);
+	Ui()->DoLabel(&Button, m_aMacroBindStatus, FONT_SIZE, TEXTALIGN_ML);
+
+	View.HSplitTop(BUTTON_SPACING, nullptr, &View);
+	View.HSplitTop(BUTTON_HEIGHT, &Button, &View);
+	Ui()->DoLabel(&Button, Localize("Поддерживаемые действия станут FP-биндами; остальные команды сохраняются как обычные."), FONT_SIZE, TEXTALIGN_ML);
+}
+
+bool CMenusSettingsControls::AddMacroBindFromText()
+{
+	std::string Line = m_MacroBindInput.GetString();
+	auto Trim = [](std::string &Value) {
+		const size_t First = Value.find_first_not_of(" \t\r\n");
+		if(First == std::string::npos)
+		{
+			Value.clear();
+			return;
+		}
+		const size_t Last = Value.find_last_not_of(" \t\r\n");
+		Value = Value.substr(First, Last - First + 1);
+	};
+	Trim(Line);
+	if(Line.empty())
+	{
+		str_copy(m_aMacroBindStatus, "Вставь строку bind KEY \"команда\".");
+		return false;
+	}
+
+	std::string LowerLine = Line;
+	std::transform(LowerLine.begin(), LowerLine.end(), LowerLine.begin(), [](unsigned char Ch) {
+		return (char)std::tolower(Ch);
+	});
+	if(LowerLine.rfind("bind ", 0) == 0)
+		Line = Line.substr(5);
+
+	const size_t Separator = Line.find_first_of(" \t");
+	if(Separator == std::string::npos)
+	{
+		str_copy(m_aMacroBindStatus, "Не вижу команду после названия клавиши.");
+		return false;
+	}
+
+	std::string KeySpec = Line.substr(0, Separator);
+	std::string Command = Line.substr(Separator + 1);
+	Trim(Command);
+	if(Command.size() >= 2 && Command.front() == '"' && Command.back() == '"')
+		Command = Command.substr(1, Command.size() - 2);
+	if(Command.empty())
+	{
+		str_copy(m_aMacroBindStatus, "Команда бинда пустая.");
+		return false;
+	}
+
+	int ModifierMask = KeyModifier::NONE;
+	size_t Plus = KeySpec.find('+');
+	while(Plus != std::string::npos)
+	{
+		std::string Modifier = KeySpec.substr(0, Plus);
+		std::transform(Modifier.begin(), Modifier.end(), Modifier.begin(), [](unsigned char Ch) {
+			return (char)std::tolower(Ch);
+		});
+		if(Modifier == "shift")
+			ModifierMask |= 1 << KeyModifier::SHIFT;
+		else if(Modifier == "ctrl")
+			ModifierMask |= 1 << KeyModifier::CTRL;
+		else if(Modifier == "alt")
+			ModifierMask |= 1 << KeyModifier::ALT;
+		else if(Modifier == "gui")
+			ModifierMask |= 1 << KeyModifier::GUI;
+		else
+		{
+			str_copy(m_aMacroBindStatus, "Неизвестный модификатор. Используй ctrl/alt/shift/gui+KEY.");
+			return false;
+		}
+		KeySpec.erase(0, Plus + 1);
+		Plus = KeySpec.find('+');
+	}
+
+	const int KeyId = Input()->FindKeyByName(KeySpec.c_str());
+	if(KeyId == KEY_UNKNOWN || KeyId == KEY_ESCAPE)
+	{
+		str_copy(m_aMacroBindStatus, "Не удалось распознать клавишу. Проверь её название.");
+		return false;
+	}
+
+	GameClient()->m_Binds.Bind(KeyId, Command.c_str(), false, ModifierMask);
+	GameClient()->m_Controls.ImportMacroBinds();
+
+	std::string LowerCommand = Command;
+	std::transform(LowerCommand.begin(), LowerCommand.end(), LowerCommand.begin(), [](unsigned char Ch) {
+		return (char)std::tolower(Ch);
+	});
+	const bool Compound = LowerCommand.find(';') != std::string::npos;
+	const char *pKind = "Пользовательский бинд добавлен. Неизвестные команды сохранены, но не исполняются автоматически в FP.";
+	if(LowerCommand.find("fly") != std::string::npos ||
+		LowerCommand.find("dummy_hammer") != std::string::npos ||
+		LowerCommand.find("dummy_copy_moves") != std::string::npos)
+		pKind = "Похоже на флай/управление дамми. Составные действия сохранены.";
+	else if(LowerCommand.find("+left") != std::string::npos ||
+		LowerCommand.find("+right") != std::string::npos ||
+		LowerCommand.find("+jump") != std::string::npos ||
+		LowerCommand.find("+hook") != std::string::npos ||
+		LowerCommand.find("+fire") != std::string::npos ||
+		LowerCommand.find("+weapon") != std::string::npos ||
+		LowerCommand.find("+nextweapon") != std::string::npos ||
+		LowerCommand.find("+prevweapon") != std::string::npos)
+		pKind = "Распознаны игровые действия. Поддерживаемые кнопки подключены к FP-макросу.";
+	else if(LowerCommand.find("say /") != std::string::npos || LowerCommand.find("chat ") != std::string::npos)
+		pKind = "Серверная/чат-команда сохранена как бинд; её эффект в FP отдельно не симулируется.";
+
+	str_format(m_aMacroBindStatus, sizeof(m_aMacroBindStatus), "%s%s",
+		pKind, Compound ? " (составной бинд)." : "");
+	GameClient()->Echo(m_aMacroBindStatus);
+	m_MacroBindInput.Clear();
+	return true;
 }
 
 void CMenusSettingsControls::RenderSettingsBindsBlock(EBindOptionGroup Group, CUIRect *pParentRect, const char *pTitle)
