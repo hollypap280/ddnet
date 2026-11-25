@@ -93,6 +93,8 @@ public:
 	bool TripleflyHammerPending() const { return m_TripleflyHammerPending; }
 	void OnTripleflyHammerSent();
 	bool TripleflyHookActive() const;
+	bool TripleflyHookReleasePending() const { return m_TripleflyHookSent && !TripleflyHookActive(); }
+	void OnTripleflyHookPacketSent(bool Hooking) { m_TripleflyHookSent = Hooking; }
 	CGameWorld *MacroPracticeWorld() { return m_MacroPracticeActive ? &m_MacroPracticeWorld : nullptr; }
 	float MacroPracticeTickFraction() const { return (float)m_MacroPracticeAccumulator; }
 	bool MacroPracticeWaiting() const { return m_MacroPracticeWaiting; }
@@ -317,6 +319,7 @@ private:
 	int m_TripleflyHookStartTick = -1;
 	int m_TripleflyHookEndTick = -1;
 	int m_TripleflyHookDuration = 4;
+	bool m_TripleflyHookSent = false;
 	int m_aTripleflyTargetClientId[NUM_DUMMIES] = {-1, -1};
 	int m_aTripleflyAimX[NUM_DUMMIES]{};
 	int m_aTripleflyAimY[NUM_DUMMIES]{};
@@ -347,6 +350,8 @@ private:
 	static void ConMacroPlayFirst(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroRewind(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroSeek(IConsole::IResult *pResult, void *pUserData);
+	static void ConMacroRewindStep(IConsole::IResult *pResult, void *pUserData);
+	static void ConMacroForwardStep(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroRewindStep(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroForwardStep(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroGoto(IConsole::IResult *pResult, void *pUserData);
