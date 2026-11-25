@@ -2581,6 +2581,73 @@ int CControls::ImportMacroBinds()
 		{"+prevweapon", "+macro_prevweapon"},
 	};
 
+	// Replace supported gameplay commands inside a compound bind while
+	// preserving other commands, whitespace, quoted strings and escapes.
+	auto ConvertBind = [&](const char *pCommand) {
+		const std::string Original = pCommand ? pCommand : "";
+		std::string Converted;
+		size_t SegmentStart = 0;
+		bool InQuotes = false;
+		bool Escaped = false;
+
+		auto AppendSegment = [&](size_t SegmentEnd) {
+			size_t TokenStart = SegmentStart;
+			while(TokenStart < SegmentEnd && std::isspace((unsigned char)Original[TokenStart]))
+				++TokenStart;
+			size_t TokenEnd = SegmentEnd;
+			while(TokenEnd > TokenStart && std::isspace((unsigned char)Original[TokenEnd - 1]))
+				--TokenEnd;
+
+			const SImportEntry *pMatched = nullptr;
+			for(const SImportEntry &Entry : s_aEntries)
+			{
+				if(Original.compare(TokenStart, TokenEnd - TokenStart, Entry.m_pOriginal) == 0)
+				{
+					pMatched = &Entry;
+					break;
+				}
+			}
+
+			if(pMatched)
+			{
+				Converted.append(Original, SegmentStart, TokenStart - SegmentStart);
+				Converted += pMatched->m_pMacro;
+				Converted.append(Original, TokenEnd, SegmentEnd - TokenEnd);
+			}
+			else
+			{
+				Converted.append(Original, SegmentStart, SegmentEnd - SegmentStart);
+			}
+		};
+
+		for(size_t i = 0; i <= Original.size(); ++i)
+		{
+			const bool AtEnd = i == Original.size();
+			const char Ch = AtEnd ? ';' : Original[i];
+			if(!AtEnd && Escaped)
+			{
+				Escaped = false;
+				continue;
+			}
+			if(!AtEnd && Ch == '\\')
+			{
+				Escaped = true;
+				continue;
+			}
+			if(!AtEnd && Ch == '"')
+				InQuotes = !InQuotes;
+
+			if(Ch == ';' && !InQuotes)
+			{
+				AppendSegment(i);
+				if(!AtEnd)
+					Converted.push_back(';');
+				SegmentStart = i + 1;
+			}
+		}
+		return Converted;
+	};
+
 	int Imported = 0;
 	for(int Modifier = KeyModifier::NONE; Modifier < KeyModifier::COMBINATION_COUNT; ++Modifier)
 	{
@@ -2588,20 +2655,19 @@ int CControls::ImportMacroBinds()
 		{
 			const CBindSlot Slot(KeyId, Modifier);
 			const char *pCurrentCommand = GameClient()->m_Binds.Get(Slot);
-			for(const SImportEntry &Entry : s_aEntries)
+			const std::string Converted = ConvertBind(pCurrentCommand);
+			if(Converted != pCurrentCommand)
 			{
-				if(str_comp(pCurrentCommand, Entry.m_pOriginal) == 0)
-				{
-					GameClient()->m_Binds.Bind(KeyId, Entry.m_pMacro, false, Modifier);
-					++Imported;
-					break;
-				}
+				GameClient()->m_Binds.Bind(KeyId, Converted.c_str(), false, Modifier);
+				++Imported;
 			}
 		}
 	}
 
-	char aMessage[128];
-	str_format(aMessage, sizeof(aMessage), "Импортировано игровых биндов для макроса: %d. Они работают и вне FP.", Imported);
+	char aMessage[160];
+	str_format(aMessage, sizeof(aMessage),
+		"Импортировано игровых биндов для макроса: %d. Составные команды сохранены; вне FP всё работает как обычно.",
+		Imported);
 	GameClient()->Echo(aMessage);
 	return Imported;
 }
