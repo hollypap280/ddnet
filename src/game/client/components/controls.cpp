@@ -1114,7 +1114,7 @@ bool CControls::StartMacroPractice()
 	}
 	m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
 	m_MacroPracticeAccumulator = 0.0f;
-	m_MacroPracticeLastTime = time_get();
+	m_MacroPracticeLastServerTick = Client()->GameTick(g_Config.m_ClDummy);
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeActive = true;
 	m_MacroPracticePendingFireTransitions = 0;
@@ -1239,7 +1239,7 @@ void CControls::StopMacroPractice()
 	m_MacroPracticeActive = false;
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeAccumulator = 0.0f;
-	m_MacroPracticeLastTime = 0;
+	m_MacroPracticeLastServerTick = -1;
 	m_MacroPracticeLocalId = -1;
 	m_MacroPracticeStartLocalId = -1;
 	std::fill(std::begin(m_aMacroPracticeSnapshotInitialized), std::end(m_aMacroPracticeSnapshotInitialized), false);
@@ -1420,7 +1420,7 @@ void CControls::PopulateMacroPracticeWorld()
 				m_MacroPracticeFireCounter = m_aInputData[g_Config.m_ClDummy].m_Fire & INPUT_STATE_MASK;
 				m_MacroPracticeInput = m_aInputData[g_Config.m_ClDummy];
 				m_MacroPracticeAccumulator = 0.0f;
-				m_MacroPracticeLastTime = time_get();
+				m_MacroPracticeLastServerTick = Client()->GameTick(g_Config.m_ClDummy);
 			}
 		}
 	
@@ -1988,7 +1988,7 @@ bool CControls::StartMacroRecording(const char *pName)
 	m_MacroHoldCurrentFrame = false;
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeAccumulator = 0.0f;
-	m_MacroPracticeLastTime = time_get();
+	m_MacroPracticeLastServerTick = Client()->GameTick(g_Config.m_ClDummy);
 	m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
 	m_MacroRecordingRate = MacroPracticeRate();
 	m_vMacroFrames.clear();
@@ -2564,7 +2564,7 @@ bool CControls::PlayMacro(const char *pName)
 
 	m_MacroPlaybackRate = FasterPlaybackRate;
 	m_MacroPracticeAccumulator = 0.0;
-	m_MacroPracticeLastTime = time_get();
+	m_MacroPracticeLastServerTick = Client()->GameTick(g_Config.m_ClDummy);
 
 	// Wait for the neutral release packet to reach the server before rebasing
 	// the recorded fire/weapon counters and sending the first macro frame.
@@ -2884,7 +2884,7 @@ void CControls::ToggleMacroPause()
 	{
 		m_MacroRecordingPaused = !m_MacroRecordingPaused;
 		m_MacroPracticeAccumulator = 0.0;
-		m_MacroPracticeLastTime = time_get();
+		m_MacroPracticeLastServerTick = Client()->GameTick(g_Config.m_ClDummy);
 		GameClient()->Echo(m_MacroRecordingPaused ? "Запись макроса на паузе." : "Запись макроса продолжена.");
 		return;
 	}
@@ -2902,7 +2902,7 @@ void CControls::ToggleMacroPause()
 	}
 	else
 	{
-		m_MacroPracticeLastTime = time_get();
+		m_MacroPracticeLastServerTick = Client()->GameTick(g_Config.m_ClDummy);
 		GameClient()->Echo("Воспроизведение макроса продолжено.");
 	}
 }
@@ -3056,7 +3056,7 @@ bool CControls::RebuildMacroWorldToPosition(int Position)
 	m_MacroDisplayedTick = Position;
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeAccumulator = 0.0;
-	m_MacroPracticeLastTime = time_get();
+	m_MacroPracticeLastServerTick = Client()->GameTick(g_Config.m_ClDummy);
 	m_MacroPlaybackLastTick = -1;
 	UpdateMacroPracticeGhost(m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId));
 	return true;
@@ -3090,7 +3090,7 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 			return false;
 		m_vMacroFrames.resize(TargetPosition);
 		m_MacroRecordingPaused = !ResumeRecordingAfterSeek;
-		m_MacroPracticeLastTime = time_get();
+		m_MacroPracticeLastServerTick = Client()->GameTick(g_Config.m_ClDummy);
 		m_MacroPlaybackIndex = (std::size_t)TargetPosition;
 		m_MacroDisplayedTick = TargetPosition;
 		if(ShowMessage)
@@ -3146,7 +3146,7 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 		m_MacroPlaybackIndex = (std::size_t)Target + 1;
 		m_MacroDisplayedTick = Target + 1;
 		m_MacroPracticeAccumulator = 0.0;
-		m_MacroPracticeLastTime = time_get();
+		m_MacroPracticeLastServerTick = Client()->GameTick(g_Config.m_ClDummy);
 	}
 	else
 	{
@@ -3163,7 +3163,7 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 		m_MacroDisplayedTick = Target + 1;
 		m_MacroPlaying = true;
 		m_MacroPlaybackPaused = WasPlaybackPaused;
-		m_MacroPracticeLastTime = time_get();
+		m_MacroPracticeLastServerTick = Client()->GameTick(g_Config.m_ClDummy);
 	}
 
 	if(ShowMessage)
@@ -3757,9 +3757,12 @@ void CControls::OnUpdate()
 	PracticeDummyInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
 	PracticeDummyInput.m_TargetX = 1;
 
-	const int64_t CurrentTime = time_get();
-	if(m_MacroPracticeLastTime == 0)
-		m_MacroPracticeLastTime = CurrentTime;
+	// Drive the private training timeline from the actual game tick counter,
+	// not wall-clock time. This keeps every saved input frame aligned with
+	// the same server tick sequence that live playback will consume.
+	const int CurrentServerTick = Client()->GameTick(Dummy);
+	if(m_MacroPracticeLastServerTick < 0 || CurrentServerTick < m_MacroPracticeLastServerTick)
+		m_MacroPracticeLastServerTick = CurrentServerTick;
 
 	// Do not simulate while the player is typing or viewing a menu. Paused
 	// recording and paused playback both keep an exact, stationary world.
@@ -3791,23 +3794,25 @@ void CControls::OnUpdate()
 		if(m_MacroPracticeInput.m_PrevWeapon & 1)
 			++m_MacroPracticeInput.m_PrevWeapon;
 		m_aManualHook[Dummy] = false;
-		m_MacroPracticeLastTime = CurrentTime;
+		m_MacroPracticeLastServerTick = CurrentServerTick;
 		return;
 	}
 	if(MacroPaused)
 	{
-		m_MacroPracticeLastTime = CurrentTime;
+		m_MacroPracticeLastServerTick = CurrentTime;
 		return;
 	}
 
-	const int64_t ElapsedTime = std::max<int64_t>(0, CurrentTime - m_MacroPracticeLastTime);
-	m_MacroPracticeLastTime = CurrentTime;
-	// Saved macro frames are replayed at the real server tick rate. The
-	// configurable slow clock applies only while creating a recording.
-	const int PracticeRate = m_MacroPlaying ? (int)SERVER_TICK_SPEED : MacroPracticeRate();
+	const int ServerTickDelta = std::max(0, CurrentServerTick - m_MacroPracticeLastServerTick);
+	m_MacroPracticeLastServerTick = CurrentServerTick;
+	// A saved frame is one logical game tick. Recording can run at a slower
+	// fraction of confirmed server ticks, while playback consumes exactly one
+	// saved frame per server tick.
+	const int PracticeRate = m_MacroPlaying ? (int)SERVER_TICK_SPEED :
+		(m_MacroRecording ? m_MacroRecordingRate : MacroPracticeRate());
 	if(m_MacroPlaying)
 		m_MacroPlaybackRate = SERVER_TICK_SPEED;
-	m_MacroPracticeAccumulator += (double)ElapsedTime / (double)time_freq() * PracticeRate;
+	m_MacroPracticeAccumulator += (double)ServerTickDelta * (double)PracticeRate / (double)SERVER_TICK_SPEED;
 
 	int Steps = 0;
 	const int MaxStepsPerUpdate = std::max<int>(SERVER_TICK_SPEED, PracticeRate);

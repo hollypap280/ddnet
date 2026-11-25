@@ -298,7 +298,7 @@ private:
 	bool m_MacroPracticeActive = false;
 	bool m_MacroPracticeWaiting = false;
 	double m_MacroPracticeAccumulator = 0.0;
-	int64_t m_MacroPracticeLastTime = 0;
+	int m_MacroPracticeLastServerTick = -1;
 	int m_MacroPracticeTick = 0;
 	int m_MacroPracticeLocalId = -1;
 	int m_MacroPracticeStartTick = 0;
