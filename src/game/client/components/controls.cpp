@@ -55,6 +55,8 @@ void CControls::OnReset()
 	m_MacroRecording = false;
 	m_MacroPlaying = false;
 	m_MacroPlaybackLive = false;
+	m_MacroPlaybackStartPending = false;
+	m_MacroPlaybackManualDummyOverride = false;
 	m_MacroPlaybackLastTick = -1;
 	m_MacroStopAtTickArmed = false;
 	m_MacroPlaybackSeekTargetIndex = -1;
@@ -204,24 +206,12 @@ void CControls::ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData)
 
 	const int Stroke = pResult->GetInteger(0);
 	const int Dummy = pSelf->m_MacroPlaybackLive ? pSelf->m_MacroPlaybackDummy : g_Config.m_ClDummy;
-	if(pState->m_IsFireAction && pSelf->m_AutoTripleflyBindActive &&
+	if(pState->m_IsFireAction && Stroke && pSelf->m_AutoTripleflyBindActive &&
 		!pSelf->m_MacroPracticeActive && !pSelf->m_MacroPlaybackLive)
 	{
-		if(Stroke)
-		{
-			g_Config.m_ClDummyHammer = 1;
-			pSelf->m_TripleflyHookDelayTicks = 0;
-			pSelf->m_TripleflyHookHoldTicks = 0;
-		}
-		else
-		{
-			g_Config.m_ClDummyHammer = 0;
-			// Leave one complete input tick between the hammer release and the hook.
-			pSelf->m_TripleflyHookDelayTicks = 2;
-			pSelf->m_TripleflyHookHoldTicks = std::max(
-				pSelf->m_TripleflyHookHoldTicks,
-				pSelf->m_aTripleflyRecommendedHookTicks[Dummy]);
-		}
+		pSelf->m_TripleflyHammerPending = true;
+		pSelf->m_TripleflyHookStartTick = -1;
+		pSelf->m_TripleflyHookEndTick = -1;
 	}
 	if(pSelf->m_MacroPracticeActive && pState->m_IsFireAction)
 	{
@@ -262,11 +252,14 @@ void CControls::ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData)
 void CControls::ConAutoTriplefly(IConsole::IResult *pResult, void *pUserData)
 {
 	CControls *pSelf = (CControls *)pUserData;
-	const bool Pressed = pResult->GetInteger(0) != 0;
-	if(Pressed)
+	const bool Toggle = pResult->NumArguments() == 0;
+	const bool Enable = Toggle ? !pSelf->m_AutoTripleflyBindActive : pResult->GetInteger(0) != 0;
+
+	if(Enable == pSelf->m_AutoTripleflyBindActive)
+		return;
+
+	if(Enable)
 	{
-		if(pSelf->m_AutoTripleflyBindActive)
-			return;
 		if(pSelf->Client()->State() != IClient::STATE_ONLINE ||
 			!pSelf->Client()->DummyConnected() ||
 			pSelf->GameClient()->m_aLocalIds[0] < 0 ||
@@ -291,14 +284,18 @@ void CControls::ConAutoTriplefly(IConsole::IResult *pResult, void *pUserData)
 		g_Config.m_ClDummyHook = 0;
 		g_Config.m_ClDummyFire = 0;
 		g_Config.m_ClDummyJump = 0;
+		// Triplefly sends individual hammer pulses instead of enabling the
+		// regular repeating cl_dummy_hammer timer.
 		g_Config.m_ClDummyHammer = 0;
-		pSelf->m_TripleflyHookDelayTicks = 0;
-		pSelf->m_TripleflyHookHoldTicks = 0;
+		pSelf->m_TripleflyHammerPending = false;
+		pSelf->m_TripleflyHookStartTick = -1;
+		pSelf->m_TripleflyHookEndTick = -1;
+		pSelf->m_TripleflyHookDuration = 4;
 		std::fill(std::begin(pSelf->m_aTripleflyTargetFound), std::end(pSelf->m_aTripleflyTargetFound), false);
 		std::fill(std::begin(pSelf->m_aTripleflyTargetClientId), std::end(pSelf->m_aTripleflyTargetClientId), -1);
-		pSelf->GameClient()->Echo("Triplefly включён: дамми копирует движение, бьёт вместе с твоим Fire и кратко хукает третьего тии после удара.");
+		pSelf->GameClient()->Echo("Triplefly включён. Нажимай Fire для удара, дамми подхватит третьего тии между ударами.");
 	}
-	else if(pSelf->m_AutoTripleflyBindActive)
+	else
 	{
 		pSelf->m_AutoTripleflyBindActive = false;
 		g_Config.m_ClAutoTriplefly = pSelf->m_AutoTripleflyPreviousAuto;
@@ -308,14 +305,39 @@ void CControls::ConAutoTriplefly(IConsole::IResult *pResult, void *pUserData)
 		g_Config.m_ClDummyFire = pSelf->m_AutoTripleflyPreviousDummyFire;
 		g_Config.m_ClDummyJump = pSelf->m_AutoTripleflyPreviousDummyJump;
 		g_Config.m_ClDummyHammer = pSelf->m_AutoTripleflyPreviousDummyHammer;
-		pSelf->m_TripleflyHookDelayTicks = 0;
-		pSelf->m_TripleflyHookHoldTicks = 0;
+		pSelf->m_TripleflyHammerPending = false;
+		pSelf->m_TripleflyHookStartTick = -1;
+		pSelf->m_TripleflyHookEndTick = -1;
 		std::fill(std::begin(pSelf->m_aTripleflyTargetFound), std::end(pSelf->m_aTripleflyTargetFound), false);
 		std::fill(std::begin(pSelf->m_aTripleflyTargetClientId), std::end(pSelf->m_aTripleflyTargetClientId), -1);
+		pSelf->GameClient()->m_DummyInput.m_Hook = 0;
+		pSelf->m_aInputData[!g_Config.m_ClDummy].m_Hook = 0;
 		pSelf->GameClient()->Echo("Triplefly выключен; настройки дамми восстановлены.");
 	}
 }
 
+void CControls::OnTripleflyHammerSent()
+{
+	if(!m_AutoTripleflyBindActive)
+		return;
+
+	const int Dummy = 1 - g_Config.m_ClDummy;
+	const int CurrentTick = Client()->GameTick(Dummy);
+	const int HoldTicks = std::clamp(m_TripleflyHookDuration, 3, 6);
+	m_TripleflyHammerPending = false;
+	m_TripleflyHookStartTick = CurrentTick + 1;
+	m_TripleflyHookEndTick = m_TripleflyHookStartTick + HoldTicks;
+}
+
+bool CControls::TripleflyHookActive() const
+{
+	if(!m_AutoTripleflyBindActive || m_TripleflyHookStartTick < 0 || m_TripleflyHookEndTick <= m_TripleflyHookStartTick)
+		return false;
+
+	const int Dummy = 1 - g_Config.m_ClDummy;
+	const int CurrentTick = Client()->GameTick(Dummy);
+	return CurrentTick >= m_TripleflyHookStartTick && CurrentTick < m_TripleflyHookEndTick;
+}
 void CControls::ConMacroPracticeInput(IConsole::IResult *pResult, void *pUserData)
 {
 	SMacroPracticeDummyBind *pBind = (SMacroPracticeDummyBind *)pUserData;
@@ -557,6 +579,7 @@ void CControls::OnConsoleInit()
 	Console()->Register("tp_to_cursor", "", CFGFLAG_CLIENT, ConTpToCursor, this, "Practice: teleport yourself to your cursor");
 	Console()->Register("tp_dummy_to_cursor", "", CFGFLAG_CLIENT, ConTpDummyToCursor, this, "Practice: teleport the other tee to your cursor");
 	Console()->Register("+auto_triplefly", "", CFGFLAG_CLIENT, ConAutoTriplefly, this, "Hold to assist Triplefly with dummy copy and timed third-tee hook");
+	Console()->Register("toggle_auto_triplefly", "", CFGFLAG_CLIENT, ConAutoTriplefly, this, "Toggle Triplefly assist on or off");
 
 	Console()->Register("macro_practice", "", CFGFLAG_CLIENT, ConMacroPractice, this, "Toggle isolated FP practice");
 	Console()->Register("macro_pause", "", CFGFLAG_CLIENT, ConMacroPause, this, "Pause or resume live macro playback");
@@ -663,6 +686,26 @@ void CControls::TeleportMacroPracticeCharacter(int ClientId, vec2 Pos)
 }
 
 
+void CControls::RebaseMacroPlaybackCounters(int Dummy, int PreviousFrameIndex)
+{
+	if(Dummy < 0 || Dummy >= NUM_DUMMIES)
+		return;
+
+	CNetObj_PlayerInput PreviousRecordedInput{};
+	if(PreviousFrameIndex >= 0 && PreviousFrameIndex < (int)m_vMacroFrames.size())
+		PreviousRecordedInput = m_vMacroFrames[PreviousFrameIndex].m_Input;
+
+	// DDNet fire/weapon fields are transition counters, not booleans. Map
+	// the recorded timeline onto the live connection's last sent counters so
+	// replaying the same file again cannot reuse stale counter values.
+	m_aMacroLiveFireOffset[Dummy] =
+		(m_aLastData[Dummy].m_Fire - PreviousRecordedInput.m_Fire) & INPUT_STATE_MASK;
+	m_aMacroLiveNextWeaponOffset[Dummy] =
+		(m_aLastData[Dummy].m_NextWeapon - PreviousRecordedInput.m_NextWeapon) & INPUT_STATE_MASK;
+	m_aMacroLivePrevWeaponOffset[Dummy] =
+		(m_aLastData[Dummy].m_PrevWeapon - PreviousRecordedInput.m_PrevWeapon) & INPUT_STATE_MASK;
+}
+
 void CControls::SendMacroFrame(int Index, EMacroFrameMode Mode)
 {
 	(void)Mode;
@@ -673,7 +716,7 @@ void CControls::SendMacroFrame(int Index, EMacroFrameMode Mode)
 
 	// A recording can switch between the main tee and dummy. Select the
 	// matching normal DDNet connection, then let SnapInput send only actions.
-	if(Frame.m_ClientId >= 0)
+	if(!m_MacroPlaybackManualDummyOverride && Frame.m_ClientId >= 0)
 	{
 		int RequestedDummy = -1;
 		if(Frame.m_ClientId == GameClient()->m_aLocalIds[0])
@@ -685,7 +728,9 @@ void CControls::SendMacroFrame(int Index, EMacroFrameMode Mode)
 		{
 			m_MacroPlaybackDummy = RequestedDummy;
 			g_Config.m_ClDummy = RequestedDummy;
+			RebaseMacroPlaybackCounters(RequestedDummy, Index - 1);
 			m_MacroPlaybackLastTick = Client()->GameTick(m_MacroPlaybackDummy);
+			m_MacroPracticeAccumulator = 0.0;
 		}
 	}
 
@@ -1663,14 +1708,20 @@ void CControls::StopMacroRecording()
 		if(m_aInputData[Dummy].m_Fire & 1)
 			m_aInputData[Dummy].m_Fire++;
 		m_aInputData[Dummy].m_Fire &= INPUT_STATE_MASK;
+		if(m_aInputData[Dummy].m_NextWeapon & 1)
+			m_aInputData[Dummy].m_NextWeapon++;
+		if(m_aInputData[Dummy].m_PrevWeapon & 1)
+			m_aInputData[Dummy].m_PrevWeapon++;
 		m_aInputData[Dummy].m_WantedWeapon = 0;
-		m_aInputData[Dummy].m_NextWeapon = 0;
-		m_aInputData[Dummy].m_PrevWeapon = 0;
+		m_aInputData[Dummy].m_NextWeapon &= INPUT_STATE_MASK;
+		m_aInputData[Dummy].m_PrevWeapon &= INPUT_STATE_MASK;
 	}
 
 	m_MacroPlaying = false;
 	m_MacroRecordingPaused = false;
 	m_MacroPlaybackLive = false;
+	m_MacroPlaybackStartPending = false;
+	m_MacroPlaybackManualDummyOverride = false;
 	m_MacroPlaybackPaused = false;
 	m_MacroStopAtTickArmed = false;
 	m_MacroPlaybackSeekTargetIndex = -1;
@@ -2052,6 +2103,8 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroRecording = false;
 	m_MacroRecordingPaused = false;
 	m_MacroPlaybackLive = true;
+	m_MacroPlaybackStartPending = true;
+	m_MacroPlaybackManualDummyOverride = false;
 	m_MacroPlaybackRate = FasterPlaybackRate;
 	m_MacroPlaybackDummy = PlaybackDummy;
 	m_MacroPlaybackOwnsPractice = false;
@@ -2077,17 +2130,35 @@ bool CControls::PlayMacro(const char *pName)
 	std::fill(std::begin(m_aMacroManualJumpActive), std::end(m_aMacroManualJumpActive), false);
 	std::fill(std::begin(m_aMacroManualHookActive), std::end(m_aMacroManualHookActive), false);
 	std::fill(std::begin(m_aMacroManualAimActive), std::end(m_aMacroManualAimActive), false);
+
+	// Send a neutral input to the selected real tee before starting the next
+	// run. This guarantees that old held fire/hook/weapon counters are released.
+	CNetObj_PlayerInput NeutralInput{};
+	NeutralInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+	NeutralInput.m_TargetX = 1;
+	NeutralInput.m_Fire = m_aLastData[PlaybackDummy].m_Fire;
+	if(NeutralInput.m_Fire & 1)
+		++NeutralInput.m_Fire;
+	NeutralInput.m_Fire &= INPUT_STATE_MASK;
+	NeutralInput.m_NextWeapon = m_aLastData[PlaybackDummy].m_NextWeapon;
+	if(NeutralInput.m_NextWeapon & 1)
+		++NeutralInput.m_NextWeapon;
+	NeutralInput.m_NextWeapon &= INPUT_STATE_MASK;
+	NeutralInput.m_PrevWeapon = m_aLastData[PlaybackDummy].m_PrevWeapon;
+	if(NeutralInput.m_PrevWeapon & 1)
+		++NeutralInput.m_PrevWeapon;
+	NeutralInput.m_PrevWeapon &= INPUT_STATE_MASK;
+	m_aInputData[PlaybackDummy] = NeutralInput;
+	m_aInputDirectionLeft[PlaybackDummy] = 0;
+	m_aInputDirectionRight[PlaybackDummy] = 0;
+	m_aManualHook[PlaybackDummy] = false;
+
 	m_MacroPlaybackRate = FasterPlaybackRate;
 	m_MacroPracticeAccumulator = 0.0;
 	m_MacroPracticeLastTime = time_get();
 
-	// Queue the selected frame immediately; subsequent frames are paced by
-	// confirmed server ticks and injected by SnapInput as ordinary player input.
-	SendMacroFrame(StartFrameIndex, EMacroFrameMode::STEP);
-	m_MacroPlaybackIndex = (std::size_t)StartFrameIndex + 1;
-	m_MacroDisplayedTick = StartFrameIndex + 1;
-	m_MacroPracticeAccumulator = 0.0;
-	m_MacroPlaybackLastTick = Client()->GameTick(m_MacroPlaybackDummy);
+	// Wait for the neutral release packet to reach the server before rebasing
+	// the recorded fire/weapon counters and sending the first macro frame.
 
 	char aStartMessage[220];
 	str_format(aStartMessage, sizeof(aStartMessage),
@@ -2325,13 +2396,31 @@ void CControls::SetMacroSeekStep(int Step)
 
 void CControls::OnMacroPracticeDummySwap()
 {
+	if(m_MacroPlaybackLive && m_MacroPlaying)
+	{
+		const int RequestedDummy = g_Config.m_ClDummy;
+		if(RequestedDummy >= 0 && RequestedDummy < NUM_DUMMIES &&
+			GameClient()->m_aLocalIds[RequestedDummy] >= 0)
+		{
+			m_MacroPlaybackDummy = RequestedDummy;
+			m_MacroPlaybackManualDummyOverride = true;
+			m_MacroPlaybackLastTick = Client()->GameTick(RequestedDummy);
+			m_MacroPracticeAccumulator = 0.0;
+			if(m_MacroHasCurrentFrame)
+				RebaseMacroPlaybackCounters(RequestedDummy, m_MacroDisplayedTick - 1);
+			else
+				RebaseMacroPlaybackCounters(RequestedDummy, m_MacroStartFrameIndex - 1);
+			GameClient()->Echo("Макрос продолжает воспроизведение на выбранном тии.");
+		}
+		return;
+	}
+
 	if(!m_MacroPracticeActive || m_MacroPlaying)
 		return;
 	const int RequestedLocalId = GameClient()->m_aLocalIds[g_Config.m_ClDummy];
 	if(RequestedLocalId >= 0 && RequestedLocalId < MAX_CLIENTS)
 		SwitchMacroPracticeCharacter(RequestedLocalId);
 }
-
 vec2 CControls::MacroPracticePosition()
 {
 	if(m_MacroPracticeActive)
@@ -2575,14 +2664,14 @@ void CControls::ApplyHookAutomation(int Dummy)
 		m_aTripleflyTargetFound[Dummy] = false;
 		m_aTripleflyAimX[Dummy] = 1;
 		m_aTripleflyAimY[Dummy] = 0;
-		m_aTripleflyRecommendedHookTicks[Dummy] = 3;
+		m_aTripleflyRecommendedHookTicks[Dummy] = 4;
 
 		const float Range = std::clamp((float)g_Config.m_ClAutoHookRange, 32.0f, 360.0f);
 		const float RangeSquared = Range * Range;
 		float BestScore = RangeSquared + 1.0f;
 		int BestClientId = -1;
 		vec2 BestAim(1.0f, 0.0f);
-		int BestHoldTicks = 3;
+		int BestHoldTicks = 4;
 
 		// The hook is sent by the other local tee, not by the tee controlled
 		// with the keyboard. Calculate range, lead and aim from that hooker's
@@ -2663,6 +2752,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 			m_aTripleflyAimX[Dummy] = round_to_int(BestAim.x);
 			m_aTripleflyAimY[Dummy] = round_to_int(BestAim.y);
 			m_aTripleflyRecommendedHookTicks[Dummy] = BestHoldTicks;
+			m_TripleflyHookDuration = BestHoldTicks;
 		}
 		else
 		{
@@ -3248,15 +3338,7 @@ int CControls::SnapInput(int *pData)
 				pDummyInput->m_TargetX = m_aTripleflyAimX[g_Config.m_ClDummy];
 				pDummyInput->m_TargetY = m_aTripleflyAimY[g_Config.m_ClDummy];
 			}
-
-			if(m_TripleflyHookDelayTicks > 0)
-				--m_TripleflyHookDelayTicks;
-			else if(m_TripleflyHookHoldTicks > 0)
-				--m_TripleflyHookHoldTicks;
-
-			const bool HookPulse = m_aTripleflyTargetFound[g_Config.m_ClDummy] &&
-				m_TripleflyHookDelayTicks == 0 && m_TripleflyHookHoldTicks > 0;
-			pDummyInput->m_Hook = HookPulse ? 1 : 0;
+			pDummyInput->m_Hook = (m_aTripleflyTargetFound[g_Config.m_ClDummy] && TripleflyHookActive()) ? 1 : 0;
 			m_aInputData[!g_Config.m_ClDummy] = *pDummyInput;
 		}
 
@@ -3279,8 +3361,8 @@ int CControls::SnapInput(int *pData)
 		// Live playback is deliberately input-only: the server simulates its
 		// own tee, weapons, pickups, freeze and map collisions as usual.
 		const int MacroDummy = g_Config.m_ClDummy;
-		if(m_MacroPlaybackLive && m_MacroPlaying && !m_MacroPlaybackPaused &&
-			m_MacroHasCurrentFrame && MacroDummy == m_MacroPlaybackDummy)
+		if(m_MacroPlaybackLive && m_MacroPlaying && !m_MacroPlaybackStartPending &&
+			!m_MacroPlaybackPaused && m_MacroHasCurrentFrame && MacroDummy == m_MacroPlaybackDummy)
 		{
 			CNetObj_PlayerInput MacroInput = m_MacroCurrentFrame.m_Input;
 			MacroInput.m_PlayerFlags = m_aInputData[MacroDummy].m_PlayerFlags;
@@ -3339,9 +3421,28 @@ void CControls::OnRender()
 	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
 		return;
 
+	// Send a neutral release packet before the first frame of every run.
+	if(m_MacroPlaybackLive && m_MacroPlaying && m_MacroPlaybackStartPending &&
+		Client()->State() == IClient::STATE_ONLINE &&
+		!GameClient()->m_Chat.IsActive() && !GameClient()->m_Menus.IsActive())
+	{
+		const int ServerTick = Client()->GameTick(m_MacroPlaybackDummy);
+		if(ServerTick > m_MacroPlaybackLastTick)
+		{
+			m_MacroPlaybackLastTick = ServerTick;
+			m_MacroPlaybackStartPending = false;
+			RebaseMacroPlaybackCounters(m_MacroPlaybackDummy, m_MacroStartFrameIndex - 1);
+			SendMacroFrame(m_MacroStartFrameIndex, EMacroFrameMode::STEP);
+			m_MacroPlaybackIndex = (std::size_t)m_MacroStartFrameIndex + 1;
+			m_MacroDisplayedTick = m_MacroStartFrameIndex + 1;
+			m_MacroPracticeAccumulator = 0.0;
+		}
+	}
+
 	// Pace live input playback from confirmed server ticks. Each selected frame
 	// is forwarded through SnapInput as ordinary DDNet controls.
-	if(m_MacroPlaybackLive && m_MacroPlaying && Client()->State() == IClient::STATE_ONLINE)
+	if(m_MacroPlaybackLive && m_MacroPlaying && !m_MacroPlaybackStartPending &&
+		Client()->State() == IClient::STATE_ONLINE)
 	{
 		const int ServerTick = Client()->GameTick(m_MacroPlaybackDummy);
 		if(GameClient()->m_Chat.IsActive() || GameClient()->m_Menus.IsActive())
@@ -3367,6 +3468,7 @@ void CControls::OnRender()
 				{
 					const int TargetIndex = std::clamp(m_MacroPlaybackSeekTargetIndex, 0, (int)m_vMacroFrames.size() - 1);
 					m_MacroPlaybackSeekTargetIndex = -1;
+					RebaseMacroPlaybackCounters(m_MacroPlaybackDummy, TargetIndex - 1);
 					SendMacroFrame(TargetIndex, m_MacroPlaybackPaused ? EMacroFrameMode::RESTORE_PAUSED : EMacroFrameMode::STEP);
 					m_MacroPlaybackIndex = (std::size_t)TargetIndex + 1;
 					m_MacroDisplayedTick = TargetIndex + 1;
@@ -3383,7 +3485,10 @@ void CControls::OnRender()
 						if(m_MacroPlaybackIndex >= m_vMacroFrames.size())
 						{
 							if(g_Config.m_ClMacroLoop && !m_vMacroFrames.empty())
+							{
 								m_MacroPlaybackIndex = (std::size_t)std::clamp(m_MacroStartFrameIndex, 0, (int)m_vMacroFrames.size() - 1);
+								RebaseMacroPlaybackCounters(m_MacroPlaybackDummy, (int)m_vMacroFrames.size() - 1);
+							}
 							else
 							{
 								GameClient()->Echo("Макрос завершён; управление возвращено обычному DDNet.");
