@@ -352,8 +352,6 @@ private:
 	static void ConMacroSeek(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroRewindStep(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroForwardStep(IConsole::IResult *pResult, void *pUserData);
-	static void ConMacroRewindStep(IConsole::IResult *pResult, void *pUserData);
-	static void ConMacroForwardStep(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroGoto(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroStopAtTick(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroGotoConfigured(IConsole::IResult *pResult, void *pUserData);
