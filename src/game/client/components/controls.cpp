@@ -215,6 +215,8 @@ void CControls::ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData)
 		if((Fire & 1) != Stroke)
 		{
 			++Fire;
+			if(Stroke && !pSelf->m_MacroPlaying)
+				++pSelf->m_MacroPracticePendingFireTransitions;
 			if(pSelf->m_MacroPlaying)
 				++pSelf->m_aMacroLiveFireOffset[Dummy];
 		}
@@ -516,6 +518,8 @@ void CControls::ConMacroPracticeInput(IConsole::IResult *pResult, void *pUserDat
 		{
 			++Fire;
 			Fire &= INPUT_STATE_MASK;
+			if(Pressed)
+				++pSelf->m_MacroPracticePendingFireTransitions;
 		}
 		break;
 	}
@@ -1185,6 +1189,8 @@ void CControls::ResetMacroPracticeCharacter()
 	m_MacroPracticePendingWantedWeapon = 0;
 	m_MacroPracticeFireCounter = m_aInputData[g_Config.m_ClDummy].m_Fire & INPUT_STATE_MASK;
 	m_MacroPracticeInput = IdleInput;
+	m_MacroPracticeFireCounter = 0;
+	m_MacroPracticePendingFireTransitions = 0;
 	UpdateMacroPracticeGhost(pCharacter);
 	GameClient()->Echo("Тренировочный тии возвращён в начальную точку. Серверный персонаж не затронут.");
 }
@@ -1606,6 +1612,27 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		{
 			TickInput.m_WantedWeapon = m_MacroPracticePendingWantedWeapon;
 			m_MacroPracticePendingWantedWeapon = 0;
+		}
+	}
+
+	if(!ReplayRecordedFrame)
+	{
+		if(m_MacroPracticePendingFireTransitions > 0)
+		{
+			int NextFire = m_MacroPracticeFireCounter;
+			NextFire = (NextFire + ((NextFire & 1) ? 2 : 1)) & INPUT_STATE_MASK;
+			TickInput.m_Fire = NextFire;
+			m_MacroPracticeFireCounter = NextFire;
+			--m_MacroPracticePendingFireTransitions;
+		}
+		else
+		{
+			// Keep a held fire pressed, or release it on the first simulated
+			// tick after the physical key was released.
+			const int WantedFireState = LiveInput.m_Fire & 1;
+			if((m_MacroPracticeFireCounter & 1) != WantedFireState)
+				m_MacroPracticeFireCounter = (m_MacroPracticeFireCounter + 1) & INPUT_STATE_MASK;
+			TickInput.m_Fire = m_MacroPracticeFireCounter;
 		}
 	}
 
@@ -3420,6 +3447,8 @@ void CControls::OnUpdate()
 		if(m_MacroPracticeInput.m_Fire & 1)
 			++m_MacroPracticeInput.m_Fire;
 		m_MacroPracticeInput.m_Fire &= INPUT_STATE_MASK;
+		m_MacroPracticePendingFireTransitions = 0;
+		m_MacroPracticeFireCounter = m_MacroPracticeInput.m_Fire & INPUT_STATE_MASK;
 		if(m_MacroPracticeInput.m_NextWeapon & 1)
 			++m_MacroPracticeInput.m_NextWeapon;
 		if(m_MacroPracticeInput.m_PrevWeapon & 1)
