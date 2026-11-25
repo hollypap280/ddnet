@@ -402,11 +402,81 @@ void CControls::ConMacroPracticeInput(IConsole::IResult *pResult, void *pUserDat
 	}
 
 	if(pSelf->m_MacroPlaybackLive || (pSelf->m_MacroPracticeActive && pSelf->m_MacroPlaying))
+	{
+		if(pSelf->m_MacroPlaybackLive)
+		{
+			switch(pBind->m_Action)
+			{
+			case EMacroPracticeDummyAction::LEFT:
+				pSelf->m_aMacroManualDirectionActive[Dummy] = true;
+				pSelf->m_aInputDirectionLeft[Dummy] = Pressed;
+				break;
+			case EMacroPracticeDummyAction::RIGHT:
+				pSelf->m_aMacroManualDirectionActive[Dummy] = true;
+				pSelf->m_aInputDirectionRight[Dummy] = Pressed;
+				break;
+			case EMacroPracticeDummyAction::JUMP:
+				pSelf->m_aMacroManualJumpActive[Dummy] = true;
+				pSelf->m_aInputData[Dummy].m_Jump = Pressed;
+				break;
+			case EMacroPracticeDummyAction::HOOK:
+				pSelf->m_aMacroManualHookActive[Dummy] = true;
+				pSelf->m_aInputData[Dummy].m_Hook = Pressed;
+				break;
+			case EMacroPracticeDummyAction::FIRE:
+			{
+				int &Fire = pSelf->m_aInputData[Dummy].m_Fire;
+				if((Fire & 1) != (Pressed ? 1 : 0))
+				{
+					++Fire;
+					++pSelf->m_aMacroLiveFireOffset[Dummy];
+				}
+				Fire &= INPUT_STATE_MASK;
+				break;
+			}
+			default: break;
+			}
+		}
+		else
+		{
+			switch(pBind->m_Action)
+			{
+			case EMacroPracticeDummyAction::LEFT:
+				pSelf->m_aMacroManualDirectionActive[Dummy] = true;
+				pSelf->m_MacroPracticeDirectionLeft = Pressed;
+				break;
+			case EMacroPracticeDummyAction::RIGHT:
+				pSelf->m_aMacroManualDirectionActive[Dummy] = true;
+				pSelf->m_MacroPracticeDirectionRight = Pressed;
+				break;
+			case EMacroPracticeDummyAction::JUMP:
+				pSelf->m_aMacroManualJumpActive[Dummy] = true;
+				pSelf->m_MacroPracticeInput.m_Jump = Pressed;
+				break;
+			case EMacroPracticeDummyAction::HOOK:
+				pSelf->m_aMacroManualHookActive[Dummy] = true;
+				pSelf->m_MacroPracticeInput.m_Hook = Pressed;
+				break;
+			case EMacroPracticeDummyAction::FIRE:
+			{
+				int &Fire = pSelf->m_MacroPracticeInput.m_Fire;
+				if((Fire & 1) != (Pressed ? 1 : 0))
+				{
+					++Fire;
+					++pSelf->m_aMacroLiveFireOffset[Dummy];
+				}
+				Fire &= INPUT_STATE_MASK;
+				break;
+			}
+			default: break;
+			}
+		}
 		return;
+	}
 	if(!pSelf->m_MacroPracticeActive)
 	{
 		// The import button replaces only plain gameplay binds with these
-		// aliases. Outside FP they must behave exactly like the original bind.
+		// aliases. Outside FP they behave exactly like the original bind.
 		switch(pBind->m_Action)
 		{
 		case EMacroPracticeDummyAction::LEFT: pSelf->m_aInputDirectionLeft[Dummy] = Pressed; break;
