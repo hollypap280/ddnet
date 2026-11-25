@@ -2622,7 +2622,7 @@ void CControls::ConMacroGotoConfigured(IConsole::IResult *pResult, void *pUserDa
 		return;
 	}
 	const int CurrentTick = pSelf->m_MacroRecording ? pSelf->MacroFrameCount() :
-		(pSelf->m_MacroDisplayedTick > 0 ? pSelf->m_MacroDisplayedTick : (int)pSelf->m_MacroPlaybackIndex);
+		(pSelf->m_MacroDisplayedTick > 0 ? pSelf->m_MacroDisplayedTick : (int)pSelf->m_MacroPlaybackIndex + 1);
 	if(!pSelf->SeekMacro(TargetTick - CurrentTick, true, true))
 		pSelf->GameClient()->Echo("Не удалось восстановить выбранный тик. Проверь, что макрос содержит данные состояния.");
 }
