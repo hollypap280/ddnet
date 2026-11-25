@@ -2869,10 +2869,8 @@ void CControls::OnMessage(int Msg, void *pRawMsg)
 	if(Msg == NETMSGTYPE_SV_WEAPONPICKUP)
 	{
 		CNetMsg_Sv_WeaponPickup *pMsg = (CNetMsg_Sv_WeaponPickup *)pRawMsg;
-		if(m_MacroPlaybackLive)
+		if(g_Config.m_ClAutoswitchWeapons && m_MacroPlaybackLive)
 		{
-			// A recorded pickup is part of the macro timeline. Re-select it
-			// during playback even if live autoswitch is currently disabled.
 			m_aMacroPickupWeaponOverride[m_MacroPlaybackDummy] = pMsg->m_Weapon + 1;
 		}
 		else if(g_Config.m_ClAutoswitchWeapons && m_MacroPracticeActive)
