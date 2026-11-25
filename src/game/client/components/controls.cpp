@@ -216,7 +216,8 @@ void CControls::ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData)
 		else
 		{
 			g_Config.m_ClDummyHammer = 0;
-			pSelf->m_TripleflyHookDelayTicks = 1;
+			// Leave one complete input tick between the hammer release and the hook.
+			pSelf->m_TripleflyHookDelayTicks = 2;
 			pSelf->m_TripleflyHookHoldTicks = std::max(
 				pSelf->m_TripleflyHookHoldTicks,
 				pSelf->m_aTripleflyRecommendedHookTicks[Dummy]);
@@ -2583,6 +2584,32 @@ void CControls::ApplyHookAutomation(int Dummy)
 		vec2 BestAim(1.0f, 0.0f);
 		int BestHoldTicks = 3;
 
+		// The hook is sent by the other local tee, not by the tee controlled
+		// with the keyboard. Calculate range, lead and aim from that hooker's
+		// actual predicted position so the hook stays aligned while flying.
+		if(DummyId < 0 || DummyId >= MAX_CLIENTS ||
+			(!PracticeActive && !GameClient()->m_Snap.m_aCharacters[DummyId].m_Active))
+		{
+			m_aTripleflyTargetFound[Dummy] = false;
+			m_aTripleflyTargetClientId[Dummy] = -1;
+			m_aAutoHookActive[Dummy] = false;
+			m_aAutoHookFireActive[Dummy] = false;
+			m_aAutoAvoidActive[Dummy] = false;
+			return;
+		}
+
+		const CCharacter *pPracticeHooker = PracticeActive ? m_MacroPracticeWorld.GetCharacterById(DummyId) : nullptr;
+		if(PracticeActive && !pPracticeHooker)
+		{
+			m_aTripleflyTargetFound[Dummy] = false;
+			m_aTripleflyTargetClientId[Dummy] = -1;
+			return;
+		}
+		const CCharacterCore &HookerCore = pPracticeHooker ? *pPracticeHooker->Core() :
+			GameClient()->m_aClients[DummyId].m_Predicted;
+		const vec2 HookerPos = HookerCore.m_Pos;
+		const vec2 HookerVel = HookerCore.m_Vel;
+
 		for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
 		{
 			// Triplefly's third tee is neither the controlled tee nor our own dummy.
@@ -2599,14 +2626,14 @@ void CControls::ApplyHookAutomation(int Dummy)
 			const CCharacterCore &TargetCore = pPracticeTarget ? *pPracticeTarget->Core() :
 				GameClient()->m_aClients[ClientId].m_Predicted;
 			const vec2 TargetPos = TargetCore.m_Pos;
-			const vec2 Delta = TargetPos - LocalPos;
+			const vec2 Delta = TargetPos - HookerPos;
 			const float DistanceSquared = dot(Delta, Delta);
 			if(DistanceSquared < 1.0f || DistanceSquared > RangeSquared)
 				continue;
 
 			vec2 CollisionPos;
 			vec2 BeforeCollision;
-			if(Collision()->IntersectLineTeleHook(LocalPos, TargetPos, &CollisionPos, &BeforeCollision) != 0)
+			if(Collision()->IntersectLineTeleHook(HookerPos, TargetPos, &CollisionPos, &BeforeCollision) != 0)
 				continue;
 
 			// Keep the previous third tee when distances are close, avoiding
@@ -2616,9 +2643,9 @@ void CControls::ApplyHookAutomation(int Dummy)
 			if(Score >= BestScore)
 				continue;
 
-			const float HookSpeed = std::max(1.0f, LocalCore.m_Tuning.m_HookFireSpeed);
+			const float HookSpeed = std::max(1.0f, HookerCore.m_Tuning.m_HookFireSpeed);
 			const float FlightTicks = std::clamp(std::sqrt(DistanceSquared) / HookSpeed, 1.0f, 6.0f);
-			vec2 Lead = (TargetCore.m_Vel - LocalVel) * FlightTicks;
+			vec2 Lead = (TargetCore.m_Vel - HookerVel) * FlightTicks;
 			const float LeadLength = length(Lead);
 			if(LeadLength > 96.0f)
 				Lead *= 96.0f / LeadLength;
