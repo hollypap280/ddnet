@@ -2305,7 +2305,6 @@ bool CControls::PlayMacro(const char *pName)
 		GameClient()->Echo(aMessage);
 		return false;
 	}
-	const int BaseRecordingRate = RecordedRate > 0 ? (int)RecordedRate : MacroPracticeRate();
 	// A saved frame is one recorded practice step. Replay exactly one frame
 	// per real DDNet server tick (20 ms at the standard 50 tick/s rate).
 	const int FasterPlaybackRate = SERVER_TICK_SPEED;
@@ -3185,7 +3184,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 			if(DriverProjection > 0.0f && DriverProjection < 1.0f)
 			{
 				const vec2 ClosestPoint = HookerPos + Delta * DriverProjection;
-				if(distance(ClosestPoint, LocalPos) < 36.0f)
+				if(length(ClosestPoint - LocalPos) < 36.0f)
 					continue;
 			}
 
@@ -3890,6 +3889,8 @@ int CControls::SnapInput(int *pData)
 
 		// check if we need to send input
 		Send = Send || m_aInputData[g_Config.m_ClDummy].m_Direction != m_aLastData[g_Config.m_ClDummy].m_Direction;
+		Send = Send || m_aInputData[g_Config.m_ClDummy].m_TargetX != m_aLastData[g_Config.m_ClDummy].m_TargetX;
+		Send = Send || m_aInputData[g_Config.m_ClDummy].m_TargetY != m_aLastData[g_Config.m_ClDummy].m_TargetY;
 		Send = Send || m_aInputData[g_Config.m_ClDummy].m_Jump != m_aLastData[g_Config.m_ClDummy].m_Jump;
 		Send = Send || m_aInputData[g_Config.m_ClDummy].m_Fire != m_aLastData[g_Config.m_ClDummy].m_Fire;
 		Send = Send || m_aInputData[g_Config.m_ClDummy].m_Hook != m_aLastData[g_Config.m_ClDummy].m_Hook;
@@ -4156,6 +4157,10 @@ void CControls::RenderMacroHud()
 	else if(m_MacroPlaying)
 		str_format(aTickLabel, sizeof(aTickLabel), "%s  |  ТИК %d / %d  |  %d ТИК/С",
 			m_MacroPlaybackPaused ? "МАКРОС ПАУЗА" : "МАКРОС",
+			std::clamp(m_MacroDisplayedTick, 1, (int)m_vMacroFrames.size()),
+			(int)m_vMacroFrames.size(), m_MacroPlaybackRate);
+	else if(m_MacroPlaybackLive)
+		str_format(aTickLabel, sizeof(aTickLabel), "МАКРОС ЗАВЕРШЁН  |  ТИК %d / %d  |  %d ТИК/С",
 			std::clamp(m_MacroDisplayedTick, 1, (int)m_vMacroFrames.size()),
 			(int)m_vMacroFrames.size(), m_MacroPlaybackRate);
 	else
