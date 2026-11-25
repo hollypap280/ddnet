@@ -90,8 +90,6 @@ public:
 	void OnMacroPracticeDummySwap();
 	void OnMacroObserverInputSent(const CNetObj_PlayerInput &Input);
 	bool TripleflyAssistActive() const { return m_AutoTripleflyBindActive; }
-	bool TripleflyHammerPending() const { return m_TripleflyHammerPending; }
-	void OnTripleflyHammerSent();
 	bool TripleflyHookActive() const;
 	bool TripleflyHookReleasePending() const { return m_TripleflyHookSent && !TripleflyHookActive(); }
 	void OnTripleflyHookPacketSent(bool Hooking) { m_TripleflyHookSent = Hooking; }
@@ -303,8 +301,8 @@ private:
 	bool m_aAutoAvoidActive[NUM_DUMMIES]{};
 	bool m_aAutoEdgeHookActive[NUM_DUMMIES]{};
 
-	// Triplefly assist keeps the dummy copying movement and aims its hook
-	// toward the third tee. Hook pulses are timed just after a main-tee hit.
+	// Triplefly assist keeps the dummy copying movement and hooks the third
+	// tee in short, direction-sensitive windows while the driver is flying.
 	bool m_AutoTripleflyBindActive = false;
 	int m_AutoTripleflyPreviousAuto = 0;
 	int m_AutoTripleflyPreviousDummyCopyMoves = 0;
@@ -312,10 +310,8 @@ private:
 	int m_AutoTripleflyPreviousDummyHook = 0;
 	int m_AutoTripleflyPreviousDummyFire = 0;
 	int m_AutoTripleflyPreviousDummyJump = 0;
-	int m_AutoTripleflyPreviousDummyHammer = 0;
-	bool m_TripleflyHammerPending = false;
 	bool m_TripleflyFlightActive = false;
-	int m_TripleflyNextHammerTick = -1;
+	int m_TripleflyNextHookTick = -1;
 	int m_TripleflyHookStartTick = -1;
 	int m_TripleflyHookEndTick = -1;
 	int m_TripleflyHookDuration = 4;
