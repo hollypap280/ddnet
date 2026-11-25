@@ -70,6 +70,7 @@ public:
 	int MacroPosition() const { return m_MacroRecording ? (int)m_vMacroFrames.size() : m_MacroPlaying ? m_MacroDisplayedTick : (int)m_MacroPlaybackIndex; }
 	bool SeekMacroBy(int Offset);
 	void ToggleMacroPause();
+	int ImportMacroBinds();
 	int MacroFrameCount() const { return (int)m_vMacroFrames.size(); }
 	const char *MacroRecordingName() const { return m_aRecordingMacroName; }
 	struct SMacroInfo
@@ -358,6 +359,13 @@ private:
 		JUMP,
 		HOOK,
 		FIRE,
+		WEAPON_HAMMER,
+		WEAPON_GUN,
+		WEAPON_SHOTGUN,
+		WEAPON_GRENADE,
+		WEAPON_LASER,
+		NEXT_WEAPON,
+		PREV_WEAPON,
 	};
 	struct SMacroPracticeDummyBind
 	{
