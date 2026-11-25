@@ -59,6 +59,7 @@ void CControls::OnReset()
 	m_MacroStopAtTickArmed = false;
 	m_MacroPlaybackSeekTargetIndex = -1;
 	std::fill(std::begin(m_aMacroPlaybackWeaponOverride), std::end(m_aMacroPlaybackWeaponOverride), -1);
+	std::fill(std::begin(m_aMacroPickupWeaponOverride), std::end(m_aMacroPickupWeaponOverride), -1);
 	std::fill(std::begin(m_aMacroLiveFireOffset), std::end(m_aMacroLiveFireOffset), 0);
 	std::fill(std::begin(m_aMacroLiveNextWeaponOffset), std::end(m_aMacroLiveNextWeaponOffset), 0);
 	std::fill(std::begin(m_aMacroLivePrevWeaponOffset), std::end(m_aMacroLivePrevWeaponOffset), 0);
@@ -203,6 +204,24 @@ void CControls::ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData)
 
 	const int Stroke = pResult->GetInteger(0);
 	const int Dummy = pSelf->m_MacroPlaybackLive ? pSelf->m_MacroPlaybackDummy : g_Config.m_ClDummy;
+	if(pState->m_IsFireAction && pSelf->m_AutoTripleflyBindActive &&
+		!pSelf->m_MacroPracticeActive && !pSelf->m_MacroPlaybackLive)
+	{
+		if(Stroke)
+		{
+			g_Config.m_ClDummyHammer = 1;
+			pSelf->m_TripleflyHookDelayTicks = 0;
+			pSelf->m_TripleflyHookHoldTicks = 0;
+		}
+		else
+		{
+			g_Config.m_ClDummyHammer = 0;
+			pSelf->m_TripleflyHookDelayTicks = 1;
+			pSelf->m_TripleflyHookHoldTicks = std::max(
+				pSelf->m_TripleflyHookHoldTicks,
+				pSelf->m_aTripleflyRecommendedHookTicks[Dummy]);
+		}
+	}
 	if(pSelf->m_MacroPracticeActive && pState->m_IsFireAction)
 	{
 		// Keep the normal DDNet press/release counter, but in a private buffer.
@@ -236,6 +255,64 @@ void CControls::ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData)
 		}
 	}
 	*pVariable &= INPUT_STATE_MASK;
+}
+
+
+void CControls::ConAutoTriplefly(IConsole::IResult *pResult, void *pUserData)
+{
+	CControls *pSelf = (CControls *)pUserData;
+	const bool Pressed = pResult->GetInteger(0) != 0;
+	if(Pressed)
+	{
+		if(pSelf->m_AutoTripleflyBindActive)
+			return;
+		if(pSelf->Client()->State() != IClient::STATE_ONLINE ||
+			!pSelf->Client()->DummyConnected() ||
+			pSelf->GameClient()->m_aLocalIds[0] < 0 ||
+			pSelf->GameClient()->m_aLocalIds[1] < 0)
+		{
+			pSelf->GameClient()->Echo("Для Triplefly подключи основной тии и дамми.");
+			return;
+		}
+
+		pSelf->m_AutoTripleflyPreviousAuto = g_Config.m_ClAutoTriplefly;
+		pSelf->m_AutoTripleflyPreviousDummyCopyMoves = g_Config.m_ClDummyCopyMoves;
+		pSelf->m_AutoTripleflyPreviousDummyControl = g_Config.m_ClDummyControl;
+		pSelf->m_AutoTripleflyPreviousDummyHook = g_Config.m_ClDummyHook;
+		pSelf->m_AutoTripleflyPreviousDummyFire = g_Config.m_ClDummyFire;
+		pSelf->m_AutoTripleflyPreviousDummyJump = g_Config.m_ClDummyJump;
+		pSelf->m_AutoTripleflyPreviousDummyHammer = g_Config.m_ClDummyHammer;
+
+		pSelf->m_AutoTripleflyBindActive = true;
+		g_Config.m_ClAutoTriplefly = 1;
+		g_Config.m_ClDummyCopyMoves = 1;
+		g_Config.m_ClDummyControl = 1;
+		g_Config.m_ClDummyHook = 0;
+		g_Config.m_ClDummyFire = 0;
+		g_Config.m_ClDummyJump = 0;
+		g_Config.m_ClDummyHammer = 0;
+		pSelf->m_TripleflyHookDelayTicks = 0;
+		pSelf->m_TripleflyHookHoldTicks = 0;
+		std::fill(std::begin(pSelf->m_aTripleflyTargetFound), std::end(pSelf->m_aTripleflyTargetFound), false);
+		std::fill(std::begin(pSelf->m_aTripleflyTargetClientId), std::end(pSelf->m_aTripleflyTargetClientId), -1);
+		pSelf->GameClient()->Echo("Triplefly включён: дамми копирует движение, бьёт вместе с твоим Fire и кратко хукает третьего тии после удара.");
+	}
+	else if(pSelf->m_AutoTripleflyBindActive)
+	{
+		pSelf->m_AutoTripleflyBindActive = false;
+		g_Config.m_ClAutoTriplefly = pSelf->m_AutoTripleflyPreviousAuto;
+		g_Config.m_ClDummyCopyMoves = pSelf->m_AutoTripleflyPreviousDummyCopyMoves;
+		g_Config.m_ClDummyControl = pSelf->m_AutoTripleflyPreviousDummyControl;
+		g_Config.m_ClDummyHook = pSelf->m_AutoTripleflyPreviousDummyHook;
+		g_Config.m_ClDummyFire = pSelf->m_AutoTripleflyPreviousDummyFire;
+		g_Config.m_ClDummyJump = pSelf->m_AutoTripleflyPreviousDummyJump;
+		g_Config.m_ClDummyHammer = pSelf->m_AutoTripleflyPreviousDummyHammer;
+		pSelf->m_TripleflyHookDelayTicks = 0;
+		pSelf->m_TripleflyHookHoldTicks = 0;
+		std::fill(std::begin(pSelf->m_aTripleflyTargetFound), std::end(pSelf->m_aTripleflyTargetFound), false);
+		std::fill(std::begin(pSelf->m_aTripleflyTargetClientId), std::end(pSelf->m_aTripleflyTargetClientId), -1);
+		pSelf->GameClient()->Echo("Triplefly выключен; настройки дамми восстановлены.");
+	}
 }
 
 void CControls::ConMacroPracticeInput(IConsole::IResult *pResult, void *pUserData)
@@ -478,6 +555,7 @@ void CControls::OnConsoleInit()
 
 	Console()->Register("tp_to_cursor", "", CFGFLAG_CLIENT, ConTpToCursor, this, "Practice: teleport yourself to your cursor");
 	Console()->Register("tp_dummy_to_cursor", "", CFGFLAG_CLIENT, ConTpDummyToCursor, this, "Practice: teleport the other tee to your cursor");
+	Console()->Register("+auto_triplefly", "", CFGFLAG_CLIENT, ConAutoTriplefly, this, "Hold to assist Triplefly with dummy copy and timed third-tee hook");
 
 	Console()->Register("macro_practice", "", CFGFLAG_CLIENT, ConMacroPractice, this, "Toggle isolated FP practice");
 	Console()->Register("macro_pause", "", CFGFLAG_CLIENT, ConMacroPause, this, "Pause or resume live macro playback");
@@ -931,6 +1009,7 @@ void CControls::StopMacroPractice()
 	m_MacroPlaybackLastTick = -1;
 	m_MacroPlaybackSeekTargetIndex = -1;
 	std::fill(std::begin(m_aMacroPlaybackWeaponOverride), std::end(m_aMacroPlaybackWeaponOverride), -1);
+	std::fill(std::begin(m_aMacroPickupWeaponOverride), std::end(m_aMacroPickupWeaponOverride), -1);
 	std::fill(std::begin(m_aMacroLiveFireOffset), std::end(m_aMacroLiveFireOffset), 0);
 	std::fill(std::begin(m_aMacroLiveNextWeaponOffset), std::end(m_aMacroLiveNextWeaponOffset), 0);
 	std::fill(std::begin(m_aMacroLivePrevWeaponOffset), std::end(m_aMacroLivePrevWeaponOffset), 0);
@@ -1595,6 +1674,7 @@ void CControls::StopMacroRecording()
 	m_MacroStopAtTickArmed = false;
 	m_MacroPlaybackSeekTargetIndex = -1;
 	std::fill(std::begin(m_aMacroPlaybackWeaponOverride), std::end(m_aMacroPlaybackWeaponOverride), -1);
+	std::fill(std::begin(m_aMacroPickupWeaponOverride), std::end(m_aMacroPickupWeaponOverride), -1);
 	std::fill(std::begin(m_aMacroLiveFireOffset), std::end(m_aMacroLiveFireOffset), 0);
 	std::fill(std::begin(m_aMacroLiveNextWeaponOffset), std::end(m_aMacroLiveNextWeaponOffset), 0);
 	std::fill(std::begin(m_aMacroLivePrevWeaponOffset), std::end(m_aMacroLivePrevWeaponOffset), 0);
@@ -1899,6 +1979,9 @@ bool CControls::PlayMacro(const char *pName)
 		GameClient()->Echo(aMessage);
 		return false;
 	}
+	const int BaseRecordingRate = RecordedRate > 0 ? (int)RecordedRate : MacroPracticeRate();
+	const int FasterPlaybackRate = std::clamp((BaseRecordingRate * 3 + 1) / 2, 1, SERVER_TICK_SPEED);
+
 	if(Client()->State() != IClient::STATE_ONLINE)
 	{
 		GameClient()->Echo("Для запуска макроса сначала подключись к серверу.");
@@ -1968,7 +2051,7 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroRecording = false;
 	m_MacroRecordingPaused = false;
 	m_MacroPlaybackLive = true;
-	m_MacroPlaybackRate = MacroPracticeRate();
+	m_MacroPlaybackRate = FasterPlaybackRate;
 	m_MacroPlaybackDummy = PlaybackDummy;
 	m_MacroPlaybackOwnsPractice = false;
 	m_MacroPlaybackOwnsDummy = false;
@@ -1985,6 +2068,7 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroPlaybackLastTick = Client()->GameTick(PlaybackDummy);
 	std::fill(std::begin(m_aMacroPlaybackConnectionUsed), std::end(m_aMacroPlaybackConnectionUsed), false);
 	std::fill(std::begin(m_aMacroPlaybackWeaponOverride), std::end(m_aMacroPlaybackWeaponOverride), -1);
+	std::fill(std::begin(m_aMacroPickupWeaponOverride), std::end(m_aMacroPickupWeaponOverride), -1);
 	std::fill(std::begin(m_aMacroLiveFireOffset), std::end(m_aMacroLiveFireOffset), 0);
 	std::fill(std::begin(m_aMacroLiveNextWeaponOffset), std::end(m_aMacroLiveNextWeaponOffset), 0);
 	std::fill(std::begin(m_aMacroLivePrevWeaponOffset), std::end(m_aMacroLivePrevWeaponOffset), 0);
@@ -1992,7 +2076,7 @@ bool CControls::PlayMacro(const char *pName)
 	std::fill(std::begin(m_aMacroManualJumpActive), std::end(m_aMacroManualJumpActive), false);
 	std::fill(std::begin(m_aMacroManualHookActive), std::end(m_aMacroManualHookActive), false);
 	std::fill(std::begin(m_aMacroManualAimActive), std::end(m_aMacroManualAimActive), false);
-	m_MacroPlaybackRate = MacroPracticeRate();
+	m_MacroPlaybackRate = FasterPlaybackRate;
 	m_MacroPracticeAccumulator = 0.0;
 	m_MacroPracticeLastTime = time_get();
 
@@ -2292,6 +2376,7 @@ bool CControls::RebuildMacroWorldToPosition(int Position)
 	m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
 
 	std::fill(std::begin(m_aMacroPlaybackWeaponOverride), std::end(m_aMacroPlaybackWeaponOverride), -1);
+	std::fill(std::begin(m_aMacroPickupWeaponOverride), std::end(m_aMacroPickupWeaponOverride), -1);
 	std::fill(std::begin(m_aMacroLiveFireOffset), std::end(m_aMacroLiveFireOffset), 0);
 	std::fill(std::begin(m_aMacroLiveNextWeaponOffset), std::end(m_aMacroLiveNextWeaponOffset), 0);
 	std::fill(std::begin(m_aMacroLivePrevWeaponOffset), std::end(m_aMacroLivePrevWeaponOffset), 0);
@@ -2441,7 +2526,11 @@ void CControls::OnMessage(int Msg, void *pRawMsg)
 	if(Msg == NETMSGTYPE_SV_WEAPONPICKUP)
 	{
 		CNetMsg_Sv_WeaponPickup *pMsg = (CNetMsg_Sv_WeaponPickup *)pRawMsg;
-		if(g_Config.m_ClAutoswitchWeapons && m_MacroPracticeActive)
+		if(g_Config.m_ClAutoswitchWeapons && m_MacroPlaybackLive)
+		{
+			m_aMacroPickupWeaponOverride[m_MacroPlaybackDummy] = pMsg->m_Weapon + 1;
+		}
+		else if(g_Config.m_ClAutoswitchWeapons && m_MacroPracticeActive)
 		{
 			const int WantedWeapon = pMsg->m_Weapon + 1;
 			if(MacroPracticeRate() < SERVER_TICK_SPEED)
@@ -2480,12 +2569,91 @@ void CControls::ApplyHookAutomation(int Dummy)
 	const int DummyId = GameClient()->m_aLocalIds[!g_Config.m_ClDummy];
 	const bool PracticeActive = pPracticeLocal != nullptr;
 
+	if(m_AutoTripleflyBindActive)
+	{
+		m_aTripleflyTargetFound[Dummy] = false;
+		m_aTripleflyAimX[Dummy] = 1;
+		m_aTripleflyAimY[Dummy] = 0;
+		m_aTripleflyRecommendedHookTicks[Dummy] = 3;
+
+		const float Range = std::clamp((float)g_Config.m_ClAutoHookRange, 32.0f, 360.0f);
+		const float RangeSquared = Range * Range;
+		float BestScore = RangeSquared + 1.0f;
+		int BestClientId = -1;
+		vec2 BestAim(1.0f, 0.0f);
+		int BestHoldTicks = 3;
+
+		for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
+		{
+			// Triplefly's third tee is neither the controlled tee nor our own dummy.
+			if(ClientId == LocalId || ClientId == DummyId ||
+				!GameClient()->m_Snap.m_aCharacters[ClientId].m_Active)
+				continue;
+			if(GameClient()->IsOtherTeam(ClientId) || GameClient()->m_aClients[ClientId].m_Solo ||
+				GameClient()->m_aClients[ClientId].m_HookHitDisabled)
+				continue;
+
+			const CCharacter *pPracticeTarget = PracticeActive ? m_MacroPracticeWorld.GetCharacterById(ClientId) : nullptr;
+			if(PracticeActive && !pPracticeTarget)
+				continue;
+			const CCharacterCore &TargetCore = pPracticeTarget ? *pPracticeTarget->Core() :
+				GameClient()->m_aClients[ClientId].m_Predicted;
+			const vec2 TargetPos = TargetCore.m_Pos;
+			const vec2 Delta = TargetPos - LocalPos;
+			const float DistanceSquared = dot(Delta, Delta);
+			if(DistanceSquared < 1.0f || DistanceSquared > RangeSquared)
+				continue;
+
+			vec2 CollisionPos;
+			vec2 BeforeCollision;
+			if(Collision()->IntersectLineTeleHook(LocalPos, TargetPos, &CollisionPos, &BeforeCollision) != 0)
+				continue;
+
+			// Keep the previous third tee when distances are close, avoiding
+			// aim flicker when several teammates fly near each other.
+			const float Score = DistanceSquared *
+				(ClientId == m_aTripleflyTargetClientId[Dummy] ? 0.85f : 1.0f);
+			if(Score >= BestScore)
+				continue;
+
+			const float HookSpeed = std::max(1.0f, LocalCore.m_Tuning.m_HookFireSpeed);
+			const float FlightTicks = std::clamp(std::sqrt(DistanceSquared) / HookSpeed, 1.0f, 6.0f);
+			vec2 Lead = (TargetCore.m_Vel - LocalVel) * FlightTicks;
+			const float LeadLength = length(Lead);
+			if(LeadLength > 96.0f)
+				Lead *= 96.0f / LeadLength;
+
+			BestScore = Score;
+			BestClientId = ClientId;
+			BestAim = Delta + Lead;
+			BestHoldTicks = std::clamp(2 + round_to_int(std::sqrt(DistanceSquared) / 90.0f), 3, 6);
+		}
+
+		if(BestClientId >= 0)
+		{
+			m_aTripleflyTargetFound[Dummy] = true;
+			m_aTripleflyTargetClientId[Dummy] = BestClientId;
+			m_aTripleflyAimX[Dummy] = round_to_int(BestAim.x);
+			m_aTripleflyAimY[Dummy] = round_to_int(BestAim.y);
+			m_aTripleflyRecommendedHookTicks[Dummy] = BestHoldTicks;
+		}
+		else
+		{
+			m_aTripleflyTargetClientId[Dummy] = -1;
+		}
+
+		m_aAutoHookActive[Dummy] = false;
+		m_aAutoHookFireActive[Dummy] = false;
+		m_aAutoAvoidActive[Dummy] = false;
+		return;
+	}
+
 	bool FoundTarget = false;
 	vec2 BestTarget(0.0f, 0.0f);
 
 	// Manual hook always has priority. During macro practice the same
 	// automation works from the private tee's position and mirrored teammates.
-	if((g_Config.m_ClAutoHook || g_Config.m_ClAutoTriplefly) && !ManualHook)
+	if(g_Config.m_ClAutoHook && !ManualHook)
 	{
 		const float Range = std::clamp((float)g_Config.m_ClAutoHookRange, 32.0f, 360.0f);
 		const float RangeSquared = Range * Range;
@@ -2499,8 +2667,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 		{
 			// Triplefly is a three-tee setup: controlled tee, local dummy,
 			// then the third tee. Do not accidentally hook the dummy instead.
-			if(ClientId == LocalId || (g_Config.m_ClAutoTriplefly && ClientId == DummyId) ||
-				!GameClient()->m_Snap.m_aCharacters[ClientId].m_Active)
+			if(ClientId == LocalId || !GameClient()->m_Snap.m_aCharacters[ClientId].m_Active)
 				continue;
 			if(GameClient()->IsOtherTeam(ClientId) || GameClient()->m_aClients[ClientId].m_Solo ||
 				GameClient()->m_aClients[ClientId].m_HookHitDisabled)
@@ -3046,6 +3213,25 @@ int CControls::SnapInput(int *pData)
 			pDummyInput->m_Hook = g_Config.m_ClDummyHook;
 			m_aInputData[!g_Config.m_ClDummy] = *pDummyInput;
 		}
+		if(m_AutoTripleflyBindActive)
+		{
+			CNetObj_PlayerInput *pDummyInput = &GameClient()->m_DummyInput;
+			if(m_aTripleflyTargetFound[g_Config.m_ClDummy])
+			{
+				pDummyInput->m_TargetX = m_aTripleflyAimX[g_Config.m_ClDummy];
+				pDummyInput->m_TargetY = m_aTripleflyAimY[g_Config.m_ClDummy];
+			}
+
+			if(m_TripleflyHookDelayTicks > 0)
+				--m_TripleflyHookDelayTicks;
+			else if(m_TripleflyHookHoldTicks > 0)
+				--m_TripleflyHookHoldTicks;
+
+			const bool HookPulse = m_aTripleflyTargetFound[g_Config.m_ClDummy] &&
+				m_TripleflyHookDelayTicks == 0 && m_TripleflyHookHoldTicks > 0;
+			pDummyInput->m_Hook = HookPulse ? 1 : 0;
+			m_aInputData[!g_Config.m_ClDummy] = *pDummyInput;
+		}
 
 		// stress testing
 		if(g_Config.m_DbgStress)
@@ -3089,6 +3275,11 @@ int CControls::SnapInput(int *pData)
 			}
 			if(m_aMacroPlaybackWeaponOverride[MacroDummy] > 0)
 				MacroInput.m_WantedWeapon = m_aMacroPlaybackWeaponOverride[MacroDummy];
+			if(m_aMacroPickupWeaponOverride[MacroDummy] > 0)
+			{
+				MacroInput.m_WantedWeapon = m_aMacroPickupWeaponOverride[MacroDummy];
+				m_aMacroPickupWeaponOverride[MacroDummy] = -1;
+			}
 
 			m_aInputData[MacroDummy] = MacroInput;
 		}

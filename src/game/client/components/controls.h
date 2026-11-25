@@ -104,6 +104,7 @@ private:
 	enum class EMacroFrameMode { PAUSE = 0, STEP = 1, RESTORE_PAUSED = 2, STOP = 3 };
 	static void ConKeyInputState(IConsole::IResult *pResult, void *pUserData);
 	static void ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData);
+	static void ConAutoTriplefly(IConsole::IResult *pResult, void *pUserData);
 	static void ConKeyInputSet(IConsole::IResult *pResult, void *pUserData);
 	static void ConKeyInputNextPrevWeapon(IConsole::IResult *pResult, void *pUserData);
 	static void ConTpToCursor(IConsole::IResult *pResult, void *pUserData);
@@ -291,6 +292,26 @@ private:
 	bool m_aAutoHookFireActive[NUM_DUMMIES]{};
 	bool m_aAutoAvoidActive[NUM_DUMMIES]{};
 	bool m_aAutoEdgeHookActive[NUM_DUMMIES]{};
+
+	// Triplefly assist keeps the dummy copying movement and aims its hook
+	// toward the third tee. Hook pulses are timed just after a main-tee hit.
+	bool m_AutoTripleflyBindActive = false;
+	int m_AutoTripleflyPreviousAuto = 0;
+	int m_AutoTripleflyPreviousDummyCopyMoves = 0;
+	int m_AutoTripleflyPreviousDummyControl = 0;
+	int m_AutoTripleflyPreviousDummyHook = 0;
+	int m_AutoTripleflyPreviousDummyFire = 0;
+	int m_AutoTripleflyPreviousDummyJump = 0;
+	int m_AutoTripleflyPreviousDummyHammer = 0;
+	int m_TripleflyHookDelayTicks = 0;
+	int m_TripleflyHookHoldTicks = 0;
+	int m_aTripleflyTargetClientId[NUM_DUMMIES] = {-1, -1};
+	int m_aTripleflyAimX[NUM_DUMMIES]{};
+	int m_aTripleflyAimY[NUM_DUMMIES]{};
+	int m_aTripleflyRecommendedHookTicks[NUM_DUMMIES]{};
+	bool m_aTripleflyTargetFound[NUM_DUMMIES]{};
+
+	int m_aMacroPickupWeaponOverride[NUM_DUMMIES] = {-1, -1};
 	void ApplyHookAutomation(int Dummy);
 	void ApplyEdgeAssist(int Dummy);
 	void ApplyEdgeHook(int Dummy);
