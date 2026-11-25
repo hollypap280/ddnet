@@ -88,7 +88,7 @@ public:
 	vec2 MacroPracticePosition();
 	void OnMacroPracticeDummySwap();
 	void OnMacroObserverInputSent(const CNetObj_PlayerInput &Input);
-	bool TripleflyHammerPending() const { return m_TripleflyHammerPending; }
+	bool TripleflyAssistActive() const { return m_AutoTripleflyBindActive; }
 	void OnTripleflyHammerSent();
 	bool TripleflyHookActive() const;
 	CGameWorld *MacroPracticeWorld() { return m_MacroPracticeActive ? &m_MacroPracticeWorld : nullptr; }
@@ -309,7 +309,6 @@ private:
 	int m_AutoTripleflyPreviousDummyFire = 0;
 	int m_AutoTripleflyPreviousDummyJump = 0;
 	int m_AutoTripleflyPreviousDummyHammer = 0;
-	bool m_TripleflyHammerPending = false;
 	int m_TripleflyHookStartTick = -1;
 	int m_TripleflyHookEndTick = -1;
 	int m_TripleflyHookDuration = 4;
@@ -343,6 +342,8 @@ private:
 	static void ConMacroPlayFirst(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroRewind(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroSeek(IConsole::IResult *pResult, void *pUserData);
+	static void ConMacroRewindStep(IConsole::IResult *pResult, void *pUserData);
+	static void ConMacroForwardStep(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroGoto(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroStopAtTick(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroGotoConfigured(IConsole::IResult *pResult, void *pUserData);
