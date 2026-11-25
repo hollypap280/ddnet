@@ -87,6 +87,7 @@ public:
 	int MacroPracticeTick() const { return m_MacroPracticeTick; }
 	vec2 MacroPracticePosition();
 	void OnMacroPracticeDummySwap();
+	void OnMacroObserverInputSent(const CNetObj_PlayerInput &Input);
 	bool TripleflyHammerPending() const { return m_TripleflyHammerPending; }
 	void OnTripleflyHammerSent();
 	bool TripleflyHookActive() const;
