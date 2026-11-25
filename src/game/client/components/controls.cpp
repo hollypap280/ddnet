@@ -919,9 +919,9 @@ void CControls::SendPracticeTeleportToCursor(int Conn)
 namespace
 {
 	constexpr uint32_t MACRO_FILE_MAGIC = 0x444D4143;
-	// Version 9 also stores the recording tick rate in the file header.
-	// Older versions remain readable with the current rate as their fallback.
-	constexpr uint32_t MACRO_FILE_VERSION = 9;
+	// Version 10 also stores the second local tee in each frame.
+	// Version 9 remains readable through SMacroFrameV9.
+	constexpr uint32_t MACRO_FILE_VERSION = 10;
 	constexpr uint32_t MACRO_MAX_FRAMES = 18000;
 }
 
@@ -1471,8 +1471,30 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 		pCharacter->m_PrevPos = Core.m_Pos;
 		pCharacter->m_PrevPrevPos = Core.m_Pos;
 		pCharacter->SetActiveWeapon(Frame.m_Weapon);
+		pCharacter->SetAttackTick(Frame.m_AttackTick);
 		pCharacter->m_FreezeTime = Frame.m_FreezeTime;
 		pCharacter->m_FrozenLastTick = Frame.m_FrozenLastTick != 0;
+
+		// Restore the other locally controlled tee from the same historical
+		// frame. It must not keep its present-day position or weapon state.
+		if(Frame.m_SecondaryHasState)
+		{
+			if(CCharacter *pSecondary = m_MacroPracticeWorld.GetCharacterById(Frame.m_SecondaryClientId))
+			{
+				CCharacterCore SecondaryCore = pSecondary->GetCore();
+				SecondaryCore.Read(&Frame.m_SecondaryCore);
+				for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+					SecondaryCore.m_aWeapons[Weapon].m_Ammo = Frame.m_aSecondaryWeaponAmmo[Weapon];
+				pSecondary->SetCore(SecondaryCore);
+				pSecondary->m_Pos = SecondaryCore.m_Pos;
+				pSecondary->m_PrevPos = SecondaryCore.m_Pos;
+				pSecondary->m_PrevPrevPos = SecondaryCore.m_Pos;
+				pSecondary->SetActiveWeapon(Frame.m_SecondaryWeapon);
+				pSecondary->SetAttackTick(Frame.m_SecondaryAttackTick);
+				pSecondary->m_FreezeTime = Frame.m_SecondaryFreezeTime;
+				pSecondary->m_FrozenLastTick = Frame.m_SecondaryFrozenLastTick != 0;
+			}
+		}
 		m_MacroPracticeWorld.m_GameTick = Frame.m_Tick;
 		m_MacroPracticeTick = Frame.m_Tick;
 
@@ -1725,6 +1747,19 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		NewFrame.m_Character.m_Weapon = NewFrame.m_Weapon;
 		NewFrame.m_Character.m_AttackTick = NewFrame.m_AttackTick;
 		NewFrame.m_Character.m_Tick = NewFrame.m_Tick;
+
+		if(CCharacter *pSecondary = m_MacroPracticeWorld.GetCharacterById(OtherLocalId))
+		{
+			NewFrame.m_SecondaryHasState = 1;
+			NewFrame.m_SecondaryClientId = OtherLocalId;
+			pSecondary->Core()->Write(&NewFrame.m_SecondaryCore);
+			NewFrame.m_SecondaryWeapon = pSecondary->GetActiveWeapon();
+			NewFrame.m_SecondaryAttackTick = pSecondary->GetAttackTick();
+			NewFrame.m_SecondaryFreezeTime = pSecondary->m_FreezeTime;
+			NewFrame.m_SecondaryFrozenLastTick = pSecondary->m_FrozenLastTick ? 1 : 0;
+			for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+				NewFrame.m_aSecondaryWeaponAmmo[Weapon] = pSecondary->Core()->m_aWeapons[Weapon].m_Ammo;
+		}
 		m_vMacroFrames.push_back(NewFrame);
 		if(m_vMacroFrames.size() >= MACRO_MAX_FRAMES)
 		{
@@ -2026,6 +2061,7 @@ bool CControls::PlayMacro(const char *pName)
 	if(Valid && FileLength < HeaderBytes)
 		Valid = false;
 	const int64_t CurrentFrameBytes = (int64_t)Count * sizeof(SMacroFrame);
+	const int64_t Version9FrameBytes = (int64_t)Count * sizeof(SMacroFrameV9);
 	const int64_t Version7FrameBytes = (int64_t)Count * sizeof(SMacroFrameV7);
 	const int64_t Version6FrameBytes = (int64_t)Count * sizeof(SMacroFrameV6);
 	const int64_t Version5FrameBytes = (int64_t)Count * sizeof(SMacroFrameV4);
@@ -2109,11 +2145,46 @@ bool CControls::PlayMacro(const char *pName)
 			Frames[i].m_PreDDNetCharacter = {};
 		}
 	};
-	if(Valid && Version >= 8)
+	if(Valid && Version >= 10)
 	{
 		Frames.resize(Count);
 		Valid = RemainingBytes == CurrentFrameBytes &&
 			io_read(File, Frames.data(), CurrentFrameBytes) == CurrentFrameBytes;
+	}
+	else if(Valid && Version >= 8)
+	{
+		std::vector<SMacroFrameV9> OldFrames(Count);
+		Valid = RemainingBytes == Version9FrameBytes &&
+			io_read(File, OldFrames.data(), Version9FrameBytes) == Version9FrameBytes;
+		if(Valid)
+		{
+			Frames.resize(Count);
+			for(uint32_t i = 0; i < Count; ++i)
+			{
+				Frames[i].m_Input = OldFrames[i].m_Input;
+				Frames[i].m_PreCore = OldFrames[i].m_PreCore;
+				Frames[i].m_Core = OldFrames[i].m_Core;
+				Frames[i].m_Character = OldFrames[i].m_Character;
+				Frames[i].m_PreWeapon = OldFrames[i].m_PreWeapon;
+				Frames[i].m_Weapon = OldFrames[i].m_Weapon;
+				Frames[i].m_AttackTick = OldFrames[i].m_AttackTick;
+				Frames[i].m_Tick = OldFrames[i].m_Tick;
+				Frames[i].m_HasCoordinates = OldFrames[i].m_HasCoordinates;
+				Frames[i].m_ClientId = OldFrames[i].m_ClientId;
+				Frames[i].m_PreFreezeTime = OldFrames[i].m_PreFreezeTime;
+				Frames[i].m_FreezeTime = OldFrames[i].m_FreezeTime;
+				Frames[i].m_PreFrozenLastTick = OldFrames[i].m_PreFrozenLastTick;
+				Frames[i].m_FrozenLastTick = OldFrames[i].m_FrozenLastTick;
+				Frames[i].m_PreAttackTick = OldFrames[i].m_PreAttackTick;
+				Frames[i].m_HasDDNetState = OldFrames[i].m_HasDDNetState;
+				Frames[i].m_PreDDNetCharacter = OldFrames[i].m_PreDDNetCharacter;
+				for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+				{
+					Frames[i].m_aPreWeaponAmmo[Weapon] = OldFrames[i].m_aPreWeaponAmmo[Weapon];
+					Frames[i].m_aWeaponAmmo[Weapon] = OldFrames[i].m_aWeaponAmmo[Weapon];
+				}
+			}
+		}
 	}
 	else if(Valid && Version == 7)
 	{
@@ -2219,7 +2290,9 @@ bool CControls::PlayMacro(const char *pName)
 		return false;
 	}
 	const int BaseRecordingRate = RecordedRate > 0 ? (int)RecordedRate : MacroPracticeRate();
-	const int FasterPlaybackRate = std::clamp((BaseRecordingRate * 3 + 1) / 2, 1, (int)SERVER_TICK_SPEED);
+	// A saved frame is one recorded practice step. Replay exactly one frame
+	// per real DDNet server tick (20 ms at the standard 50 tick/s rate).
+	const int FasterPlaybackRate = SERVER_TICK_SPEED;
 
 	if(Client()->State() != IClient::STATE_ONLINE)
 	{
@@ -3525,9 +3598,11 @@ void CControls::OnUpdate()
 
 	const int64_t ElapsedTime = std::max<int64_t>(0, CurrentTime - m_MacroPracticeLastTime);
 	m_MacroPracticeLastTime = CurrentTime;
-	const int PracticeRate = MacroPracticeRate();
+	// Saved macro frames are replayed at the real server tick rate. The
+	// configurable slow clock applies only while creating a recording.
+	const int PracticeRate = m_MacroPlaying ? (int)SERVER_TICK_SPEED : MacroPracticeRate();
 	if(m_MacroPlaying)
-		m_MacroPlaybackRate = PracticeRate;
+		m_MacroPlaybackRate = SERVER_TICK_SPEED;
 	m_MacroPracticeAccumulator += (double)ElapsedTime / (double)time_freq() * PracticeRate;
 
 	int Steps = 0;
