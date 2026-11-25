@@ -549,7 +549,8 @@ int CGameClient::OnSnapInput(int *pData, bool Dummy, bool Force)
 	// Triplefly only adds a direction-sensitive hook window. Keep the normal
 	// dummy hammer/copy-move configuration running so an existing flight is
 	// not interrupted when the helper grabs the third tee.
-	if(m_Controls.TripleflyAssistActive() && m_Controls.TripleflyHookActive())
+	if(m_Controls.TripleflyAssistActive() && m_Controls.TripleflyHookActive() &&
+		!m_Controls.TripleflyHammerBeforeHook())
 	{
 		// Keep the hook pressed only for the calculated directional window.
 		// Track that a hook packet has reached the dummy connection so the
@@ -568,7 +569,7 @@ int CGameClient::OnSnapInput(int *pData, bool Dummy, bool Force)
 		return sizeof(m_DummyInput);
 	}
 
-	if(!g_Config.m_ClDummyHammer)
+	if(!g_Config.m_ClDummyHammer && !m_Controls.TripleflyHammerBeforeHook())
 	{
 		if(m_DummyFire != 0)
 		{
@@ -603,6 +604,8 @@ int CGameClient::OnSnapInput(int *pData, bool Dummy, bool Force)
 		const vec2 Dir = m_LocalCharacterPos - m_aClients[m_aLocalIds[!g_Config.m_ClDummy]].m_Predicted.m_Pos;
 		m_HammerInput.m_TargetX = (int)Dir.x;
 		m_HammerInput.m_TargetY = (int)Dir.y;
+		if(m_Controls.TripleflyHammerBeforeHook())
+			m_Controls.OnTripleflyHammerPacketSent();
 
 		mem_copy(pData, &m_HammerInput, sizeof(m_HammerInput));
 		return sizeof(m_HammerInput);

@@ -92,7 +92,9 @@ public:
 	bool TripleflyAssistActive() const { return m_AutoTripleflyBindActive; }
 	bool TripleflyHookActive() const;
 	bool TripleflyHookReleasePending() const { return m_TripleflyHookSent && !TripleflyHookActive(); }
+	bool TripleflyHammerBeforeHook() const { return m_TripleflyHammerBeforeHook; }
 	void OnTripleflyHookPacketSent(bool Hooking) { m_TripleflyHookSent = Hooking; }
+	void OnTripleflyHammerPacketSent() { m_TripleflyHammerBeforeHook = false; }
 	CGameWorld *MacroPracticeWorld() { return m_MacroPracticeActive ? &m_MacroPracticeWorld : nullptr; }
 	float MacroPracticeTickFraction() const { return (float)m_MacroPracticeAccumulator; }
 	bool MacroPracticeWaiting() const { return m_MacroPracticeWaiting; }
@@ -269,6 +271,10 @@ private:
 	bool m_MacroPlaybackStartPending = false;
 	bool m_MacroPlaybackManualDummyOverride = false;
 	bool m_MacroPlaybackPaused = false;
+	bool m_MacroPlaybackHistoryAvailable = false;
+	bool m_MacroPlaybackSavedMousePosValid = false;
+	int m_MacroPlaybackOriginalDummy = 0;
+	vec2 m_aMacroPlaybackSavedMousePos[NUM_DUMMIES]{};
 	bool m_MacroStopAtTickArmed = false;
 	int m_MacroPlaybackSeekTargetIndex = -1;
 	int m_aMacroPlaybackWeaponOverride[NUM_DUMMIES] = {-1, -1};
@@ -347,6 +353,7 @@ private:
 	int m_AutoTripleflyPreviousDummyCopyMoves = 0;
 	int m_AutoTripleflyPreviousDummyHook = 0;
 	bool m_TripleflyFlightActive = false;
+	bool m_TripleflyHammerBeforeHook = false;
 	int m_TripleflyNextHookTick = -1;
 	int m_TripleflyHookStartTick = -1;
 	int m_TripleflyHookEndTick = -1;

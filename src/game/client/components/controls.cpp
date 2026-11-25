@@ -302,6 +302,7 @@ void CControls::SetAutoTriplefly(bool Enable)
 		m_TripleflyHookEndTick = -1;
 		m_TripleflyHookDuration = 3;
 		m_TripleflyHookSent = false;
+		m_TripleflyHammerBeforeHook = false;
 		std::fill(std::begin(m_aTripleflyTargetFound), std::end(m_aTripleflyTargetFound), false);
 		std::fill(std::begin(m_aTripleflyTargetClientId), std::end(m_aTripleflyTargetClientId), -1);
 		GameClient()->Echo("Triplefly активен, пока удерживается бинд. Начни флайт — дамми сам ищет третьего тии.");
@@ -313,6 +314,7 @@ void CControls::SetAutoTriplefly(bool Enable)
 		g_Config.m_ClDummyCopyMoves = m_AutoTripleflyPreviousDummyCopyMoves;
 		g_Config.m_ClDummyHook = m_AutoTripleflyPreviousDummyHook;
 		m_TripleflyFlightActive = false;
+		m_TripleflyHammerBeforeHook = false;
 		m_TripleflyNextHookTick = -1;
 		m_TripleflyHookStartTick = -1;
 		m_TripleflyHookEndTick = -1;
@@ -326,7 +328,7 @@ void CControls::SetAutoTriplefly(bool Enable)
 
 bool CControls::TripleflyHookActive() const
 {
-	if(!m_AutoTripleflyBindActive || !m_TripleflyFlightActive ||
+	if(!m_AutoTripleflyBindActive || !m_TripleflyFlightActive || m_TripleflyHammerBeforeHook ||
 		m_TripleflyHookStartTick < 0 || m_TripleflyHookEndTick <= m_TripleflyHookStartTick)
 		return false;
 
@@ -916,12 +918,17 @@ void CControls::SendMacroFrame(int Index, EMacroFrameMode Mode)
 		if(RequestedDummy >= 0 && RequestedDummy != m_MacroPlaybackDummy)
 		{
 			m_MacroPlaybackDummy = RequestedDummy;
+			m_aMacroPlaybackConnectionUsed[RequestedDummy] = true;
 			g_Config.m_ClDummy = RequestedDummy;
 			RebaseMacroPlaybackCounters(RequestedDummy, Index - 1);
 			m_MacroPlaybackLastTick = Client()->GameTick(m_MacroPlaybackDummy);
 			m_MacroPracticeAccumulator = 0.0;
 		}
 	}
+
+	// Keep the visible cursor/camera and outgoing target on the recorded aim.
+	m_aMousePos[m_MacroPlaybackDummy] = vec2(Frame.m_Input.m_TargetX, Frame.m_Input.m_TargetY);
+	m_aMacroPlaybackConnectionUsed[m_MacroPlaybackDummy] = true;
 
 	// Do not restore saved coordinates, velocity, freeze, ammo or weapon state.
 	// SnapInput forwards only this frame's ordinary controls to the server.
@@ -1242,6 +1249,14 @@ void CControls::StopMacroPractice()
 	m_MacroPlaybackOwnsDummy = false;
 	m_MacroPlaybackOwnsPractice = false;
 	m_aRecordingMacroName[0] = '\0';
+	if(m_MacroPlaybackSavedMousePosValid)
+	{
+		for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
+			m_aMousePos[Dummy] = m_aMacroPlaybackSavedMousePos[Dummy];
+		g_Config.m_ClDummy = m_MacroPlaybackOriginalDummy;
+	}
+	m_MacroPlaybackSavedMousePosValid = false;
+	m_MacroPlaybackHistoryAvailable = false;
 	m_MacroPlaybackLive = false;
 	m_MacroPlaybackLastTick = -1;
 	m_MacroPlaybackSeekTargetIndex = -1;
@@ -1941,6 +1956,8 @@ bool CControls::StartMacroRecording(const char *pName)
 	if(!StartMacroPractice())
 		return false;
 
+	ImportMacroBinds();
+	m_MacroPlaybackHistoryAvailable = false;
 	str_copy(m_aRecordingMacroName, aRecordingName);
 	str_copy(m_aMacroMapName, "Неизвестная карта");
 	const char *pMapName = Client()->MapDownloadName();
@@ -1999,7 +2016,7 @@ bool CControls::StartMacroRecording(const char *pName)
 	return true;
 }
 
-void CControls::StopMacroRecording()
+void CControls::StopMacroRecording(bool RestorePlaybackView)
 {
 	const bool WasRecording = m_MacroRecording;
 	const bool WasPlaying = m_MacroPlaying;
@@ -2033,20 +2050,37 @@ void CControls::StopMacroRecording()
 
 	if(m_MacroPlaybackLive)
 	{
-		const int Dummy = m_MacroPlaybackDummy;
-		m_aInputData[Dummy].m_Direction = 0;
-		m_aInputData[Dummy].m_Jump = 0;
-		m_aInputData[Dummy].m_Hook = 0;
-		if(m_aInputData[Dummy].m_Fire & 1)
-			m_aInputData[Dummy].m_Fire++;
-		m_aInputData[Dummy].m_Fire &= INPUT_STATE_MASK;
-		if(m_aInputData[Dummy].m_NextWeapon & 1)
-			m_aInputData[Dummy].m_NextWeapon++;
-		if(m_aInputData[Dummy].m_PrevWeapon & 1)
-			m_aInputData[Dummy].m_PrevWeapon++;
-		m_aInputData[Dummy].m_WantedWeapon = 0;
-		m_aInputData[Dummy].m_NextWeapon &= INPUT_STATE_MASK;
-		m_aInputData[Dummy].m_PrevWeapon &= INPUT_STATE_MASK;
+		for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
+		{
+			if(!m_aMacroPlaybackConnectionUsed[Dummy] && Dummy != m_MacroPlaybackDummy)
+				continue;
+			m_aInputDirectionLeft[Dummy] = false;
+			m_aInputDirectionRight[Dummy] = false;
+			m_aInputData[Dummy].m_Direction = 0;
+			m_aInputData[Dummy].m_Jump = 0;
+			m_aInputData[Dummy].m_Hook = 0;
+			m_aManualHook[Dummy] = false;
+			m_aInputData[Dummy].m_Fire = m_aLastData[Dummy].m_Fire;
+			m_aInputData[Dummy].m_NextWeapon = m_aLastData[Dummy].m_NextWeapon;
+			m_aInputData[Dummy].m_PrevWeapon = m_aLastData[Dummy].m_PrevWeapon;
+			if(m_aInputData[Dummy].m_Fire & 1)
+				++m_aInputData[Dummy].m_Fire;
+			if(m_aInputData[Dummy].m_NextWeapon & 1)
+				++m_aInputData[Dummy].m_NextWeapon;
+			if(m_aInputData[Dummy].m_PrevWeapon & 1)
+				++m_aInputData[Dummy].m_PrevWeapon;
+			m_aInputData[Dummy].m_Fire &= INPUT_STATE_MASK;
+			m_aInputData[Dummy].m_NextWeapon &= INPUT_STATE_MASK;
+			m_aInputData[Dummy].m_PrevWeapon &= INPUT_STATE_MASK;
+			m_aInputData[Dummy].m_WantedWeapon = 0;
+		}
+	}
+	if(RestorePlaybackView && m_MacroPlaybackSavedMousePosValid)
+	{
+		for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
+			m_aMousePos[Dummy] = m_aMacroPlaybackSavedMousePos[Dummy];
+		g_Config.m_ClDummy = m_MacroPlaybackOriginalDummy;
+		m_MacroPlaybackSavedMousePosValid = false;
 	}
 
 	m_MacroPlaying = false;
@@ -2466,11 +2500,17 @@ bool CControls::PlayMacro(const char *pName)
 	if(m_MacroPracticeActive)
 		StopMacroPractice();
 
+	m_MacroPlaybackOriginalDummy = g_Config.m_ClDummy;
+	for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
+		m_aMacroPlaybackSavedMousePos[Dummy] = m_aMousePos[Dummy];
+	m_MacroPlaybackSavedMousePosValid = true;
+	m_MacroPlaybackHistoryAvailable = true;
 	g_Config.m_ClDummy = PlaybackDummy;
 	m_vMacroFrames = std::move(Frames);
 	m_MacroRecording = false;
 	m_MacroRecordingPaused = false;
 	m_MacroPlaybackLive = true;
+	m_MacroPlaybackHistoryAvailable = true;
 	m_MacroPlaybackStartPending = true;
 	m_MacroPlaybackManualDummyOverride = false;
 	m_MacroPlaybackRate = FasterPlaybackRate;
@@ -2489,6 +2529,7 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroPlaybackSeekTargetIndex = -1;
 	m_MacroPlaybackLastTick = Client()->GameTick(PlaybackDummy);
 	std::fill(std::begin(m_aMacroPlaybackConnectionUsed), std::end(m_aMacroPlaybackConnectionUsed), false);
+	m_aMacroPlaybackConnectionUsed[PlaybackDummy] = true;
 	std::fill(std::begin(m_aMacroPlaybackWeaponOverride), std::end(m_aMacroPlaybackWeaponOverride), -1);
 	std::fill(std::begin(m_aMacroPickupWeaponOverride), std::end(m_aMacroPickupWeaponOverride), -1);
 	std::fill(std::begin(m_aMacroLiveFireOffset), std::end(m_aMacroLiveFireOffset), 0);
@@ -3023,7 +3064,7 @@ bool CControls::RebuildMacroWorldToPosition(int Position)
 bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 {
 	(void)TeleportLive;
-	if((!m_MacroPracticeActive && !m_MacroPlaybackLive) || m_vMacroFrames.empty())
+	if((!m_MacroPracticeActive && !m_MacroPlaybackLive && !m_MacroPlaybackHistoryAvailable) || m_vMacroFrames.empty())
 		return false;
 
 	if(m_MacroRecording)
@@ -3042,10 +3083,13 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 			}
 			return true;
 		}
+		const bool ResumeRecordingAfterSeek = !m_MacroRecordingPaused;
 		m_MacroRecordingPaused = true;
 		if(!RebuildMacroWorldToPosition(TargetPosition))
 			return false;
 		m_vMacroFrames.resize(TargetPosition);
+		m_MacroRecordingPaused = !ResumeRecordingAfterSeek;
+		m_MacroPracticeLastTime = time_get();
 		m_MacroPlaybackIndex = (std::size_t)TargetPosition;
 		m_MacroDisplayedTick = TargetPosition;
 		if(ShowMessage)
@@ -3075,15 +3119,17 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 		return true;
 	}
 
-	if(m_MacroPlaybackLive)
+	if(m_MacroPlaybackLive || (m_MacroPlaybackHistoryAvailable && !m_MacroPracticeActive))
 	{
-		// The server cannot be rewound by a client. Switch to the isolated FP
-		// world and restore the exact saved tee state there instead.
+		// The server cannot be rewound by a client. Switch to FP practice and
+		// preserve whether playback was paused or running.
+		const bool WasPlaybackPaused = m_MacroPlaybackPaused;
 		const int RecordedConnection = MacroConnectionFromStoredClientId(m_vMacroFrames[Target].m_ClientId);
 		if(RecordedConnection >= 0)
 			g_Config.m_ClDummy = RecordedConnection;
 
-		StopMacroRecording();
+		if(m_MacroPlaybackLive)
+			StopMacroRecording(false);
 		if(!StartMacroPractice())
 			return false;
 		if(!RestoreMacroPracticeFrame(Target))
@@ -3094,7 +3140,7 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 		}
 		m_MacroPlaybackLive = false;
 		m_MacroPlaying = true;
-		m_MacroPlaybackPaused = true;
+		m_MacroPlaybackPaused = WasPlaybackPaused;
 		m_MacroPlaybackOwnsPractice = true;
 		m_MacroPlaybackIndex = (std::size_t)Target + 1;
 		m_MacroDisplayedTick = Target + 1;
@@ -3223,10 +3269,10 @@ void CControls::ApplyHookAutomation(int Dummy)
 		const int HookerTick = Client()->GameTick(!Dummy);
 		if(!m_TripleflyFlightActive && FlightSpeed >= 5.0f && !Collision()->IsOnGround(LocalPos, 14.0f))
 		{
-			// The player starts the flight manually. As soon as real movement
-			// begins, the dummy may hook the third tee; no extra Fire press or
-			// dummy hammer pulse is required to start the assist.
+			// Send one dummy hammer hit before the first third-tee hook.
 			m_TripleflyFlightActive = true;
+			m_TripleflyHammerBeforeHook = true;
+			GameClient()->m_DummyFire = 0;
 			m_TripleflyNextHookTick = HookerTick;
 			m_TripleflyHookStartTick = -1;
 			m_TripleflyHookEndTick = -1;
@@ -3235,6 +3281,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 		{
 			// A clear stop ends the hook cycle; the next flight starts fresh.
 			m_TripleflyFlightActive = false;
+			m_TripleflyHammerBeforeHook = false;
 			m_TripleflyNextHookTick = -1;
 			m_TripleflyHookStartTick = -1;
 			m_TripleflyHookEndTick = -1;
@@ -4388,8 +4435,6 @@ bool CControls::OnCursorMove(float x, float y, IInput::ECursorType CursorType)
 		if(Input()->GetActiveJoystick()->Absolute(&AbsoluteDirection.x, &AbsoluteDirection.y))
 		{
 			m_aMousePos[Dummy] = AbsoluteDirection * GetMaxMouseDistance();
-			if(m_MacroPlaybackLive || (m_MacroPracticeActive && m_MacroPlaying))
-				m_aMacroManualAimActive[Dummy] = true;
 			GameClient()->m_Controls.m_aMouseInputType[Dummy] = CControls::EMouseInputType::ABSOLUTE;
 		}
 		return true;
@@ -4419,8 +4464,6 @@ bool CControls::OnCursorMove(float x, float y, IInput::ECursorType CursorType)
 		Factor *= GameClient()->m_Camera.m_Zoom;
 
 	m_aMousePos[Dummy] += vec2(x, y) * Factor;
-	if(m_MacroPlaybackLive || (m_MacroPracticeActive && m_MacroPlaying))
-		m_aMacroManualAimActive[Dummy] = true;
 	GameClient()->m_Controls.m_aMouseInputType[Dummy] = CControls::EMouseInputType::RELATIVE;
 	ClampMousePos();
 	return true;
