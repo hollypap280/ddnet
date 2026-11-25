@@ -61,6 +61,21 @@ void CMenusSettingsControls::OnInterfacesInit(CGameClient *pClient)
 {
 	CComponentInterfaces::OnInterfacesInit(pClient);
 
+	static bool s_TripleflyBindMigrated = false;
+	if(!s_TripleflyBindMigrated)
+	{
+		for(int ModifierMask = 0; ModifierMask < KeyModifier::COMBINATION_COUNT; ++ModifierMask)
+		{
+			for(int Key = KEY_FIRST; Key < KEY_LAST; ++Key)
+			{
+				const CBindSlot Slot(Key, ModifierMask);
+				if(str_comp(pClient->m_Binds.Get(Slot), "+auto_triplefly") == 0)
+					pClient->m_Binds.Bind(Key, "toggle_auto_triplefly", false, ModifierMask);
+			}
+		}
+		s_TripleflyBindMigrated = true;
+	}
+
 	m_vBindOptions = {
 		{EBindOptionGroup::GAME, Localizable("Move left"), "+left"},
 		{EBindOptionGroup::GAME, Localizable("Move right"), "+right"},
@@ -84,24 +99,6 @@ void CMenusSettingsControls::OnInterfacesInit(CGameClient *pClient)
 		{EBindOptionGroup::GAME, Localizable("Laser"), "+weapon5"},
 		{EBindOptionGroup::GAME, Localizable("Next weapon"), "+nextweapon"},
 		{EBindOptionGroup::GAME, Localizable("Prev. weapon"), "+prevweapon"},
-		{EBindOptionGroup::MACRO, Localizable("Макрос: влево"), "+macro_left"},
-		{EBindOptionGroup::MACRO, Localizable("Макрос: вправо"), "+macro_right"},
-		{EBindOptionGroup::MACRO, Localizable("Макрос: прыжок"), "+macro_jump"},
-		{EBindOptionGroup::MACRO, Localizable("Макрос: хук"), "+macro_hook"},
-		{EBindOptionGroup::MACRO, Localizable("Макрос: огонь"), "+macro_fire"},
-		{EBindOptionGroup::MACRO, Localizable("Макрос: молот"), "+macro_weapon1"},
-		{EBindOptionGroup::MACRO, Localizable("Макрос: пистолет"), "+macro_weapon2"},
-		{EBindOptionGroup::MACRO, Localizable("Макрос: дробовик"), "+macro_weapon3"},
-		{EBindOptionGroup::MACRO, Localizable("Макрос: граната"), "+macro_weapon4"},
-		{EBindOptionGroup::MACRO, Localizable("Макрос: лазер"), "+macro_weapon5"},
-		{EBindOptionGroup::MACRO, Localizable("Макрос: следующее оружие"), "+macro_nextweapon"},
-		{EBindOptionGroup::MACRO, Localizable("Макрос: предыдущее оружие"), "+macro_prevweapon"},
-		{EBindOptionGroup::MACRO, Localizable("Начать запись макроса"), "macro_record"},
-		{EBindOptionGroup::MACRO, Localizable("Остановить макрос"), "macro_stop"},
-		{EBindOptionGroup::MACRO, Localizable("Запустить макрос"), "macro_play_first"},
-		{EBindOptionGroup::MACRO, Localizable("Пауза макроса"), "macro_pause"},
-		{EBindOptionGroup::MACRO, Localizable("Перемотать макрос назад"), "macro_rewind_step"},
-		{EBindOptionGroup::MACRO, Localizable("Перемотать макрос вперёд"), "macro_forward_step"},
 		{EBindOptionGroup::VOTING, Localizable("Vote yes"), "vote yes"},
 		{EBindOptionGroup::VOTING, Localizable("Vote no"), "vote no"},
 		{EBindOptionGroup::CHAT, Localizable("Chat"), "+show_chat; chat all"},
@@ -112,7 +109,7 @@ void CMenusSettingsControls::OnInterfacesInit(CGameClient *pClient)
 		{EBindOptionGroup::DUMMY, Localizable("Toggle dummy"), "toggle cl_dummy 0 1"},
 		{EBindOptionGroup::DUMMY, Localizable("Dummy copy"), "toggle cl_dummy_copy_moves 0 1"},
 		{EBindOptionGroup::DUMMY, Localizable("Hammerfly dummy"), "toggle cl_dummy_hammer 0 1"},
-		{EBindOptionGroup::DUMMY, Localizable("Тройной флай (удерживать)"), "+auto_triplefly"},
+		{EBindOptionGroup::DUMMY, Localizable("Тройной флай (вкл. / выкл.)"), "toggle_auto_triplefly"},
 		{EBindOptionGroup::PRACTICE, Localizable("Teleport to cursor"), "tp_to_cursor"},
 		{EBindOptionGroup::PRACTICE, Localizable("Teleport dummy to cursor"), "tp_dummy_to_cursor"},
 		{EBindOptionGroup::MISCELLANEOUS, Localizable("Emoticon"), "+emote"},
@@ -208,9 +205,6 @@ void CMenusSettingsControls::Render(CUIRect MainView)
 	RenderSettingsBindsBlock(EBindOptionGroup::GAME, &LeftColumn, Localize("Игровые функции"));
 
 	// Right column
-	RenderSettingsBlock(MeasureSettingsMacroHeight(), &RightColumn,
-		Localize("Настройки макроса"), nullptr, nullptr, std::bind_front(&CMenusSettingsControls::RenderSettingsMacro, this));
-	RenderSettingsBindsBlock(EBindOptionGroup::MACRO, &RightColumn, Localize("Бинды макроса"));
 	RenderSettingsBindsBlock(EBindOptionGroup::VOTING, &RightColumn, Localize("Voting"));
 	RenderSettingsBindsBlock(EBindOptionGroup::CHAT, &RightColumn, Localize("Chat"));
 	RenderSettingsBindsBlock(EBindOptionGroup::DUMMY, &RightColumn, Localize("Dummy"));
@@ -454,163 +448,6 @@ void CMenusSettingsControls::RenderSettingsBlock(float Height, CUIRect *pParentR
 			RenderContentFunction(SettingsBlock);
 		}
 	}
-}
-
-float CMenusSettingsControls::MeasureSettingsMacroHeight() const
-{
-	return 6.0f * (BUTTON_HEIGHT + BUTTON_SPACING);
-}
-
-void CMenusSettingsControls::RenderSettingsMacro(CUIRect View)
-{
-	CUIRect Button;
-	View.HSplitTop(BUTTON_HEIGHT, &Button, &View);
-	Ui()->DoScrollbarOption(&g_Config.m_ClMacroRewindStep, &g_Config.m_ClMacroRewindStep,
-		&Button, Localize("Сколько тиков перематывать"), 1, 18000);
-
-	View.HSplitTop(BUTTON_SPACING, nullptr, &View);
-	View.HSplitTop(BUTTON_HEIGHT, &Button, &View);
-	if(GameClient()->m_Menus.DoButton_Menu(&m_ImportMacroBindsButton,
-		Localize("Импортировать текущие игровые бинды"), 0, &Button))
-	{
-		GameClient()->m_Controls.ImportMacroBinds();
-	}
-
-	View.HSplitTop(BUTTON_SPACING, nullptr, &View);
-	View.HSplitTop(BUTTON_HEIGHT, &Button, &View);
-	Ui()->DoLabel(&Button, Localize("Вставь сюда: bind KEY \"команда\""), FONT_SIZE, TEXTALIGN_ML);
-
-	View.HSplitTop(BUTTON_SPACING, nullptr, &View);
-	CUIRect BindRow, BindInput, AddButton;
-	View.HSplitTop(BUTTON_HEIGHT, &BindRow, &View);
-	BindRow.VSplitRight(122.0f, &BindInput, &AddButton);
-	Ui()->DoEditBox(&m_MacroBindInput, &BindInput, FONT_SIZE);
-	if(GameClient()->m_Menus.DoButton_Menu(&m_AddMacroBindButton,
-		Localize("Добавить и разобрать"), 0, &AddButton))
-	{
-		AddMacroBindFromText();
-	}
-
-	View.HSplitTop(BUTTON_SPACING, nullptr, &View);
-	View.HSplitTop(BUTTON_HEIGHT, &Button, &View);
-	Ui()->DoLabel(&Button, m_aMacroBindStatus, FONT_SIZE, TEXTALIGN_ML);
-
-	View.HSplitTop(BUTTON_SPACING, nullptr, &View);
-	View.HSplitTop(BUTTON_HEIGHT, &Button, &View);
-	Ui()->DoLabel(&Button, Localize("Новые бинды можно удалить ниже в списке пользовательских биндов."), FONT_SIZE, TEXTALIGN_ML);
-}
-
-bool CMenusSettingsControls::AddMacroBindFromText()
-{
-	std::string Line = m_MacroBindInput.GetString();
-	auto Trim = [](std::string &Value) {
-		const size_t First = Value.find_first_not_of(" \t\r\n");
-		if(First == std::string::npos)
-		{
-			Value.clear();
-			return;
-		}
-		const size_t Last = Value.find_last_not_of(" \t\r\n");
-		Value = Value.substr(First, Last - First + 1);
-	};
-	Trim(Line);
-	if(Line.empty())
-	{
-		str_copy(m_aMacroBindStatus, "Вставь строку bind KEY \"команда\".");
-		return false;
-	}
-
-	std::string LowerLine = Line;
-	std::transform(LowerLine.begin(), LowerLine.end(), LowerLine.begin(), [](unsigned char Ch) {
-		return (char)std::tolower(Ch);
-	});
-	if(LowerLine.rfind("bind ", 0) == 0)
-		Line = Line.substr(5);
-
-	const size_t Separator = Line.find_first_of(" \t");
-	if(Separator == std::string::npos)
-	{
-		str_copy(m_aMacroBindStatus, "Не вижу команду после названия клавиши.");
-		return false;
-	}
-
-	std::string KeySpec = Line.substr(0, Separator);
-	std::string Command = Line.substr(Separator + 1);
-	Trim(Command);
-	if(Command.size() >= 2 && Command.front() == '"' && Command.back() == '"')
-		Command = Command.substr(1, Command.size() - 2);
-	if(Command.empty())
-	{
-		str_copy(m_aMacroBindStatus, "Команда бинда пустая.");
-		return false;
-	}
-
-	int ModifierMask = KeyModifier::NONE;
-	size_t Plus = KeySpec.find('+');
-	while(Plus != std::string::npos)
-	{
-		std::string Modifier = KeySpec.substr(0, Plus);
-		std::transform(Modifier.begin(), Modifier.end(), Modifier.begin(), [](unsigned char Ch) {
-			return (char)std::tolower(Ch);
-		});
-		if(Modifier == "shift")
-			ModifierMask |= 1 << KeyModifier::SHIFT;
-		else if(Modifier == "ctrl")
-			ModifierMask |= 1 << KeyModifier::CTRL;
-		else if(Modifier == "alt")
-			ModifierMask |= 1 << KeyModifier::ALT;
-		else if(Modifier == "gui")
-			ModifierMask |= 1 << KeyModifier::GUI;
-		else
-		{
-			str_copy(m_aMacroBindStatus, "Неизвестный модификатор. Используй ctrl/alt/shift/gui+KEY.");
-			return false;
-		}
-		KeySpec.erase(0, Plus + 1);
-		Plus = KeySpec.find('+');
-	}
-
-	const int KeyId = Input()->FindKeyByName(KeySpec.c_str());
-	if(KeyId == KEY_UNKNOWN || KeyId == KEY_ESCAPE)
-	{
-		str_copy(m_aMacroBindStatus, "Не удалось распознать клавишу. Проверь её название.");
-		return false;
-	}
-
-	GameClient()->m_Binds.Bind(KeyId, Command.c_str(), false, ModifierMask);
-	GameClient()->m_Controls.ImportMacroBinds();
-
-	std::string LowerCommand = Command;
-	std::transform(LowerCommand.begin(), LowerCommand.end(), LowerCommand.begin(), [](unsigned char Ch) {
-		return (char)std::tolower(Ch);
-	});
-	const bool Compound = LowerCommand.find(';') != std::string::npos;
-	const bool HasFire = LowerCommand.find("+fire") != std::string::npos;
-	const bool HasJump = LowerCommand.find("+jump") != std::string::npos;
-	const bool HasHook = LowerCommand.find("+hook") != std::string::npos;
-	const bool HasMovement = LowerCommand.find("+left") != std::string::npos ||
-		LowerCommand.find("+right") != std::string::npos;
-	const bool LooksLikeFlight = (HasFire && (HasJump || HasHook)) ||
-		(HasJump && HasHook && HasMovement);
-	const bool HasSupportedAction = HasMovement || HasJump || HasHook || HasFire ||
-		LowerCommand.find("+weapon") != std::string::npos ||
-		LowerCommand.find("+nextweapon") != std::string::npos ||
-		LowerCommand.find("+prevweapon") != std::string::npos;
-	const char *pKind = "Пользовательский бинд добавлен. Неизвестные команды сохранены, но их действие в FP нельзя определить автоматически.";
-	if(LowerCommand.find("fly") != std::string::npos ||
-		LowerCommand.find("dummy_hammer") != std::string::npos ||
-		LowerCommand.find("dummy_copy_moves") != std::string::npos || LooksLikeFlight)
-		pKind = "Похоже на флай: распознаны связанные действия огня/прыжка/хука. Поддерживаемые команды подключены к FP.";
-	else if(HasSupportedAction)
-		pKind = "Распознаны игровые действия. Поддерживаемые кнопки подключены к FP-макросу.";
-	else if(LowerCommand.find("say /") != std::string::npos || LowerCommand.find("chat ") != std::string::npos)
-		pKind = "Серверная/чат-команда сохранена как бинд; её эффект в FP отдельно не симулируется.";
-
-	str_format(m_aMacroBindStatus, sizeof(m_aMacroBindStatus), "%s%s",
-		pKind, Compound ? " (составной бинд)." : "");
-	GameClient()->Echo(m_aMacroBindStatus);
-	m_MacroBindInput.Clear();
-	return true;
 }
 
 void CMenusSettingsControls::RenderSettingsBindsBlock(EBindOptionGroup Group, CUIRect *pParentRect, const char *pTitle)

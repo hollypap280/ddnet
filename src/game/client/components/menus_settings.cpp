@@ -526,6 +526,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	static CButtonContainer s_MacroLoop;
 	static CLineInputBuffered<512> s_MacroBindInput;
 	static CButtonContainer s_AddMacroBindButton;
+	static CButtonContainer s_ImportMacroBindsButton;
 	static std::vector<CBindSlot> s_vAddedMacroBindSlots;
 	static std::vector<CButtonContainer> s_vRemoveMacroBindButtons;
 	static char s_aMacroBindStatus[192] = "Вставь bind KEY \"команда\" и нажми «Добавить».";
@@ -839,6 +840,14 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 				12.0f, TEXTALIGN_ML);
 
 		AddSection("БИНДЫ ДЛЯ МАКРОСА");
+		CUIRect ImportBindsRow;
+		if(AddSettingRow(28.0f, ImportBindsRow) &&
+			DoButton_Menu(&s_ImportMacroBindsButton, Localize("Импортировать текущие игровые бинды"), 0, &ImportBindsRow))
+		{
+			GameClient()->m_Controls.ImportMacroBinds();
+			str_copy(s_aMacroBindStatus, "Текущие игровые бинды проверены и импортированы для FP.");
+		}
+
 		CUIRect BindHint;
 		if(AddSettingRow(24.0f, BindHint))
 			Ui()->DoLabel(&BindHint, Localize("Вставь строку вида bind KEY \"команда\". Поддерживаемые игровые команды автоматически подключаются к FP-макросу."), 11.0f, TEXTALIGN_ML);
@@ -860,7 +869,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 					Value = Value.substr(First, Last - First + 1);
 				};
 				Trim(Line);
-				if(Line.rfind("bind ", 0) == 0 || Line.rfind("BIND ", 0) == 0)
+				if(Line.size() >= 5 && str_comp_nocase(Line.substr(0, 5).c_str(), "bind ") == 0)
 					Line = Line.substr(5);
 				const size_t Separator = Line.find_first_of(" \t");
 				if(Separator == std::string::npos)
@@ -868,6 +877,8 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 				else
 				{
 					std::string KeySpec = Line.substr(0, Separator);
+					if(KeySpec.size() >= 2 && KeySpec.front() == '\"' && KeySpec.back() == '\"')
+						KeySpec = KeySpec.substr(1, KeySpec.size() - 2);
 					std::string Command = Line.substr(Separator + 1);
 					Trim(Command);
 					if(Command.size() >= 2 && Command.front() == '"' && Command.back() == '"')
@@ -989,9 +1000,9 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 			{
 				const CBindSlot Candidate(Key, ModifierMask);
 				const char *pCommand = GameClient()->m_Binds.Get(Candidate);
-				if(str_comp(pCommand, "toggle cl_auto_triplefly 0 1") == 0 ||
-					str_comp(pCommand, "toggle_auto_triplefly") == 0)
-					GameClient()->m_Binds.Bind(Key, "+auto_triplefly", false, ModifierMask);
+				if(str_comp(pCommand, "+auto_triplefly") == 0 ||
+					str_comp(pCommand, "toggle cl_auto_triplefly 0 1") == 0)
+					GameClient()->m_Binds.Bind(Key, "toggle_auto_triplefly", false, ModifierMask);
 			}
 		}
 		s_TripleflyBindsMigrated = true;
@@ -1032,7 +1043,7 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 		{"Выбрать лазер", "+weapon5"},
 	};
 	static const SHotkey s_aGameHotkeys[] = {
-		{"Тройной флай (удерживать)", "+auto_triplefly"},
+		{"Тройной флай (вкл. / выкл.)", "toggle_auto_triplefly"},
 		{"Автохук", "toggle cl_auto_hook 0 1"},
 		{"Защита от фриза", "toggle cl_auto_avoid 0 1"},
 		{"Точная наводка на край", "toggle cl_auto_edge 0 1"},
@@ -1108,7 +1119,7 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 			}
 		};
 		RenderNumber("Сколько тиков отматывать назад", &s_MacroRewindStep, &g_Config.m_ClMacroRewindStep, 1, 18000);
-		RenderNumber("Начать воспроизведение с тика", &s_MacroGotoTick, &g_Config.m_ClMacroGotoTick, 1, 18000);
+		RenderNumber("Перейти к тику (запись или макрос)", &s_MacroGotoTick, &g_Config.m_ClMacroGotoTick, 1, 18000);
 		RenderNumber("Остановить на тике (0 — выкл.)", &s_MacroStopTick, &g_Config.m_ClMacroStopTick, 0, 18000);
 		MainView.HSplitTop(24.0f, nullptr, &MainView);
 		Ui()->DoLabel(&MainView, Localize("Перемотка работает во время записи и воспроизведения. Стартовый тик применяется при запуске выбранного макроса."), 11.0f, TEXTALIGN_ML);
