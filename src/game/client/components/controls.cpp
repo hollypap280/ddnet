@@ -206,13 +206,7 @@ void CControls::ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData)
 
 	const int Stroke = pResult->GetInteger(0);
 	const int Dummy = pSelf->m_MacroPlaybackLive ? pSelf->m_MacroPlaybackDummy : g_Config.m_ClDummy;
-	if(pState->m_IsFireAction && Stroke && pSelf->m_AutoTripleflyBindActive &&
-		!pSelf->m_MacroPracticeActive && !pSelf->m_MacroPlaybackLive)
-	{
-		pSelf->m_TripleflyHammerPending = true;
-		pSelf->m_TripleflyHookStartTick = -1;
-		pSelf->m_TripleflyHookEndTick = -1;
-	}
+
 	if(pSelf->m_MacroPracticeActive && pState->m_IsFireAction)
 	{
 		// Keep the normal DDNet press/release counter, but in a private buffer.
@@ -280,20 +274,22 @@ void CControls::ConAutoTriplefly(IConsole::IResult *pResult, void *pUserData)
 		pSelf->m_AutoTripleflyBindActive = true;
 		g_Config.m_ClAutoTriplefly = 1;
 		g_Config.m_ClDummyCopyMoves = 1;
+		// Keep normal copy movement enabled, but disable the regular hammer
+		// timer: Triplefly schedules one controlled hammer pulse per flight cycle.
 		g_Config.m_ClDummyControl = 1;
 		g_Config.m_ClDummyHook = 0;
 		g_Config.m_ClDummyFire = 0;
 		g_Config.m_ClDummyJump = 0;
-		// Triplefly sends individual hammer pulses instead of enabling the
-		// regular repeating cl_dummy_hammer timer.
 		g_Config.m_ClDummyHammer = 0;
 		pSelf->m_TripleflyHammerPending = false;
+		pSelf->m_TripleflyFlightActive = false;
+		pSelf->m_TripleflyNextHammerTick = -1;
 		pSelf->m_TripleflyHookStartTick = -1;
 		pSelf->m_TripleflyHookEndTick = -1;
-		pSelf->m_TripleflyHookDuration = 4;
+		pSelf->m_TripleflyHookDuration = 3;
 		std::fill(std::begin(pSelf->m_aTripleflyTargetFound), std::end(pSelf->m_aTripleflyTargetFound), false);
 		std::fill(std::begin(pSelf->m_aTripleflyTargetClientId), std::end(pSelf->m_aTripleflyTargetClientId), -1);
-		pSelf->GameClient()->Echo("Triplefly включён. Нажимай Fire для удара, дамми подхватит третьего тии между ударами.");
+		pSelf->GameClient()->Echo("Triplefly включён: начни флайт, дамми сам будет чередовать удар и короткий хук третьего тии.");
 	}
 	else
 	{
@@ -306,6 +302,8 @@ void CControls::ConAutoTriplefly(IConsole::IResult *pResult, void *pUserData)
 		g_Config.m_ClDummyJump = pSelf->m_AutoTripleflyPreviousDummyJump;
 		g_Config.m_ClDummyHammer = pSelf->m_AutoTripleflyPreviousDummyHammer;
 		pSelf->m_TripleflyHammerPending = false;
+		pSelf->m_TripleflyFlightActive = false;
+		pSelf->m_TripleflyNextHammerTick = -1;
 		pSelf->m_TripleflyHookStartTick = -1;
 		pSelf->m_TripleflyHookEndTick = -1;
 		std::fill(std::begin(pSelf->m_aTripleflyTargetFound), std::end(pSelf->m_aTripleflyTargetFound), false);
@@ -323,10 +321,11 @@ void CControls::OnTripleflyHammerSent()
 
 	const int Dummy = 1 - g_Config.m_ClDummy;
 	const int CurrentTick = Client()->GameTick(Dummy);
-	const int HoldTicks = std::clamp(m_TripleflyHookDuration, 3, 6);
+	const int HoldTicks = std::clamp(m_TripleflyHookDuration, 1, 5);
 	m_TripleflyHammerPending = false;
 	m_TripleflyHookStartTick = CurrentTick + 1;
 	m_TripleflyHookEndTick = m_TripleflyHookStartTick + HoldTicks;
+	m_TripleflyNextHammerTick = CurrentTick + 18;
 }
 
 bool CControls::TripleflyHookActive() const
@@ -2668,29 +2667,131 @@ void CControls::ApplyHookAutomation(int Dummy)
 
 	if(m_AutoTripleflyBindActive)
 	{
-		// Triplefly's third tee is hooked in the direction the driver aims.
-		// Do not choose the nearest teammate: that changes the direction
-		// unexpectedly and makes sideways/upward flight impossible to steer.
+		m_aTripleflyTargetFound[Dummy] = false;
+		m_aTripleflyTargetClientId[Dummy] = -1;
+		m_aTripleflyAimX[Dummy] = 1;
+		m_aTripleflyAimY[Dummy] = 0;
+
+		const float SpeedX = std::abs(LocalVel.x);
+		const float SpeedY = std::abs(LocalVel.y);
+		const float FlightSpeed = length(LocalVel);
+
+		// The hook window is shorter when the driver is moving sideways or
+		// downward, and longer while climbing so the third tee is not dropped.
+		if(LocalVel.y < -std::max(2.0f, SpeedX * 0.65f))
+			m_TripleflyHookDuration = 5; // upward
+		else if(LocalVel.y > std::max(2.0f, SpeedX * 0.65f))
+			m_TripleflyHookDuration = 1; // downward
+		else if(SpeedX > std::max(2.0f, SpeedY * 1.25f))
+			m_TripleflyHookDuration = 2; // sideways
+		else
+			m_TripleflyHookDuration = 3; // diagonal / transitioning
+
+		const int HookerTick = Client()->GameTick(!Dummy);
+		if(!m_TripleflyFlightActive && FlightSpeed >= 3.0f)
+		{
+			// First movement after enabling Triplefly starts the first cycle.
+			m_TripleflyFlightActive = true;
+			m_TripleflyHammerPending = true;
+			m_TripleflyNextHammerTick = -1;
+			m_TripleflyHookStartTick = -1;
+			m_TripleflyHookEndTick = -1;
+		}
+		else if(m_TripleflyFlightActive && FlightSpeed <= 1.5f)
+		{
+			// A clear stop ends the cycle; the next flight will start fresh.
+			m_TripleflyFlightActive = false;
+			m_TripleflyHammerPending = false;
+			m_TripleflyNextHammerTick = -1;
+			m_TripleflyHookStartTick = -1;
+			m_TripleflyHookEndTick = -1;
+		}
+		else if(m_TripleflyFlightActive && !m_TripleflyHammerPending &&
+			m_TripleflyNextHammerTick >= 0 && HookerTick >= m_TripleflyNextHammerTick)
+		{
+			m_TripleflyHammerPending = true;
+		}
+
 		const bool HookerAvailable = DummyId >= 0 && DummyId < MAX_CLIENTS &&
 			(PracticeActive || GameClient()->m_Snap.m_aCharacters[DummyId].m_Active);
+		const CCharacter *pPracticeHooker = PracticeActive ? m_MacroPracticeWorld.GetCharacterById(DummyId) : nullptr;
+		if(!HookerAvailable || (PracticeActive && !pPracticeHooker))
+		{
+			m_aAutoHookActive[Dummy] = false;
+			m_aAutoHookFireActive[Dummy] = false;
+			m_aAutoAvoidActive[Dummy] = false;
+			return;
+		}
 
-		m_aTripleflyTargetFound[Dummy] = HookerAvailable;
-		m_aTripleflyTargetClientId[Dummy] = -1;
-		m_aTripleflyAimX[Dummy] = m_aInputData[Dummy].m_TargetX;
-		m_aTripleflyAimY[Dummy] = m_aInputData[Dummy].m_TargetY;
-		if(m_aTripleflyAimX[Dummy] == 0 && m_aTripleflyAimY[Dummy] == 0)
-			m_aTripleflyAimX[Dummy] = 1;
+		const CCharacterCore &HookerCore = pPracticeHooker ? *pPracticeHooker->Core() :
+			GameClient()->m_aClients[DummyId].m_Predicted;
+		const vec2 HookerPos = HookerCore.m_Pos;
+		const vec2 HookerVel = HookerCore.m_Vel;
+		const float Range = std::clamp((float)g_Config.m_ClAutoHookRange, 64.0f, 360.0f);
+		const float RangeSquared = Range * Range;
+		float BestScore = RangeSquared * 2.0f;
+		int BestClientId = -1;
+		vec2 BestAim(1.0f, 0.0f);
 
-		// A short hook window after each dummy hammer hit keeps the third tee
-		// attached without pulling it into the flying pair for too long.
-		m_aTripleflyRecommendedHookTicks[Dummy] = 4;
-		m_TripleflyHookDuration = 4;
+		for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
+		{
+			// The third tee is separate from both locally controlled tees.
+			if(ClientId == LocalId || ClientId == DummyId ||
+				!GameClient()->m_Snap.m_aCharacters[ClientId].m_Active)
+				continue;
+			if(GameClient()->IsOtherTeam(ClientId) || GameClient()->m_aClients[ClientId].m_Solo ||
+				GameClient()->m_aClients[ClientId].m_HookHitDisabled)
+				continue;
+
+			const CCharacter *pPracticeTarget = PracticeActive ? m_MacroPracticeWorld.GetCharacterById(ClientId) : nullptr;
+			if(PracticeActive && !pPracticeTarget)
+				continue;
+
+			const CCharacterCore &TargetCore = pPracticeTarget ? *pPracticeTarget->Core() :
+				GameClient()->m_aClients[ClientId].m_Predicted;
+			const vec2 TargetPos = TargetCore.m_Pos;
+			const vec2 Delta = TargetPos - HookerPos;
+			const float DistanceSquared = dot(Delta, Delta);
+			if(DistanceSquared < 1.0f || DistanceSquared > RangeSquared)
+				continue;
+
+			vec2 CollisionPos;
+			vec2 BeforeCollision;
+			if(Collision()->IntersectLineTeleHook(HookerPos, TargetPos, &CollisionPos, &BeforeCollision) != 0)
+				continue;
+
+			float Score = DistanceSquared;
+			if(FlightSpeed > 2.0f)
+			{
+				const float AlongFlight = dot(normalize(Delta), normalize(LocalVel));
+				Score *= 1.0f - 0.20f * AlongFlight;
+			}
+			if(ClientId == m_aTripleflyTargetClientId[Dummy])
+				Score *= 0.85f;
+			if(Score >= BestScore)
+				continue;
+
+			const float HookSpeed = std::max(1.0f, (float)HookerCore.m_Tuning.m_HookFireSpeed);
+			const float FlightTicks = std::clamp(std::sqrt(DistanceSquared) / HookSpeed, 1.0f, 6.0f);
+			vec2 Lead = (TargetCore.m_Vel - HookerVel) * FlightTicks;
+			const float LeadLength = length(Lead);
+			if(LeadLength > 96.0f)
+				Lead *= 96.0f / LeadLength;
+
+			BestScore = Score;
+			BestClientId = ClientId;
+			BestAim = Delta + Lead;
+		}
+
+		m_aTripleflyTargetFound[Dummy] = BestClientId >= 0;
+		m_aTripleflyTargetClientId[Dummy] = BestClientId;
+		m_aTripleflyAimX[Dummy] = round_to_int(BestAim.x);
+		m_aTripleflyAimY[Dummy] = round_to_int(BestAim.y);
 		m_aAutoHookActive[Dummy] = false;
 		m_aAutoHookFireActive[Dummy] = false;
 		m_aAutoAvoidActive[Dummy] = false;
 		return;
 	}
-
 	bool FoundTarget = false;
 	vec2 BestTarget(0.0f, 0.0f);
 
