@@ -31,6 +31,7 @@
 #include <cctype>
 #include <cmath>
 #include <limits>
+#include <string>
 #include <utility>
 
 CControls::CControls()
