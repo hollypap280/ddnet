@@ -540,6 +540,7 @@ void CControls::ConMacroPracticeInput(IConsole::IResult *pResult, void *pUserDat
 		}
 		break;
 	}
+	case EMacroPracticeDummyAction::SHOW_HOOK_COLL:
 	case EMacroPracticeDummyAction::WEAPON_HAMMER:
 	case EMacroPracticeDummyAction::WEAPON_GUN:
 	case EMacroPracticeDummyAction::WEAPON_SHOTGUN:
