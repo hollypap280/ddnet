@@ -512,6 +512,10 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 {
 	static int s_MacroSubPage = 0;
 	static CButtonContainer s_MacroTab, s_SettingsTab;
+	static CButtonContainer s_RecordButton, s_PlayButton, s_ImportBindsButton;
+	static CButtonContainer s_aMacroButtons[8];
+	static char s_aSelectedMacro[64] = "";
+	static int s_ImportedBinds = -1;
 	CUIRect TabRow, MacroTab, TabGap, SettingsTab;
 	MainView.HSplitTop(28.0f, &TabRow, &MainView);
 	TabRow.VSplitLeft(TabRow.w * 0.5f - 2.0f, &MacroTab, &TabGap);
@@ -520,6 +524,101 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		s_MacroSubPage = 0;
 	if(DoButton_Menu(&s_SettingsTab, Localize("Настройки"), s_MacroSubPage == 1, &SettingsTab))
 		s_MacroSubPage = 1;
+
+	CControls &Controls = GameClient()->m_Controls;
+	CUIRect Row;
+	if(s_MacroSubPage == 0)
+	{
+		MainView.HSplitTop(8.0f, nullptr, &MainView);
+		MainView.HSplitTop(34.0f, &Row, &MainView);
+		if(Controls.MacroRecording())
+		{
+			if(DoButton_Menu(&s_RecordButton, Localize("Остановить и сохранить"), 0, &Row))
+			{
+				char aSavedName[64];
+				str_copy(aSavedName, Controls.MacroRecordingName());
+				Controls.StopMacroRecording();
+				str_copy(s_aSelectedMacro, aSavedName);
+			}
+		}
+		else if(Controls.MacroPlaying())
+		{
+			Ui()->DoLabel(&Row, Localize("Воспроизведение макроса..."), 14.0f, TEXTALIGN_MC);
+		}
+		else
+		{
+			if(DoButton_Menu(&s_RecordButton, Localize("Начать"), 0, &Row))
+				Controls.StartMacroRecording();
+		}
+
+		MainView.HSplitTop(24.0f, &Row, &MainView);
+		char aStatus[160];
+		if(Controls.MacroRecording())
+			str_format(aStatus, sizeof(aStatus), "Запись: %s  |  %d тиков",
+				Controls.MacroRecordingName(), Controls.MacroFrameCount());
+		else if(Controls.MacroPlaying())
+			str_format(aStatus, sizeof(aStatus), "Воспроизведение: тик %d / %d",
+				Controls.MacroPosition(), Controls.MacroFrameCount());
+		else
+			str_copy(aStatus, Localize("Один сохранённый кадр соответствует одному игровому тику."));
+		Ui()->DoLabel(&Row, aStatus, 13.0f, TEXTALIGN_ML);
+
+		MainView.HSplitTop(28.0f, &Row, &MainView);
+		Ui()->DoLabel(&Row, Localize("Сохранённые макросы"), 14.0f, TEXTALIGN_ML);
+		std::vector<CControls::SMacroInfo> vMacros;
+		Controls.GetMacroList(vMacros);
+		if(!vMacros.empty() && !s_aSelectedMacro[0])
+			str_copy(s_aSelectedMacro, vMacros.front().m_aName);
+
+		const int VisibleMacros = std::min((int)vMacros.size(), (int)std::size(s_aMacroButtons));
+		for(int i = 0; i < VisibleMacros; ++i)
+		{
+			MainView.HSplitTop(30.0f, &Row, &MainView);
+			char aLabel[160];
+			str_format(aLabel, sizeof(aLabel), "%s  |  %d тиков  |  %s",
+				vMacros[i].m_aName, vMacros[i].m_TickCount, vMacros[i].m_aMapName);
+			const bool Selected = str_comp(s_aSelectedMacro, vMacros[i].m_aName) == 0;
+			if(DoButton_Menu(&s_aMacroButtons[i], aLabel, Selected, &Row))
+				str_copy(s_aSelectedMacro, vMacros[i].m_aName);
+		}
+		if((int)vMacros.size() > VisibleMacros)
+		{
+			MainView.HSplitTop(20.0f, &Row, &MainView);
+			Ui()->DoLabel(&Row, Localize("Показаны первые 8 макросов."), 11.0f, TEXTALIGN_ML);
+		}
+
+		if(Controls.MacroPlaying())
+		{
+			MainView.HSplitBottom(34.0f, &MainView, &Row);
+			if(DoButton_Menu(&s_PlayButton, Localize("Остановить"), 0, &Row))
+				Controls.StopMacroRecording();
+		}
+		else if(!Controls.MacroRecording() && s_aSelectedMacro[0])
+		{
+			MainView.HSplitBottom(34.0f, &MainView, &Row);
+			if(DoButton_Menu(&s_PlayButton, Localize("Начать"), 0, &Row))
+				Controls.PlayMacro(s_aSelectedMacro);
+		}
+	}
+	else
+	{
+		MainView.HSplitTop(12.0f, nullptr, &MainView);
+		MainView.HSplitTop(36.0f, &Row, &MainView);
+		if(DoButton_Menu(&s_ImportBindsButton, Localize("Импортировать мои бинды"), 0, &Row))
+			s_ImportedBinds = Controls.ImportMacroBinds();
+
+		MainView.HSplitTop(32.0f, &Row, &MainView);
+		Ui()->DoLabel(&Row, Localize("Текущие клавиши движения, прыжка, хука, огня и выбора оружия будут работать в тренировочном мире."), 12.0f, TEXTALIGN_ML);
+		MainView.HSplitTop(28.0f, &Row, &MainView);
+		Ui()->DoLabel(&Row, Localize("Вне записи обычные игровые бинды продолжают работать как раньше."), 12.0f, TEXTALIGN_ML);
+		if(s_ImportedBinds >= 0)
+		{
+			MainView.HSplitTop(26.0f, &Row, &MainView);
+			char aMessage[96];
+			str_format(aMessage, sizeof(aMessage), "Перенесено команд: %d", s_ImportedBinds);
+			Ui()->DoLabel(&Row, aMessage, 13.0f, TEXTALIGN_ML);
+		}
+	}
 }
 
 void CMenus::RenderSettingsButtons(CUIRect MainView)

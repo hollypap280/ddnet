@@ -1056,7 +1056,121 @@ void CControls::GetMacroList(std::vector<SMacroInfo> &vMacros)
 
 bool CControls::StartMacroPractice()
 {
-	return false;
+	if(m_MacroPracticeActive)
+		return true;
+
+	if(Client()->State() != IClient::STATE_ONLINE ||
+		!GameClient()->m_Snap.m_pLocalCharacter ||
+		GameClient()->m_Snap.m_SpecInfo.m_Active ||
+		!GameClient()->Map())
+	{
+		GameClient()->Echo("Для записи макроса нужно находиться в игре на карте.");
+		return false;
+	}
+
+	const int Dummy = std::clamp(g_Config.m_ClDummy, 0, NUM_DUMMIES - 1);
+	const int LocalId = GameClient()->m_aLocalIds[Dummy];
+	if(LocalId < 0 || LocalId >= MAX_CLIENTS)
+	{
+		GameClient()->Echo("Не найден активный персонаж для тренировочного мира.");
+		return false;
+	}
+
+	// Build an isolated copy of the current predicted world. The server-side
+	// tee stays at the original place and receives neutral input while recording.
+	m_MacroPracticeWorld.CopyWorld(&GameClient()->m_PredictedWorld);
+	m_MacroPracticeWorld.m_pParent = nullptr;
+	m_MacroPracticeWorld.m_pChild = nullptr;
+	m_MacroPracticeLocalId = LocalId;
+	m_MacroPracticeWorld.m_LocalClientId = LocalId;
+	m_MacroPracticeWorld.m_GameTick = Client()->PredGameTick(Dummy);
+
+	CCharacter *pCharacter = m_MacroPracticeWorld.GetCharacterById(LocalId);
+	if(!pCharacter)
+	{
+		m_MacroPracticeWorld.Clear();
+		m_MacroPracticeLocalId = -1;
+		GameClient()->Echo("Не удалось скопировать персонажа в тренировочный мир.");
+		return false;
+	}
+
+	pCharacter->m_IsLocal = true;
+	pCharacter->m_IsMacroPracticeStatic = false;
+	m_MacroPracticeActive = true;
+	m_MacroPracticeWaiting = false;
+	m_MacroPracticeAccumulator = 0.0;
+	m_MacroPracticeLastServerTick = Client()->GameTick(Dummy);
+	m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
+	m_MacroPracticeStartTick = m_MacroPracticeTick;
+	m_MacroPracticeStartLocalId = LocalId;
+	m_MacroPracticeBaselineValid = false;
+	std::fill(std::begin(m_aMacroPracticeSnapshotInitialized), std::end(m_aMacroPracticeSnapshotInitialized), false);
+	std::fill(std::begin(m_aMacroPracticeStartSnapshotInitialized), std::end(m_aMacroPracticeStartSnapshotInitialized), false);
+
+	str_copy(m_aMacroMapName, GameClient()->Map()->BaseName());
+	if(!m_aMacroMapName[0])
+		str_copy(m_aMacroMapName, "Неизвестная карта");
+
+	// Copy the dummy and the other visible tees into the same private world.
+	// They receive no copied movement input, but can be hooked and hit there.
+	PopulateMacroPracticeWorld();
+	pCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId);
+	if(!pCharacter)
+	{
+		StopMacroPractice();
+		GameClient()->Echo("Не удалось подготовить тренировочного персонажа.");
+		return false;
+	}
+
+	pCharacter->Core()->Write(&m_MacroPracticeStartCore);
+	m_MacroPracticeStartWeapon = pCharacter->GetActiveWeapon();
+	m_MacroPracticeStartFreezeTime = pCharacter->m_FreezeTime;
+	m_MacroPracticeStartFrozenLastTick = pCharacter->m_FrozenLastTick;
+
+	// Keep a full starting snapshot for deterministic rewind within this take.
+	m_MacroPracticeStartWorld.CopyWorld(&m_MacroPracticeWorld);
+	m_MacroPracticeWorld.m_pParent = nullptr;
+	m_MacroPracticeWorld.m_pChild = nullptr;
+	m_MacroPracticeStartWorld.m_pParent = nullptr;
+	m_MacroPracticeStartWorld.m_pChild = nullptr;
+	std::copy(std::begin(m_aMacroPracticeSnapshotInitialized),
+		std::end(m_aMacroPracticeSnapshotInitialized),
+		std::begin(m_aMacroPracticeStartSnapshotInitialized));
+	m_MacroPracticeStartLocalId = m_MacroPracticeLocalId;
+	m_MacroPracticeBaselineValid = true;
+	str_copy(m_aMacroPracticeBaselineName, m_aMacroMapName);
+
+	m_MacroPracticeInput = {};
+	m_MacroPracticeInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+	m_MacroPracticeInput.m_TargetX = 1;
+	m_MacroPracticeDummyInput = {};
+	m_MacroPracticeDummyInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+	m_MacroPracticeDummyInput.m_TargetX = 1;
+	m_MacroPracticeDummyEnabled = false;
+	m_MacroPracticeDummyLeft = false;
+	m_MacroPracticeDummyRight = false;
+	m_MacroPracticePendingFireTransitions = 0;
+	m_MacroPracticePendingNextWeaponTransitions = 0;
+	m_MacroPracticePendingPrevWeaponTransitions = 0;
+	m_MacroPracticePendingWantedWeapon = 0;
+	m_MacroPracticePendingJump = false;
+	m_MacroPracticePendingHook = false;
+	m_MacroPracticePendingDirectionLeft = false;
+	m_MacroPracticePendingDirectionRight = false;
+	m_MacroPracticeDirectionLeft = false;
+	m_MacroPracticeDirectionRight = false;
+	m_MacroPracticeFireCounter = 0;
+	m_MacroPracticeFirePressed = false;
+	m_MacroPracticeNextWeaponPressed = false;
+	m_MacroPracticePrevWeaponPressed = false;
+	std::fill(std::begin(m_aMacroManualDirectionActive), std::end(m_aMacroManualDirectionActive), false);
+	std::fill(std::begin(m_aMacroManualJumpActive), std::end(m_aMacroManualJumpActive), false);
+	std::fill(std::begin(m_aMacroManualHookActive), std::end(m_aMacroManualHookActive), false);
+	std::fill(std::begin(m_aMacroManualAimActive), std::end(m_aMacroManualAimActive), false);
+
+	UpdateMacroPracticeGhost(pCharacter);
+	GameClient()->Echo("Тренировочный мир готов. Обычный персонаж оставлен на месте.");
+	return true;
 }
 
 void CControls::ResetMacroPracticeCharacter()
@@ -1804,8 +1918,58 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 
 bool CControls::StartMacroRecording(const char *pName)
 {
-	(void)pName;
-	return false;
+	if(m_MacroRecording || m_MacroPlaying || m_MacroPlaybackLive)
+	{
+		GameClient()->Echo("Сначала останови текущее воспроизведение или запись.");
+		return false;
+	}
+
+	if(!StartMacroPractice())
+		return false;
+
+	char aName[64];
+	if(pName && pName[0])
+		str_copy(aName, pName);
+	else
+	{
+		std::vector<SMacroInfo> vMacros;
+		GetMacroList(vMacros);
+		for(int Suffix = 1; Suffix < 100000; ++Suffix)
+		{
+			str_format(aName, sizeof(aName), "Макрос_%03d", Suffix);
+			const bool Exists = std::any_of(vMacros.begin(), vMacros.end(), [&](const SMacroInfo &Info) {
+				return str_comp(Info.m_aName, aName) == 0;
+			});
+			if(!Exists)
+				break;
+		}
+	}
+
+	char aPath[128];
+	if(!MacroFilePath(aName, aPath, sizeof(aPath)))
+	{
+		GameClient()->Echo("Название макроса содержит недопустимые символы.");
+		StopMacroPractice();
+		return false;
+	}
+
+	m_vMacroFrames.clear();
+	str_copy(m_aRecordingMacroName, aName);
+	// Save exactly one frame per server simulation tick (20 ms at 50 TPS).
+	m_MacroRecordingRate = SERVER_TICK_SPEED;
+	m_MacroPlaybackRate = SERVER_TICK_SPEED;
+	m_MacroRecording = true;
+	m_MacroRecordingPaused = false;
+	m_MacroPlaying = false;
+	m_MacroPlaybackLive = false;
+	m_MacroPlaybackStartPending = false;
+	m_MacroPlaybackPaused = false;
+	m_MacroPlaybackIndex = 0;
+	m_MacroDisplayedTick = 0;
+	m_MacroPracticeAccumulator = 0.0;
+	m_MacroPracticeLastServerTick = Client()->GameTick(g_Config.m_ClDummy);
+	GameClient()->Echo(Localize("Запись началась: каждый игровой тик сохраняется отдельно."));
+	return true;
 }
 
 void CControls::StopMacroRecording(bool RestorePlaybackView)
@@ -1938,8 +2102,197 @@ bool CControls::SaveMacro(const char *pName)
 
 bool CControls::PlayMacro(const char *pName)
 {
-	(void)pName;
-	return false;
+	if(m_MacroRecording)
+	{
+		GameClient()->Echo("Сначала останови и сохрани запись.");
+		return false;
+	}
+	if(Client()->State() != IClient::STATE_ONLINE || !GameClient()->Map())
+	{
+		GameClient()->Echo("Для запуска макроса нужно находиться в игре.");
+		return false;
+	}
+	if(m_MacroPlaying || m_MacroPlaybackLive)
+		StopMacroRecording();
+	if(m_MacroPracticeActive)
+		StopMacroPractice();
+
+	char aName[64];
+	if(pName && pName[0])
+		str_copy(aName, pName);
+	else
+	{
+		std::vector<SMacroInfo> vMacros;
+		GetMacroList(vMacros);
+		if(vMacros.empty())
+		{
+			GameClient()->Echo("Нет сохранённых макросов.");
+			return false;
+		}
+		str_copy(aName, vMacros.front().m_aName);
+	}
+
+	char aPath[128];
+	if(!MacroFilePath(aName, aPath, sizeof(aPath)))
+		return false;
+	IOHANDLE File = Storage()->OpenFile(aPath, IOFLAG_READ, IStorage::TYPE_SAVE);
+	if(!File)
+	{
+		GameClient()->Echo("Файл макроса не найден.");
+		return false;
+	}
+
+	uint32_t Magic = 0;
+	uint32_t Version = 0;
+	uint32_t Count = 0;
+	uint32_t RecordedRate = SERVER_TICK_SPEED;
+	char aStoredMapName[64]{};
+	bool ReadOk = io_read(File, &Magic, sizeof(Magic)) == sizeof(Magic) &&
+		io_read(File, &Version, sizeof(Version)) == sizeof(Version) &&
+		io_read(File, &Count, sizeof(Count)) == sizeof(Count) &&
+		Magic == MACRO_FILE_MAGIC && Count > 0 && Count <= MACRO_MAX_FRAMES &&
+		(Version == 9 || Version == MACRO_FILE_VERSION);
+
+	if(ReadOk)
+		ReadOk = io_read(File, aStoredMapName, sizeof(aStoredMapName)) == sizeof(aStoredMapName);
+	if(ReadOk)
+		ReadOk = io_read(File, &RecordedRate, sizeof(RecordedRate)) == sizeof(RecordedRate);
+
+	std::vector<SMacroFrame> vLoadedFrames;
+	if(ReadOk)
+	{
+		vLoadedFrames.resize(Count);
+		if(Version == MACRO_FILE_VERSION)
+		{
+			ReadOk = io_read(File, vLoadedFrames.data(), Count * sizeof(SMacroFrame)) == Count * sizeof(SMacroFrame);
+		}
+		else
+		{
+			for(uint32_t i = 0; i < Count && ReadOk; ++i)
+			{
+				SMacroFrameV9 OldFrame{};
+				ReadOk = io_read(File, &OldFrame, sizeof(OldFrame)) == sizeof(OldFrame);
+				if(!ReadOk)
+					break;
+
+				SMacroFrame &Frame = vLoadedFrames[i];
+				Frame.m_Input = OldFrame.m_Input;
+				Frame.m_PreCore = OldFrame.m_PreCore;
+				Frame.m_Core = OldFrame.m_Core;
+				Frame.m_Character = OldFrame.m_Character;
+				Frame.m_PreWeapon = OldFrame.m_PreWeapon;
+				Frame.m_Weapon = OldFrame.m_Weapon;
+				Frame.m_AttackTick = OldFrame.m_AttackTick;
+				Frame.m_Tick = OldFrame.m_Tick;
+				Frame.m_HasCoordinates = OldFrame.m_HasCoordinates;
+				Frame.m_ClientId = OldFrame.m_ClientId;
+				Frame.m_PreFreezeTime = OldFrame.m_PreFreezeTime;
+				Frame.m_FreezeTime = OldFrame.m_FreezeTime;
+				Frame.m_PreFrozenLastTick = OldFrame.m_PreFrozenLastTick;
+				Frame.m_FrozenLastTick = OldFrame.m_FrozenLastTick;
+				Frame.m_PreAttackTick = OldFrame.m_PreAttackTick;
+				Frame.m_HasDDNetState = OldFrame.m_HasDDNetState;
+				Frame.m_PreDDNetCharacter = OldFrame.m_PreDDNetCharacter;
+				std::copy(std::begin(OldFrame.m_aPreWeaponAmmo), std::end(OldFrame.m_aPreWeaponAmmo), std::begin(Frame.m_aPreWeaponAmmo));
+				std::copy(std::begin(OldFrame.m_aWeaponAmmo), std::end(OldFrame.m_aWeaponAmmo), std::begin(Frame.m_aWeaponAmmo));
+			}
+		}
+	}
+	io_close(File);
+
+	if(!ReadOk || vLoadedFrames.empty())
+	{
+		GameClient()->Echo("Макрос повреждён или использует неподдерживаемый формат.");
+		return false;
+	}
+
+	const char *pCurrentMap = GameClient()->Map()->BaseName();
+	if(aStoredMapName[0] && pCurrentMap && str_comp(aStoredMapName, pCurrentMap) != 0)
+	{
+		char aMessage[160];
+		str_format(aMessage, sizeof(aMessage), "Макрос записан на карте «%s», сейчас открыта «%s».",
+			aStoredMapName, pCurrentMap);
+		GameClient()->Echo(aMessage);
+		return false;
+	}
+
+	for(const SMacroFrame &Frame : vLoadedFrames)
+	{
+		const int Connection = MacroConnectionFromStoredClientId(Frame.m_ClientId);
+		if(Connection == 1 && GameClient()->m_aLocalIds[1] < 0)
+		{
+			GameClient()->Echo("Этот макрос использует дамми. Подключи дамми перед запуском.");
+			return false;
+		}
+	}
+
+	m_vMacroFrames = std::move(vLoadedFrames);
+	str_copy(m_aMacroMapName, aStoredMapName[0] ? aStoredMapName : pCurrentMap);
+	m_MacroRecordingRate = std::clamp((int)RecordedRate, 1, (int)SERVER_TICK_SPEED);
+	m_MacroPlaybackRate = m_MacroRecordingRate;
+	m_MacroPlaybackDummy = std::clamp(g_Config.m_ClDummy, 0, NUM_DUMMIES - 1);
+	m_MacroPlaybackOriginalDummy = m_MacroPlaybackDummy;
+	for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
+		m_aMacroPlaybackSavedMousePos[Dummy] = m_aMousePos[Dummy];
+	m_MacroPlaybackSavedMousePosValid = true;
+
+	std::fill(std::begin(m_aMacroPlaybackConnectionUsed), std::end(m_aMacroPlaybackConnectionUsed), false);
+	std::fill(std::begin(m_aMacroPlaybackWeaponOverride), std::end(m_aMacroPlaybackWeaponOverride), -1);
+	std::fill(std::begin(m_aMacroPickupWeaponOverride), std::end(m_aMacroPickupWeaponOverride), -1);
+	std::fill(std::begin(m_aMacroLiveFireOffset), std::end(m_aMacroLiveFireOffset), 0);
+	std::fill(std::begin(m_aMacroLiveNextWeaponOffset), std::end(m_aMacroLiveNextWeaponOffset), 0);
+	std::fill(std::begin(m_aMacroLivePrevWeaponOffset), std::end(m_aMacroLivePrevWeaponOffset), 0);
+	std::fill(std::begin(m_aMacroManualDirectionActive), std::end(m_aMacroManualDirectionActive), false);
+	std::fill(std::begin(m_aMacroManualJumpActive), std::end(m_aMacroManualJumpActive), false);
+	std::fill(std::begin(m_aMacroManualHookActive), std::end(m_aMacroManualHookActive), false);
+	std::fill(std::begin(m_aMacroManualAimActive), std::end(m_aMacroManualAimActive), false);
+
+	const int Dummy = m_MacroPlaybackDummy;
+	m_aMacroPlaybackConnectionUsed[Dummy] = true;
+	m_aInputDirectionLeft[Dummy] = false;
+	m_aInputDirectionRight[Dummy] = false;
+	CNetObj_PlayerInput Neutral = m_aLastData[Dummy];
+	Neutral.m_Direction = 0;
+	Neutral.m_Jump = 0;
+	Neutral.m_Hook = 0;
+	Neutral.m_WantedWeapon = 0;
+	Neutral.m_PlayerFlags = PLAYERFLAG_PLAYING;
+	Neutral.m_TargetX = 1;
+	Neutral.m_TargetY = 0;
+	if(Neutral.m_Fire & 1) ++Neutral.m_Fire;
+	if(Neutral.m_NextWeapon & 1) ++Neutral.m_NextWeapon;
+	if(Neutral.m_PrevWeapon & 1) ++Neutral.m_PrevWeapon;
+	Neutral.m_Fire &= INPUT_STATE_MASK;
+	Neutral.m_NextWeapon &= INPUT_STATE_MASK;
+	Neutral.m_PrevWeapon &= INPUT_STATE_MASK;
+	m_aInputData[Dummy] = Neutral;
+
+	m_MacroPlaybackIndex = 0;
+	m_MacroStartFrameIndex = 0;
+	m_MacroDisplayedTick = 0;
+	m_MacroCurrentFrame = {};
+	m_MacroHasCurrentFrame = false;
+	m_MacroHoldCurrentFrame = false;
+	m_MacroPlaybackSeekTargetIndex = -1;
+	m_MacroStopAtTickArmed = false;
+	m_MacroPlaybackPaused = false;
+	m_MacroPlaybackManualDummyOverride = false;
+	m_MacroPlaybackOwnsDummy = false;
+	m_MacroPlaybackOwnsPractice = false;
+	m_MacroPlaybackHistoryAvailable = true;
+	m_MacroPlaybackStartPending = true;
+	m_MacroPlaybackLastTick = Client()->GameTick(Dummy);
+	m_MacroPracticeAccumulator = 0.0;
+	m_MacroPracticeWaiting = false;
+	m_MacroRecording = false;
+	m_MacroPlaying = true;
+	m_MacroPlaybackLive = true;
+	m_aRecordingMacroName[0] = '\0';
+
+	char aMessage[128];
+	str_format(aMessage, sizeof(aMessage), "Запущен макрос «%s»: %d тиков.", aName, (int)m_vMacroFrames.size());
+	GameClient()->Echo(aMessage);
+	return true;
 }
 bool CControls::DeleteMacro(const char *pName)
 {
@@ -3692,7 +4045,7 @@ void CControls::RenderMacroHud()
 			m_MacroPracticeTick, MacroPracticeRate());
 
 	const float BoxWidth = std::min(640.0f, ScreenWidth - 32.0f);
-	const float BoxHeight = 118.0f;
+	const float BoxHeight = 142.0f;
 	const float BoxX = (ScreenWidth - BoxWidth) * 0.5f;
 	const float BoxY = 76.0f;
 	Graphics()->DrawRect(BoxX, BoxY, BoxWidth, BoxHeight,
@@ -3763,6 +4116,27 @@ void CControls::RenderMacroHud()
 		}
 	}
 
+	char aTargetLabel[160];
+	str_format(aTargetLabel, sizeof(aTargetLabel), "ПРИЦЕЛ: X %d  Y %d",
+		pDisplayFrame ? pDisplayFrame->m_Input.m_TargetX : 0,
+		pDisplayFrame ? pDisplayFrame->m_Input.m_TargetY : 0);
+	if(pDisplayFrame && pDisplayFrame->m_Input.m_Hook)
+	{
+		if(pDisplayFrame->m_Core.m_HookedPlayer >= 0)
+		{
+			char aTemp[sizeof(aTargetLabel)];
+			str_copy(aTemp, aTargetLabel);
+			str_format(aTargetLabel, sizeof(aTargetLabel), "%s  |  ХУК: ТИИ %d",
+				aTemp, pDisplayFrame->m_Core.m_HookedPlayer);
+		}
+		else
+		{
+			char aTemp[sizeof(aTargetLabel)];
+			str_copy(aTemp, aTargetLabel);
+			str_format(aTargetLabel, sizeof(aTargetLabel), "%s  |  ХУК: ЛЕТИТ / ПОВЕРХНОСТЬ", aTemp);
+		}
+	}
+
 	const float FontSize = ScreenWidth < 700.0f ? 22.0f : 30.0f;
 	const float Width = TextRender()->TextWidth(FontSize, aTickLabel);
 	TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
@@ -3770,7 +4144,10 @@ void CControls::RenderMacroHud()
 	const float ActionFontSize = ScreenWidth < 700.0f ? 12.0f : 16.0f;
 	const float ActionWidth = TextRender()->TextWidth(ActionFontSize, aActionLabel);
 	TextRender()->TextColor(0.9f, 0.9f, 0.9f, 1.0f);
-	TextRender()->Text((ScreenWidth - ActionWidth) * 0.5f, BoxY + 80.0f, ActionFontSize, aActionLabel);
+	TextRender()->Text((ScreenWidth - ActionWidth) * 0.5f, BoxY + 78.0f, ActionFontSize, aActionLabel);
+	const float TargetFontSize = ScreenWidth < 700.0f ? 10.0f : 13.0f;
+	const float TargetWidth = TextRender()->TextWidth(TargetFontSize, aTargetLabel);
+	TextRender()->Text((ScreenWidth - TargetWidth) * 0.5f, BoxY + 108.0f, TargetFontSize, aTargetLabel);
 	TextRender()->TextColor(TextRender()->DefaultTextColor());
 	Graphics()->MapScreen(PreviousScreen);
 }
