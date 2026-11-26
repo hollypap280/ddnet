@@ -3552,7 +3552,8 @@ void CControls::OnUpdate()
 	PracticeInput.m_Direction = m_MacroPracticeDirectionLeft == m_MacroPracticeDirectionRight ? 0 :
 		(m_MacroPracticeDirectionLeft ? -1 : 1);
 
-	const bool SlowPracticeInput = !m_MacroPlaying && MacroPracticeRate() < SERVER_TICK_SPEED;
+	const bool SlowPracticeInput = !m_MacroRecording && !m_MacroPlaying &&
+		MacroPracticeRate() < SERVER_TICK_SPEED;
 	if(SlowPracticeInput)
 	{
 		if(PracticeInput.m_WantedWeapon > 0)
@@ -4124,7 +4125,7 @@ void CControls::RenderMacroHud()
 	if(m_MacroRecording)
 		str_format(aTickLabel, sizeof(aTickLabel), "%s  |  ТИК %d  |  %d ТИК/С",
 			m_MacroRecordingPaused ? "ЗАПИСЬ ПАУЗА" : "ЗАПИСЬ",
-			(int)m_vMacroFrames.size(), MacroPracticeRate());
+			(int)m_vMacroFrames.size(), m_MacroRecordingRate);
 	else if(m_MacroPlaying)
 		str_format(aTickLabel, sizeof(aTickLabel), "%s  |  ТИК %d / %d  |  %d ТИК/С",
 			m_MacroPlaybackPaused ? "МАКРОС ПАУЗА" : "МАКРОС",
