@@ -337,7 +337,7 @@ bool CControls::TripleflyHookActive() const
 		return false;
 
 	const int HookerConnection = 1 - ActiveTee;
-	const int CurrentTick = Client()->GameTick(HookerConnection);
+	const int CurrentTick = m_MacroPracticeActive ? m_MacroPracticeWorld.GameTick() : Client()->GameTick(HookerConnection);
 	return CurrentTick >= m_TripleflyHookStartTick && CurrentTick < m_TripleflyHookEndTick;
 }
 void CControls::ConMacroPracticeInput(IConsole::IResult *pResult, void *pUserData)
@@ -1137,6 +1137,7 @@ bool CControls::StartMacroPractice()
 
 	pCharacter->m_IsLocal = true;
 	m_MacroPracticeActive = true;
+	m_MacroPracticeDummySwapPending = false;
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeAccumulator = 0.0;
 	m_MacroPracticeLastServerTick = Client()->PredGameTick(Dummy);
@@ -1305,6 +1306,7 @@ void CControls::StopMacroPractice()
 	m_MacroRecordingPaused = false;
 	m_MacroPlaying = false;
 	m_MacroPracticeActive = false;
+	m_MacroPracticeDummySwapPending = false;
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeAccumulator = 0.0f;
 	m_MacroPracticeLastServerTick = -1;
@@ -1464,7 +1466,16 @@ void CControls::PopulateMacroPracticeWorld()
 			pPracticeCharacter->SetInput(&IdleInput);
 			pPracticeCharacter->OnDirectInput(&IdleInput);
 			pPracticeCharacter->OnPredictedInput(&IdleInput);
+			pPracticeCharacter->m_IsMacroPracticeParked = IsOwnDummy;
 			m_aMacroPracticeSnapshotInitialized[ClientId] = true;
+		}
+
+		if(IsOwnDummy && ClientId != m_MacroPracticeLocalId)
+		{
+			const CCharacterCore &InactiveCore = *pPracticeCharacter->Core();
+			const bool HasInteraction = !InactiveCore.m_AttachedPlayers.empty() || InactiveCore.HookedPlayer() >= 0 ||
+				InactiveCore.m_HookState != HOOK_IDLE || length(InactiveCore.m_Vel) > 0.001f;
+			pPracticeCharacter->m_IsMacroPracticeParked = !HasInteraction;
 		}
 
 		pPracticeCharacter->m_GameTeam = GameTeam;
@@ -1481,7 +1492,10 @@ bool CControls::SwitchMacroPracticeCharacter(int ClientId)
 	if(!m_MacroPracticeActive || ClientId < 0 || ClientId >= MAX_CLIENTS)
 		return false;
 	if(ClientId == m_MacroPracticeLocalId)
+	{
+		m_MacroPracticeDummySwapPending = false;
 		return true;
+	}
 
 	// Switch only to the clone already simulated in the private world.
 	// Rebuilding it from a server snapshot here would snap a tee to stale ground coordinates.
@@ -1498,15 +1512,18 @@ bool CControls::SwitchMacroPracticeCharacter(int ClientId)
 		// freeze, weapon and position so it remains part of the timeline.
 		pOldCharacter->SetInput(&IdleInput);
 		pOldCharacter->m_IsLocal = false;
+		pOldCharacter->m_IsMacroPracticeParked = true;
 	}
 
 	pNewCharacter->m_IsLocal = true;
+	pNewCharacter->m_IsMacroPracticeParked = false;
 	if(ClientId == GameClient()->m_aLocalIds[0])
 		g_Config.m_ClDummy = 0;
 	else if(ClientId == GameClient()->m_aLocalIds[1])
 		g_Config.m_ClDummy = 1;
 	m_MacroPracticeLocalId = ClientId;
 	m_MacroPracticeWorld.m_LocalClientId = ClientId;
+	m_MacroPracticeDummySwapPending = false;
 	m_MacroPracticePendingFireTransitions = 0;
 	m_MacroPracticePendingNextWeaponTransitions = 0;
 	m_MacroPracticePendingPrevWeaponTransitions = 0;
@@ -1563,6 +1580,7 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 	if(!pPrimary)
 		return false;
 	pPrimary->m_IsLocal = true;
+	pPrimary->m_IsMacroPracticeParked = false;
 
 	CCharacterCore Core = pPrimary->GetCore();
 	Core.Read(&Frame.m_Core);
@@ -1624,6 +1642,9 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 			SecondaryCore.m_aWeapons[Weapon].m_Ammo = Frame.m_aSecondaryWeaponAmmo[Weapon];
 		}
 		pSecondary->SetCore(SecondaryCore);
+		pSecondary->m_IsMacroPracticeParked =
+			SecondaryCore.m_AttachedPlayers.empty() && SecondaryCore.HookedPlayer() < 0 &&
+			SecondaryCore.m_HookState == HOOK_IDLE && length(SecondaryCore.m_Vel) <= 0.001f;
 		pSecondary->m_Pos = SecondaryCore.m_Pos;
 		pSecondary->m_PrevPos = SecondaryCore.m_Pos;
 		pSecondary->m_PrevPrevPos = SecondaryCore.m_Pos;
@@ -1662,7 +1683,6 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 
 void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, const CNetObj_PlayerInput &DummyInput)
 {
-	(void)DummyInput;
 	if(!m_MacroPracticeActive)
 		return;
 
@@ -1872,17 +1892,34 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 	const int OwnId1 = GameClient()->m_aLocalIds[1];
 	const int OtherLocalId = OwnId0 == m_MacroPracticeLocalId ? OwnId1 : OwnId0;
 	CCharacter *pPracticeOther = m_MacroPracticeWorld.GetCharacterById(OtherLocalId);
+	const bool HasPrivateDummyInput = m_AutoTripleflyBindActive ||
+		(!m_MacroPlaying && m_MacroPracticeDummyEnabled);
+	const bool PracticeTripleflyHammer = m_AutoTripleflyBindActive && m_TripleflyHammerBeforeHook &&
+		DummyInput.m_WantedWeapon == WEAPON_HAMMER + 1 && (DummyInput.m_Fire & 1);
 	if(pPracticeOther && pPracticeOther != pCharacter)
 	{
-		CNetObj_PlayerInput IdleInput{};
-		IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
-		IdleInput.m_TargetX = 1;
-		pPracticeOther->OnPredictedInput(&IdleInput);
-		pPracticeOther->OnDirectInput(&IdleInput);
+		if(HasPrivateDummyInput)
+		{
+			CNetObj_PlayerInput OtherInput = DummyInput;
+			OtherInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+			pPracticeOther->m_IsMacroPracticeParked = false;
+			pPracticeOther->OnPredictedInput(&OtherInput);
+			pPracticeOther->OnDirectInput(&OtherInput);
+		}
+		else
+		{
+			CNetObj_PlayerInput IdleInput{};
+			IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+			IdleInput.m_TargetX = 1;
+			pPracticeOther->OnPredictedInput(&IdleInput);
+			pPracticeOther->OnDirectInput(&IdleInput);
+		}
 	}
 
 	++m_MacroPracticeWorld.m_GameTick;
 	m_MacroPracticeWorld.Tick();
+	if(PracticeTripleflyHammer)
+		OnTripleflyHammerPacketSent();
 	++m_MacroPracticeTick;
 
 	pCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId);
@@ -1997,8 +2034,9 @@ bool CControls::StartMacroRecording(const char *pName)
 
 	m_vMacroFrames.clear();
 	str_copy(m_aRecordingMacroName, aName);
-	// Save exactly one frame per server simulation tick (20 ms at 50 TPS).
-	m_MacroRecordingRate = SERVER_TICK_SPEED;
+	// Record one logical frame at the selected practice rate (1..50 ticks/sec).
+	// Playback is intentionally normalized to the regular server tick rate.
+	m_MacroRecordingRate = MacroPracticeRate();
 	m_MacroPlaybackRate = SERVER_TICK_SPEED;
 	m_MacroRecording = true;
 	m_MacroRecordingPaused = false;
@@ -2320,7 +2358,7 @@ bool CControls::PlayMacro(const char *pName)
 	ImportMacroBinds();
 	str_copy(m_aMacroMapName, aStoredMapName[0] ? aStoredMapName : pCurrentMap);
 	m_MacroRecordingRate = std::clamp((int)RecordedRate, 1, (int)SERVER_TICK_SPEED);
-	m_MacroPlaybackRate = m_MacroRecordingRate;
+	m_MacroPlaybackRate = SERVER_TICK_SPEED;
 
 	m_MacroPlaybackOriginalDummy = g_Config.m_ClDummy;
 	for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
@@ -2805,9 +2843,22 @@ void CControls::OnMacroPracticeDummySwap()
 
 	const int RequestedLocalId = GameClient()->m_aLocalIds[g_Config.m_ClDummy];
 	if(RequestedLocalId < 0 || RequestedLocalId >= MAX_CLIENTS)
+	{
+		m_MacroPracticeDummySwapPending = false;
 		return;
-	if(!SwitchMacroPracticeCharacter(RequestedLocalId))
-		GameClient()->Echo("Копия выбранного тии ещё не создана в FP-мире. Его позиция не изменена.");
+	}
+
+	m_MacroPracticeDummySwapPending = true;
+	if(CCharacter *pCurrent = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId))
+	{
+		CNetObj_PlayerInput IdleInput{};
+		IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+		IdleInput.m_TargetX = 1;
+		pCurrent->SetInput(&IdleInput);
+		pCurrent->m_IsLocal = false;
+		pCurrent->m_IsMacroPracticeParked = true;
+	}
+	SwitchMacroPracticeCharacter(RequestedLocalId);
 }
 void CControls::OnMacroObserverInputSent(const CNetObj_PlayerInput &Input)
 {
@@ -3128,13 +3179,20 @@ void CControls::ApplyHookAutomation(int Dummy)
 		else
 			m_TripleflyHookDuration = 6; // diagonal / transitioning
 
-		const int HookerTick = Client()->GameTick(!Dummy);
+		const int HookerTick = PracticeActive ? m_MacroPracticeWorld.GameTick() : Client()->GameTick(!Dummy);
 		if(!m_TripleflyFlightActive && FlightSpeed >= 5.0f && !Collision()->IsOnGround(LocalPos, 14.0f))
 		{
 			// Send one dummy hammer hit before the first third-tee hook.
 			m_TripleflyFlightActive = true;
 			m_TripleflyHammerBeforeHook = true;
-			GameClient()->m_DummyFire = 0;
+			if(PracticeActive)
+			{
+				if(m_MacroPracticeDummyInput.m_Fire & 1)
+					++m_MacroPracticeDummyInput.m_Fire;
+				m_MacroPracticeDummyInput.m_Fire &= INPUT_STATE_MASK;
+			}
+			else
+				GameClient()->m_DummyFire = 0;
 			m_TripleflyNextHookTick = HookerTick;
 			m_TripleflyHookStartTick = -1;
 			m_TripleflyHookEndTick = -1;
@@ -3581,6 +3639,23 @@ void CControls::OnUpdate()
 	// Standard binds populate m_MacroPracticeInput through the isolated handlers.
 	PopulateMacroPracticeWorld();
 
+	if(m_MacroPracticeDummySwapPending)
+	{
+		const int RequestedLocalId = GameClient()->m_aLocalIds[g_Config.m_ClDummy];
+		if(RequestedLocalId >= 0 && RequestedLocalId < MAX_CLIENTS &&
+			SwitchMacroPracticeCharacter(RequestedLocalId))
+		{
+			m_MacroPracticeDummySwapPending = false;
+		}
+		else
+		{
+			// Keep both the live server tee and the previous practice tee untouched
+			// until the requested tee has a clone in the isolated world.
+			m_MacroPracticeLastServerTick = Client()->PredGameTick(g_Config.m_ClDummy);
+			return;
+		}
+	}
+
 	const int Dummy = g_Config.m_ClDummy;
 	CNetObj_PlayerInput PracticeInput = m_MacroPracticeInput;
 	PracticeInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
@@ -3663,6 +3738,19 @@ void CControls::OnUpdate()
 		return;
 	}
 
+	// Reuse DDNet's existing hook/edge/fly assist logic against a temporary
+	// copy of the practice input. The real server input buffer is restored
+	// before leaving this block and SnapInput continues sending neutral data.
+	{
+		const CNetObj_PlayerInput SavedServerInput = m_aInputData[Dummy];
+		m_aInputData[Dummy] = PracticeInput;
+		ApplyHookAutomation(Dummy);
+		ApplyEdgeAssist(Dummy);
+		ApplyEdgeHook(Dummy);
+		PracticeInput = m_aInputData[Dummy];
+		m_aInputData[Dummy] = SavedServerInput;
+	}
+
 	const int PracticeTickDelta = std::max(0, CurrentPracticeTick - m_MacroPracticeLastServerTick);
 	m_MacroPracticeLastServerTick = CurrentPracticeTick;
 	// A saved frame is one logical game tick. Recording can run at a slower
@@ -3678,7 +3766,39 @@ void CControls::OnUpdate()
 	while(m_MacroPracticeAccumulator >= 1.0 && Steps < MaxStepsPerUpdate)
 	{
 		const bool WasPlaying = m_MacroPlaying;
-		SimulateMacroPracticeTick(PracticeInput, PracticeDummyInput);
+		CNetObj_PlayerInput StepDummyInput = PracticeDummyInput;
+		if(!m_MacroPlaying && m_MacroPracticeDummyEnabled)
+		{
+			StepDummyInput = m_MacroPracticeDummyInput;
+			StepDummyInput.m_Direction = m_MacroPracticeDummyLeft == m_MacroPracticeDummyRight ? 0 :
+				(m_MacroPracticeDummyLeft ? -1 : 1);
+		}
+		if(m_AutoTripleflyBindActive)
+		{
+			StepDummyInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+			StepDummyInput.m_TargetX = m_aTripleflyAimX[Dummy] == 0 && m_aTripleflyAimY[Dummy] == 0 ? 1 : m_aTripleflyAimX[Dummy];
+			StepDummyInput.m_TargetY = m_aTripleflyAimY[Dummy];
+			StepDummyInput.m_Direction = 0;
+			if(m_TripleflyHammerBeforeHook)
+			{
+				if(!(m_MacroPracticeDummyInput.m_Fire & 1))
+					++m_MacroPracticeDummyInput.m_Fire;
+				m_MacroPracticeDummyInput.m_Fire &= INPUT_STATE_MASK;
+				StepDummyInput.m_Fire = m_MacroPracticeDummyInput.m_Fire;
+				StepDummyInput.m_WantedWeapon = WEAPON_HAMMER + 1;
+				StepDummyInput.m_Hook = 0;
+			}
+			else
+			{
+				if(m_MacroPracticeDummyInput.m_Fire & 1)
+					++m_MacroPracticeDummyInput.m_Fire;
+				m_MacroPracticeDummyInput.m_Fire &= INPUT_STATE_MASK;
+				StepDummyInput.m_Fire = m_MacroPracticeDummyInput.m_Fire;
+				StepDummyInput.m_WantedWeapon = 0;
+				StepDummyInput.m_Hook = m_aTripleflyTargetFound[Dummy] && TripleflyHookActive();
+			}
+		}
+		SimulateMacroPracticeTick(PracticeInput, StepDummyInput);
 		m_MacroPracticeAccumulator = std::max(0.0, m_MacroPracticeAccumulator - 1.0);
 		++Steps;
 		if(ConsumeWantedWeapon)
@@ -4205,6 +4325,8 @@ void CControls::RenderMacroHud()
 	TextRender()->TextColor(0.55f, 0.9f, 1.0f, 1.0f);
 	TextRender()->Text((ScreenWidth - ClientWidth) * 0.5f, BoxY + 7.0f, ClientFontSize, pClientName);
 
+	const CCharacter *pCurrentPracticeCharacter = m_MacroPracticeActive ?
+		m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId) : nullptr;
 	SMacroFrame DisplayFrame{};
 	const SMacroFrame *pDisplayFrame = nullptr;
 	if(m_MacroRecording && !m_vMacroFrames.empty())
@@ -4219,10 +4341,62 @@ void CControls::RenderMacroHud()
 	else if(m_MacroPracticeActive)
 	{
 		DisplayFrame.m_Input = m_MacroPracticeInput;
-		if(const CCharacter *pCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId))
-			DisplayFrame.m_Weapon = pCharacter->GetActiveWeapon();
+		if(pCurrentPracticeCharacter)
+			DisplayFrame.m_Weapon = pCurrentPracticeCharacter->GetActiveWeapon();
 		pDisplayFrame = &DisplayFrame;
 	}
+
+	char aWeaponInfo[96];
+	const int CurrentWeapon = std::clamp(pCurrentPracticeCharacter ? pCurrentPracticeCharacter->GetActiveWeapon() :
+		(pDisplayFrame ? pDisplayFrame->m_Weapon : (int)WEAPON_HAMMER), (int)WEAPON_HAMMER, (int)WEAPON_NINJA);
+	const char *pCurrentWeaponName = "ОРУЖИЕ";
+	switch(CurrentWeapon)
+	{
+	case WEAPON_HAMMER: pCurrentWeaponName = "МОЛОТ"; break;
+	case WEAPON_GUN: pCurrentWeaponName = "ПИСТОЛЕТ"; break;
+	case WEAPON_SHOTGUN: pCurrentWeaponName = "ДРОБОВИК"; break;
+	case WEAPON_GRENADE: pCurrentWeaponName = "ГРАНАТА"; break;
+	case WEAPON_LASER: pCurrentWeaponName = "ЛАЗЕР"; break;
+	case WEAPON_NINJA: pCurrentWeaponName = "НИНДЗЯ"; break;
+	}
+	str_format(aWeaponInfo, sizeof(aWeaponInfo), "ОРУЖИЕ: %s", pCurrentWeaponName);
+
+	char aJumpInfo[96];
+	if(pCurrentPracticeCharacter)
+	{
+		const CCharacterCore &Core = *pCurrentPracticeCharacter->Core();
+		if(Core.m_EndlessJump)
+			str_copy(aJumpInfo, "ВОЗДУШНЫЕ ПРЫЖКИ: ∞");
+		else
+		{
+			const int AirJumpLimit = std::max(0, Core.m_Jumps - 1);
+			const int AirJumpsUsed = std::clamp(Core.m_JumpedTotal, 0, AirJumpLimit);
+			str_format(aJumpInfo, sizeof(aJumpInfo), "ДВОЙНЫЕ ПРЫЖКИ: %d-%d",
+				AirJumpsUsed, AirJumpLimit - AirJumpsUsed);
+		}
+	}
+	else if(pDisplayFrame && pDisplayFrame->m_HasDDNetState)
+	{
+		const CNetObj_DDNetCharacter &State = pDisplayFrame->m_PreDDNetCharacter;
+		const int AirJumpLimit = std::max(0, State.m_Jumps - 1);
+		const int AirJumpsUsed = std::clamp(State.m_JumpedTotal, 0, AirJumpLimit);
+		str_format(aJumpInfo, sizeof(aJumpInfo), "ДВОЙНЫЕ ПРЫЖКИ: %d-%d",
+			AirJumpsUsed, AirJumpLimit - AirJumpsUsed);
+	}
+	else
+		str_copy(aJumpInfo, "ДВОЙНЫЕ ПРЫЖКИ: --");
+
+	const float InfoX = 12.0f;
+	const float InfoY = 28.0f;
+	const float InfoWidth = std::min(226.0f, ScreenWidth - 24.0f);
+	const float InfoHeight = 48.0f;
+	Graphics()->DrawRect(InfoX, InfoY, InfoWidth, InfoHeight,
+		ColorRGBA(0.0f, 0.0f, 0.0f, 0.78f), IGraphics::CORNER_ALL, 2.0f);
+	Graphics()->DrawRect(InfoX + 2.0f, InfoY + 2.0f, InfoWidth - 4.0f, InfoHeight - 4.0f,
+		ColorRGBA(0.42f, 0.42f, 0.42f, 0.82f), IGraphics::CORNER_ALL, 2.0f);
+	TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
+	TextRender()->Text(InfoX + 9.0f, InfoY + 6.0f, 12.0f, aWeaponInfo);
+	TextRender()->Text(InfoX + 9.0f, InfoY + 27.0f, 12.0f, aJumpInfo);
 
 	char aActionLabel[192];
 	str_copy(aActionLabel, "ДЕЙСТВИЕ: ОЖИДАНИЕ");

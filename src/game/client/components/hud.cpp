@@ -618,7 +618,19 @@ void CHud::RenderCursor()
 	CScreenRect ScreenRect = Graphics()->MapScreenToWorld(Center.x, Center.y, 100.0f, 100.0f, 100.0f, 0, 0, Graphics()->ScreenAspect(), 1.0f);
 	Graphics()->MapScreen(ScreenRect);
 
-	if(Client()->State() != IClient::STATE_DEMOPLAYBACK && GameClient()->m_Snap.m_pLocalCharacter)
+	if(GameClient()->m_Controls.MacroPracticeActive())
+	{
+		// In FP practice the live server tee can hold a different weapon from
+		// the private tee. Use the private tee for the cursor sprite.
+		CGameWorld *pPracticeWorld = GameClient()->m_Controls.MacroPracticeWorld();
+		if(pPracticeWorld)
+		{
+			if(const CCharacter *pPracticeCharacter = pPracticeWorld->GetCharacterById(GameClient()->m_Controls.MacroPracticeLocalId()))
+				CurWeapon = std::clamp(pPracticeCharacter->GetActiveWeapon(), 0, NUM_WEAPONS - 1);
+		}
+		TargetPos = GameClient()->m_Controls.m_aTargetPos[g_Config.m_ClDummy];
+	}
+	else if(Client()->State() != IClient::STATE_DEMOPLAYBACK && GameClient()->m_Snap.m_pLocalCharacter)
 	{
 		// Render local cursor
 		CurWeapon = std::max(0, GameClient()->m_aClients[GameClient()->m_Snap.m_LocalClientId].m_Predicted.m_ActiveWeapon);

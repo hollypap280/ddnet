@@ -369,6 +369,7 @@ private:
 	bool m_aMacroManualHookActive[NUM_DUMMIES]{};
 	bool m_aMacroManualAimActive[NUM_DUMMIES]{};
 	bool m_MacroPracticeActive = false;
+	bool m_MacroPracticeDummySwapPending = false;
 	vec2 m_aMacroPracticeMarkerAim[NUM_DUMMIES]{};
 	bool m_MacroPracticeWaiting = false;
 	double m_MacroPracticeAccumulator = 0.0;

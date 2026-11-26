@@ -604,6 +604,12 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		MainView.HSplitTop(28.0f, &Row, &MainView);
 		Ui()->DoLabel(&Row, Localize("Эта сенса используется только при записи; обычная сенса мыши не меняется."), 12.0f, TEXTALIGN_ML);
 		MainView.HSplitTop(34.0f, &Row, &MainView);
+		Ui()->DoScrollbarOption(&g_Config.m_ClMacroPracticeRate, &g_Config.m_ClMacroPracticeRate, &Row,
+			Localize("Скорость записи (тиков/с)"), 1, 50, &CUi::ms_LogarithmicScrollbarScale,
+			CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+		MainView.HSplitTop(24.0f, &Row, &MainView);
+		Ui()->DoLabel(&Row, Localize("Можно записывать от 1 тика/с; сохранённый макрос запускается с обычной скоростью."), 11.0f, TEXTALIGN_ML);
+		MainView.HSplitTop(34.0f, &Row, &MainView);
 		if(DoButton_Menu(&s_ImportBindsButton, Localize("Импортировать мои бинды"), 0, &Row))
 			Controls.ImportMacroBinds();
 		MainView.HSplitTop(30.0f, &Row, &MainView);
