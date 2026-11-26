@@ -206,6 +206,14 @@ void CEmoticon::OnRender()
 
 void CEmoticon::Emote(int Emoticon)
 {
+	// FP uses a private practice tee. Keep the emoticon on that local copy
+	// instead of sending it to the translucent server-side character.
+	if(GameClient()->m_Controls.MacroPracticeActive())
+	{
+		GameClient()->m_Controls.SetMacroPracticeEmoticon(Emoticon);
+		return;
+	}
+
 	CNetMsg_Cl_Emoticon Msg;
 	Msg.m_Emoticon = Emoticon;
 	Client()->SendPackMsgActive(&Msg, MSGFLAG_VITAL);
@@ -220,6 +228,13 @@ void CEmoticon::Emote(int Emoticon)
 
 void CEmoticon::EyeEmote(int Emote)
 {
+	// Do not send chat-based eye emotes to the stationary server tee.
+	if(GameClient()->m_Controls.MacroPracticeActive())
+	{
+		GameClient()->m_Controls.SetMacroPracticeEyeEmote(Emote, g_Config.m_ClEyeDuration);
+		return;
+	}
+
 	char aBuf[32];
 	switch(Emote)
 	{
