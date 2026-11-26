@@ -523,7 +523,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			str_format(aStatus, sizeof(aStatus), "Воспроизведение: тик %d / %d",
 				Controls.MacroPosition(), Controls.MacroFrameCount());
 		else
-			str_copy(aStatus, Localize("1 игровой тик = 20 мс. Сохраняется каждый серверный тик."));
+			str_copy(aStatus, Localize("Управление и прицел сохраняются автоматически."));
 		Ui()->DoLabel(&Row, aStatus, 13.0f, TEXTALIGN_ML);
 
 		MainView.HSplitTop(26.0f, &Row, &MainView);
@@ -585,13 +585,19 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	}
 	else
 	{
-		MainView.HSplitTop(18.0f, nullptr, &MainView);
-		MainView.HSplitTop(30.0f, &Row, &MainView);
-		Ui()->DoLabel(&Row, Localize("Обычные игровые бинды работают в тренировочном мире автоматически."), 13.0f, TEXTALIGN_ML);
-		MainView.HSplitTop(30.0f, &Row, &MainView);
-		Ui()->DoLabel(&Row, Localize("Движение, прыжок, хук, огонь и выбор оружия не нужно импортировать или переназначать."), 12.0f, TEXTALIGN_ML);
-		MainView.HSplitTop(30.0f, &Row, &MainView);
-		Ui()->DoLabel(&Row, Localize("Прозрачные серверные персонажи остаются на месте и не получают управление."), 12.0f, TEXTALIGN_ML);
+		MainView.HSplitTop(12.0f, nullptr, &MainView);
+		MainView.HSplitTop(34.0f, &Row, &MainView);
+		Ui()->DoScrollbarOption(&g_Config.m_ClMacroMouseSens, &g_Config.m_ClMacroMouseSens, &Row,
+			Localize("Чувствительность макроса"), 1, 500, &CUi::ms_LogarithmicScrollbarScale,
+			CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+		MainView.HSplitTop(28.0f, &Row, &MainView);
+		Ui()->DoLabel(&Row, Localize("Эта сенса используется только при записи; обычная сенса мыши не меняется."), 12.0f, TEXTALIGN_ML);
+		MainView.HSplitTop(28.0f, &Row, &MainView);
+		Ui()->DoLabel(&Row, Localize("Стандартные игровые бинды работают в тренировочном мире автоматически."), 13.0f, TEXTALIGN_ML);
+		MainView.HSplitTop(28.0f, &Row, &MainView);
+		Ui()->DoLabel(&Row, Localize("Движение, прыжок, хук, огонь, оружие и показ коллизии сохраняются."), 12.0f, TEXTALIGN_ML);
+		MainView.HSplitTop(28.0f, &Row, &MainView);
+		Ui()->DoLabel(&Row, Localize("Прозрачные серверные персонажи стоят на месте и не получают управление."), 12.0f, TEXTALIGN_ML);
 	}
 }
 

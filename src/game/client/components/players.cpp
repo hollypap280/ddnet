@@ -100,6 +100,18 @@ float CPlayers::GetPlayerTargetAngle(
 	int ClientId,
 	float Intra)
 {
+	if(GameClient()->m_Controls.MacroPracticeActive())
+	{
+		for(int Connection = 0; Connection < NUM_DUMMIES; ++Connection)
+		{
+			if(GameClient()->m_aLocalIds[Connection] == ClientId)
+			{
+				const vec2 Direction = GameClient()->m_Controls.MacroPracticeMarkerAim(Connection);
+				return angle(Direction);
+			}
+		}
+	}
+
 	if(GameClient()->PredictDummy() && GameClient()->m_aLocalIds[!g_Config.m_ClDummy] == ClientId)
 	{
 		const CNetObj_PlayerInput &Input = g_Config.m_ClDummyHammer ? GameClient()->m_HammerInput : GameClient()->m_DummyInput;

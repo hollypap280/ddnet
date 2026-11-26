@@ -85,6 +85,10 @@ public:
 	int MacroPlaybackRate() const { return m_MacroPlaybackRate; }
 	int MacroPracticeRate() const;
 	bool MacroPracticeActive() const { return m_MacroPracticeActive; }
+	vec2 MacroPracticeMarkerAim(int Connection) const
+	{
+		return Connection >= 0 && Connection < NUM_DUMMIES ? m_aMacroPracticeMarkerAim[Connection] : vec2(1.0f, 0.0f);
+	}
 	int MacroPracticeTick() const { return m_MacroPracticeTick; }
 	vec2 MacroPracticePosition();
 	void OnMacroPracticeDummySwap();
@@ -149,6 +153,42 @@ private:
 		int m_aWeaponAmmo[NUM_WEAPONS]{};
 		// The second local tee is saved separately so a seek restores both
 		// positions, velocities, weapon inventory and freeze state.
+		int m_SecondaryHasState = 0;
+		int m_SecondaryClientId = -1;
+		CNetObj_CharacterCore m_SecondaryCore{};
+		int m_SecondaryWeapon = WEAPON_HAMMER;
+		int m_SecondaryAttackTick = 0;
+		int m_SecondaryFreezeTime = 0;
+		int m_SecondaryFrozenLastTick = 0;
+		int m_aSecondaryWeaponAmmo[NUM_WEAPONS]{};
+		int m_HasWeaponInventoryState = 0;
+		int m_aWeaponGot[NUM_WEAPONS]{};
+		int m_aSecondaryWeaponGot[NUM_WEAPONS]{};
+		// Client-side hook-collision overlay state (the +showhookcoll bind).
+		int m_ShowHookColl = 0;
+	};
+	// Version 10 frame layout is kept for loading existing .dmacro files.
+	struct SMacroFrameV10
+	{
+		CNetObj_PlayerInput m_Input{};
+		CNetObj_CharacterCore m_PreCore{};
+		CNetObj_CharacterCore m_Core{};
+		CNetObj_Character m_Character{};
+		int m_PreWeapon = WEAPON_HAMMER;
+		int m_Weapon = WEAPON_HAMMER;
+		int m_AttackTick = 0;
+		int m_Tick = 0;
+		int m_HasCoordinates = 1;
+		int m_ClientId = -1;
+		int m_PreFreezeTime = 0;
+		int m_FreezeTime = 0;
+		int m_PreFrozenLastTick = 0;
+		int m_FrozenLastTick = 0;
+		int m_PreAttackTick = 0;
+		int m_HasDDNetState = 0;
+		CNetObj_DDNetCharacter m_PreDDNetCharacter{};
+		int m_aPreWeaponAmmo[NUM_WEAPONS]{};
+		int m_aWeaponAmmo[NUM_WEAPONS]{};
 		int m_SecondaryHasState = 0;
 		int m_SecondaryClientId = -1;
 		CNetObj_CharacterCore m_SecondaryCore{};
@@ -276,6 +316,8 @@ private:
 	bool m_MacroPlaybackSavedMousePosValid = false;
 	int m_MacroPlaybackOriginalDummy = 0;
 	vec2 m_aMacroPlaybackSavedMousePos[NUM_DUMMIES]{};
+	int m_aMacroPlaybackSavedShowHookColl[NUM_DUMMIES]{};
+	bool m_MacroPlaybackSavedShowHookCollValid = false;
 	bool m_MacroStopAtTickArmed = false;
 	int m_MacroPlaybackSeekTargetIndex = -1;
 	int m_aMacroPlaybackWeaponOverride[NUM_DUMMIES] = {-1, -1};
@@ -297,6 +339,7 @@ private:
 	bool m_aMacroManualHookActive[NUM_DUMMIES]{};
 	bool m_aMacroManualAimActive[NUM_DUMMIES]{};
 	bool m_MacroPracticeActive = false;
+	vec2 m_aMacroPracticeMarkerAim[NUM_DUMMIES]{};
 	bool m_MacroPracticeWaiting = false;
 	double m_MacroPracticeAccumulator = 0.0;
 	int m_MacroPracticeLastServerTick = -1;

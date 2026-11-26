@@ -921,13 +921,14 @@ void CControls::SendMacroFrame(int Index, EMacroFrameMode Mode)
 			m_aMacroPlaybackConnectionUsed[RequestedDummy] = true;
 			g_Config.m_ClDummy = RequestedDummy;
 			RebaseMacroPlaybackCounters(RequestedDummy, Index - 1);
-			m_MacroPlaybackLastTick = Client()->GameTick(m_MacroPlaybackDummy);
+			m_MacroPlaybackLastTick = Client()->PredGameTick(m_MacroPlaybackDummy);
 			m_MacroPracticeAccumulator = 0.0;
 		}
 	}
 
 	// Keep the visible cursor/camera and outgoing target on the recorded aim.
 	m_aMousePos[m_MacroPlaybackDummy] = vec2(Frame.m_Input.m_TargetX, Frame.m_Input.m_TargetY);
+	m_aShowHookColl[m_MacroPlaybackDummy] = Frame.m_ShowHookColl;
 	m_aMacroPlaybackConnectionUsed[m_MacroPlaybackDummy] = true;
 
 	// Do not restore saved coordinates, velocity, freeze, ammo or weapon state.
@@ -951,9 +952,9 @@ void CControls::SendPracticeTeleportToCursor(int Conn)
 namespace
 {
 	constexpr uint32_t MACRO_FILE_MAGIC = 0x444D4143;
-	// Version 10 also stores the second local tee in each frame.
-	// Version 9 remains readable through SMacroFrameV9.
-	constexpr uint32_t MACRO_FILE_VERSION = 10;
+	// Version 11 also stores the hook-collision overlay state.
+	// Version 10 and 9 remain readable through their legacy layouts.
+	constexpr uint32_t MACRO_FILE_VERSION = 11;
 	constexpr uint32_t MACRO_MAX_FRAMES = 18000;
 }
 
@@ -1077,9 +1078,23 @@ bool CControls::StartMacroPractice()
 		return false;
 	}
 
+	// Freeze the translucent real-server tee markers at the directions they
+	// were facing when the private practice world was created.
+	for(int Connection = 0; Connection < NUM_DUMMIES; ++Connection)
+	{
+		vec2 MarkerAim = m_aMousePos[Connection];
+		if(Connection != Dummy && GameClient()->PredictDummy())
+		{
+			const CNetObj_PlayerInput &OtherInput = g_Config.m_ClDummyHammer ? GameClient()->m_HammerInput : GameClient()->m_DummyInput;
+			MarkerAim = vec2(OtherInput.m_TargetX, OtherInput.m_TargetY);
+		}
+		if(length(MarkerAim) < 1.0f)
+			MarkerAim = vec2(1.0f, 0.0f);
+		m_aMacroPracticeMarkerAim[Connection] = MarkerAim;
+	}
+
 	// Start from the last confirmed server state, not the already-predicted
-	// future. Each saved frame now advances exactly GameTick + 1, matching
-	// the tick where normal live playback sends that same input.
+	// future. Each saved frame now advances one local 50 Hz simulation step.
 	m_MacroPracticeWorld.CopyWorld(&GameClient()->m_GameWorld);
 	if(m_MacroPracticeWorld.m_pParent && m_MacroPracticeWorld.m_pParent->m_pChild == &m_MacroPracticeWorld)
 		m_MacroPracticeWorld.m_pParent->m_pChild = nullptr;
@@ -1294,6 +1309,12 @@ void CControls::StopMacroPractice()
 		g_Config.m_ClDummy = m_MacroPlaybackOriginalDummy;
 	}
 	m_MacroPlaybackSavedMousePosValid = false;
+	if(m_MacroPlaybackSavedShowHookCollValid)
+	{
+		for(int SavedDummy = 0; SavedDummy < NUM_DUMMIES; ++SavedDummy)
+			m_aShowHookColl[SavedDummy] = m_aMacroPlaybackSavedShowHookColl[SavedDummy];
+		m_MacroPlaybackSavedShowHookCollValid = false;
+	}
 	m_MacroPlaybackHistoryAvailable = false;
 	m_MacroPlaybackLive = false;
 	m_MacroPlaybackLastTick = -1;
@@ -1710,6 +1731,8 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		}
 		const SMacroFrame &Frame = m_vMacroFrames[m_MacroPlaybackIndex];
 		const int FrameConnection = MacroConnectionFromStoredClientId(Frame.m_ClientId);
+		if(FrameConnection >= 0)
+			m_aShowHookColl[FrameConnection] = Frame.m_ShowHookColl;
 		const int FrameClientId = FrameConnection >= 0 ? GameClient()->m_aLocalIds[FrameConnection] : m_MacroPracticeLocalId;
 		if(FrameClientId >= 0 && FrameClientId != m_MacroPracticeLocalId &&
 			!SwitchMacroPracticeCharacter(FrameClientId))
@@ -1809,6 +1832,7 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 	if(m_MacroRecording)
 	{
 		NewFrame.m_Input = TickInput;
+		NewFrame.m_ShowHookColl = m_aShowHookColl[RecordedConnection] != 0;
 		pCharacter->Core()->Write(&NewFrame.m_PreCore);
 		NewFrame.m_PreWeapon = pCharacter->GetActiveWeapon();
 		for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
@@ -2004,7 +2028,7 @@ bool CControls::StartMacroRecording(const char *pName)
 	m_MacroDisplayedTick = 0;
 	m_MacroPracticeAccumulator = 0.0;
 	m_MacroPracticeLastServerTick = Client()->PredGameTick(g_Config.m_ClDummy);
-	GameClient()->Echo(Localize("Запись началась: каждый игровой тик сохраняется отдельно."));
+	GameClient()->Echo(Localize("Запись началась."));
 	return true;
 }
 
@@ -2073,6 +2097,12 @@ void CControls::StopMacroRecording(bool RestorePlaybackView)
 			m_aMousePos[Dummy] = m_aMacroPlaybackSavedMousePos[Dummy];
 		g_Config.m_ClDummy = m_MacroPlaybackOriginalDummy;
 		m_MacroPlaybackSavedMousePosValid = false;
+	}
+	if(RestorePlaybackView && m_MacroPlaybackSavedShowHookCollValid)
+	{
+		for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
+			m_aShowHookColl[Dummy] = m_aMacroPlaybackSavedShowHookColl[Dummy];
+		m_MacroPlaybackSavedShowHookCollValid = false;
 	}
 
 	m_MacroPlaying = false;
@@ -2191,7 +2221,7 @@ bool CControls::PlayMacro(const char *pName)
 		io_read(File, &Version, sizeof(Version)) == sizeof(Version) &&
 		io_read(File, &Count, sizeof(Count)) == sizeof(Count) &&
 		Magic == MACRO_FILE_MAGIC && Count > 0 && Count <= MACRO_MAX_FRAMES &&
-		(Version == 9 || Version == MACRO_FILE_VERSION);
+		(Version == 9 || Version == 10 || Version == MACRO_FILE_VERSION);
 
 	if(ReadOk)
 		ReadOk = io_read(File, aStoredMapName, sizeof(aStoredMapName)) == sizeof(aStoredMapName);
@@ -2203,7 +2233,7 @@ bool CControls::PlayMacro(const char *pName)
 	const int64_t HeaderBytes = (int64_t)sizeof(Magic) + sizeof(Version) + sizeof(Count) +
 		(int64_t)sizeof(aStoredMapName) + (int64_t)sizeof(RecordedRate);
 	const int64_t FrameBytes = (int64_t)Count *
-		(Version == MACRO_FILE_VERSION ? (int64_t)sizeof(SMacroFrame) : (int64_t)sizeof(SMacroFrameV9));
+		(Version == MACRO_FILE_VERSION ? (int64_t)sizeof(SMacroFrame) : Version == 10 ? (int64_t)sizeof(SMacroFrameV10) : (int64_t)sizeof(SMacroFrameV9));
 	if(ReadOk && FileLength != HeaderBytes + FrameBytes)
 		ReadOk = false;
 
@@ -2214,6 +2244,18 @@ bool CControls::PlayMacro(const char *pName)
 		if(Version == MACRO_FILE_VERSION)
 		{
 			ReadOk = io_read(File, vLoadedFrames.data(), FrameBytes) == FrameBytes;
+		}
+		else if(Version == 10)
+		{
+			for(uint32_t i = 0; i < Count && ReadOk; ++i)
+			{
+				SMacroFrameV10 OldFrame{};
+				ReadOk = io_read(File, &OldFrame, sizeof(OldFrame)) == sizeof(OldFrame);
+				if(!ReadOk)
+					break;
+				mem_copy(&vLoadedFrames[i], &OldFrame, sizeof(OldFrame));
+				vLoadedFrames[i].m_ShowHookColl = 0;
+			}
 		}
 		else
 		{
@@ -2296,8 +2338,12 @@ bool CControls::PlayMacro(const char *pName)
 
 	m_MacroPlaybackOriginalDummy = g_Config.m_ClDummy;
 	for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
+	{
 		m_aMacroPlaybackSavedMousePos[Dummy] = m_aMousePos[Dummy];
+		m_aMacroPlaybackSavedShowHookColl[Dummy] = m_aShowHookColl[Dummy];
+	}
 	m_MacroPlaybackSavedMousePosValid = true;
+	m_MacroPlaybackSavedShowHookCollValid = true;
 	g_Config.m_ClDummy = PlaybackDummy;
 	m_MacroPlaybackDummy = PlaybackDummy;
 
@@ -2346,7 +2392,7 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroPlaybackOwnsPractice = false;
 	m_MacroPlaybackHistoryAvailable = true;
 	m_MacroPlaybackStartPending = true;
-	m_MacroPlaybackLastTick = Client()->GameTick(PlaybackDummy);
+	m_MacroPlaybackLastTick = Client()->PredGameTick(PlaybackDummy);
 	m_MacroPracticeAccumulator = 0.0;
 	m_MacroPracticeLastServerTick = Client()->PredGameTick(PlaybackDummy);
 	m_MacroPracticeWaiting = false;
@@ -2708,7 +2754,7 @@ void CControls::ToggleMacroPause()
 	m_MacroPlaybackPaused = !m_MacroPlaybackPaused;
 	m_MacroPracticeAccumulator = 0.0;
 	if(m_MacroPlaybackLive)
-		m_MacroPlaybackLastTick = Client()->GameTick(m_MacroPlaybackDummy);
+		m_MacroPlaybackLastTick = Client()->PredGameTick(m_MacroPlaybackDummy);
 	if(m_MacroPlaybackPaused)
 	{
 		GameClient()->Echo("Макрос на паузе.");
@@ -2746,7 +2792,7 @@ void CControls::OnMacroPracticeDummySwap()
 		{
 			m_MacroPlaybackDummy = RequestedDummy;
 			m_MacroPlaybackManualDummyOverride = true;
-			m_MacroPlaybackLastTick = Client()->GameTick(RequestedDummy);
+			m_MacroPlaybackLastTick = Client()->PredGameTick(RequestedDummy);
 			m_MacroPracticeAccumulator = 0.0;
 			if(m_MacroHasCurrentFrame)
 				RebaseMacroPlaybackCounters(RequestedDummy, m_MacroDisplayedTick - 1);
@@ -3906,7 +3952,7 @@ void CControls::AdvanceMacroPlaybackAfterInput()
 		Client()->State() == IClient::STATE_ONLINE &&
 		!GameClient()->m_Chat.IsActive() && !GameClient()->m_Menus.IsActive())
 	{
-		const int ServerTick = Client()->GameTick(m_MacroPlaybackDummy);
+		const int ServerTick = Client()->PredGameTick(m_MacroPlaybackDummy);
 		if(ServerTick > m_MacroPlaybackLastTick)
 		{
 			m_MacroPlaybackLastTick = ServerTick;
@@ -3919,12 +3965,12 @@ void CControls::AdvanceMacroPlaybackAfterInput()
 		}
 	}
 
-	// Pace live input playback from confirmed server ticks. Each selected frame
-	// is forwarded through SnapInput as ordinary DDNet controls.
+	// Pace live input playback on the same local predicted clock used by the
+	// 50 Hz game simulation, not on the slower snapshot-arrival clock.
 	if(m_MacroPlaybackLive && m_MacroPlaying && !m_MacroPlaybackStartPending &&
 		Client()->State() == IClient::STATE_ONLINE)
 	{
-		const int ServerTick = Client()->GameTick(m_MacroPlaybackDummy);
+		const int ServerTick = Client()->PredGameTick(m_MacroPlaybackDummy);
 		if(GameClient()->m_Chat.IsActive() || GameClient()->m_Menus.IsActive())
 		{
 			m_MacroPlaybackLastTick = ServerTick;
@@ -4271,7 +4317,9 @@ bool CControls::OnCursorMove(float x, float y, IInput::ECursorType CursorType)
 	}
 
 	float Factor = 1.0f;
-	if(g_Config.m_ClDyncam && g_Config.m_ClDyncamMousesens)
+	if(m_MacroPracticeActive && m_MacroRecording && CursorType == IInput::CURSOR_MOUSE)
+		Factor = g_Config.m_ClMacroMouseSens / 100.0f;
+	else if(g_Config.m_ClDyncam && g_Config.m_ClDyncamMousesens)
 	{
 		Factor = g_Config.m_ClDyncamMousesens / 100.0f;
 	}

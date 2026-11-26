@@ -231,6 +231,7 @@ MACRO_CONFIG_INT(ClMacroLoop, cl_macro_loop, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_S
 MACRO_CONFIG_INT(ClMacroStopTick, cl_macro_stop_tick, 0, 0, 18000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Тик, на котором остановить макрос по горячей клавише; 0 отключает")
 MACRO_CONFIG_INT(ClMacroGotoTick, cl_macro_goto_tick, 1, 1, 18000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Тик макроса для перехода по горячей клавише")
 MACRO_CONFIG_INT(ClMacroPracticeRate, cl_macro_practice_rate, 50, 1, 50, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Количество тренировочных тиков в секунду")
+MACRO_CONFIG_INT(ClMacroMouseSens, cl_macro_mousesens, 200, 1, 500, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Mouse sensitivity used while recording macros")
 MACRO_CONFIG_INT(ClMacroPracticeShowOthers, cl_macro_practice_show_others, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Показывать неподвижных других тии как цели в макротренировке")
 MACRO_CONFIG_INT(ClAutoHookAngle, cl_auto_hook_angle, 250, 10, 360, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Ширина угла поиска цели для автохука в градусах")
 MACRO_CONFIG_INT(ClAutoHookRange, cl_auto_hook_range, 360, 32, 360, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Максимальная дальность поиска цели автохуком")
