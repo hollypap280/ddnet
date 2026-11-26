@@ -22,7 +22,8 @@ class CPlayers : public CComponent
 		const CTeeRenderInfo *pRenderInfo,
 		int ClientId,
 		float Intra = 0.f,
-		float AlphaMultiplier = 1.0f);
+		float AlphaMultiplier = 1.0f,
+		int MacroPracticeClientId = -1);
 	void RenderHook(
 		const CScreenRect &ScreenRect,
 		const CNetObj_Character *pPrevChar,
@@ -34,7 +35,8 @@ class CPlayers : public CComponent
 		const CScreenRect &ScreenRect,
 		const CNetObj_Character *pPrevChar,
 		const CNetObj_Character *pPlayerChar,
-		int ClientId);
+		int ClientId,
+		int MacroPracticeClientId = -1);
 	bool IsPlayerInfoAvailable(int ClientId) const;
 
 	int m_WeaponEmoteQuadContainerIndex;
