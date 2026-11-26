@@ -1902,7 +1902,11 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		{
 			CNetObj_PlayerInput OtherInput = DummyInput;
 			OtherInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
-			pPracticeOther->m_IsMacroPracticeParked = false;
+			const bool HasDummyAction = OtherInput.m_Direction != 0 || OtherInput.m_Jump != 0 ||
+				OtherInput.m_Hook != 0 || (OtherInput.m_Fire & 1) != 0 || OtherInput.m_WantedWeapon > 0 ||
+				(OtherInput.m_NextWeapon & 1) != 0 || (OtherInput.m_PrevWeapon & 1) != 0;
+			if(HasDummyAction)
+				pPracticeOther->m_IsMacroPracticeParked = false;
 			pPracticeOther->OnPredictedInput(&OtherInput);
 			pPracticeOther->OnDirectInput(&OtherInput);
 		}
@@ -3739,14 +3743,19 @@ void CControls::OnUpdate()
 	}
 
 	// Reuse DDNet's existing hook/edge/fly assist logic against a temporary
-	// copy of the practice input. The real server input buffer is restored
-	// before leaving this block and SnapInput continues sending neutral data.
+	// copy of the practice input. During recorded playback only the explicit
+	// triplefly helper may add secondary-tee input; ordinary assists must not
+	// overwrite the actions saved in the macro.
+	if(!m_MacroPlaying || m_AutoTripleflyBindActive)
 	{
 		const CNetObj_PlayerInput SavedServerInput = m_aInputData[Dummy];
 		m_aInputData[Dummy] = PracticeInput;
 		ApplyHookAutomation(Dummy);
-		ApplyEdgeAssist(Dummy);
-		ApplyEdgeHook(Dummy);
+		if(!m_MacroPlaying)
+		{
+			ApplyEdgeAssist(Dummy);
+			ApplyEdgeHook(Dummy);
+		}
 		PracticeInput = m_aInputData[Dummy];
 		m_aInputData[Dummy] = SavedServerInput;
 	}
