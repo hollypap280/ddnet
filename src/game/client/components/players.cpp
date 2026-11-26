@@ -214,15 +214,15 @@ void CPlayers::RenderHookCollLine(
 		}
 	}
 
-		if(!IsMacroPracticeCopy && GameClient()->PredictDummy() && g_Config.m_ClDummyCopyMoves && GameClient()->m_aLocalIds[!g_Config.m_ClDummy] == SourceClientId)
+	if(!IsMacroPracticeCopy && GameClient()->PredictDummy() && g_Config.m_ClDummyCopyMoves && GameClient()->m_aLocalIds[!g_Config.m_ClDummy] == SourceClientId)
 		Aim = false; // don't use unpredicted with copy moves
 
 	bool AlwaysRenderHookColl = (Local ? g_Config.m_ClShowHookCollOwn : g_Config.m_ClShowHookCollOther) == 2;
 	bool RenderHookCollPlayer = Aim && (Local ? g_Config.m_ClShowHookCollOwn : g_Config.m_ClShowHookCollOther) > 0;
-		if(Local && Client()->State() != IClient::STATE_DEMOPLAYBACK)
+	if(Local && Client()->State() != IClient::STATE_DEMOPLAYBACK)
 		RenderHookCollPlayer = GameClient()->m_Controls.m_aShowHookColl[g_Config.m_ClDummy] && g_Config.m_ClShowHookCollOwn > 0;
 
-		if(!IsMacroPracticeCopy && GameClient()->PredictDummy() && g_Config.m_ClDummyCopyMoves &&
+	if(!IsMacroPracticeCopy && GameClient()->PredictDummy() && g_Config.m_ClDummyCopyMoves &&
 		GameClient()->m_aLocalIds[!g_Config.m_ClDummy] == SourceClientId && GameClient()->m_Controls.m_aShowHookColl[g_Config.m_ClDummy] &&
 		Client()->State() != IClient::STATE_DEMOPLAYBACK)
 	{
@@ -234,7 +234,10 @@ void CPlayers::RenderHookCollLine(
 
 	float Intra = IsMacroPracticeCopy ? 1.0f :
 		(GameClient()->m_aClients[SourceClientId].m_IsPredicted ? Client()->PredIntraGameTick(g_Config.m_ClDummy) : Client()->IntraGameTick(g_Config.m_ClDummy));
-	float Angle = GetPlayerTargetAngle(&Prev, &Player, SourceClientId, Intra);
+	vec2 PracticeAim = GameClient()->m_Controls.m_aMousePos[g_Config.m_ClDummy];
+	if(length(PracticeAim) < 1.0f)
+		PracticeAim = vec2(1.0f, 0.0f);
+	float Angle = IsMacroPracticeCopy ? angle(PracticeAim) : GetPlayerTargetAngle(&Prev, &Player, SourceClientId, Intra);
 
 	vec2 Position = IsMacroPracticeCopy ? mix(vec2(Prev.m_X, Prev.m_Y), vec2(Player.m_X, Player.m_Y), Intra) :
 		GameClient()->m_aClients[SourceClientId].m_RenderPos;
@@ -961,7 +964,7 @@ void CPlayers::RenderPlayer(
 		return;
 
 	int QuadOffsetToEmoticon = NUM_WEAPONS * 2 + 2 + 2;
-		if(!IsMacroPracticeServerTee && (Player.m_PlayerFlags & PLAYERFLAG_CHATTING) && !GameClient()->m_aClients[ClientId].m_Afk)
+	if(!IsMacroPracticeServerTee && (Player.m_PlayerFlags & PLAYERFLAG_CHATTING) && !GameClient()->m_aClients[ClientId].m_Afk)
 	{
 		int CurEmoticon = (SPRITE_DOTDOT - SPRITE_OOP);
 		Graphics()->TextureSet(GameClient()->m_EmoticonsSkin.m_aSpriteEmoticons[CurEmoticon]);
@@ -973,7 +976,7 @@ void CPlayers::RenderPlayer(
 		Graphics()->QuadsSetRotation(0);
 	}
 
-		if(!IsMacroPracticeServerTee && g_Config.m_ClAfkEmote && GameClient()->m_aClients[ClientId].m_Afk && ClientId != GameClient()->m_aLocalIds[!g_Config.m_ClDummy])
+	if(!IsMacroPracticeServerTee && g_Config.m_ClAfkEmote && GameClient()->m_aClients[ClientId].m_Afk && ClientId != GameClient()->m_aLocalIds[!g_Config.m_ClDummy])
 	{
 		int CurEmoticon = (SPRITE_ZZZ - SPRITE_OOP);
 		Graphics()->TextureSet(GameClient()->m_EmoticonsSkin.m_aSpriteEmoticons[CurEmoticon]);
@@ -985,7 +988,7 @@ void CPlayers::RenderPlayer(
 		Graphics()->QuadsSetRotation(0);
 	}
 
-		if(!IsMacroPracticeServerTee && g_Config.m_ClShowEmotes && !GameClient()->m_aClients[ClientId].m_EmoticonIgnore && GameClient()->m_aClients[ClientId].m_EmoticonStartTick != -1)
+	if(!IsMacroPracticeServerTee && g_Config.m_ClShowEmotes && !GameClient()->m_aClients[ClientId].m_EmoticonIgnore && GameClient()->m_aClients[ClientId].m_EmoticonStartTick != -1)
 	{
 		float SinceStart = (Client()->GameTick(g_Config.m_ClDummy) - GameClient()->m_aClients[ClientId].m_EmoticonStartTick) + (Client()->IntraGameTickSincePrev(g_Config.m_ClDummy) - GameClient()->m_aClients[ClientId].m_EmoticonStartFraction);
 		float FromEnd = (2 * Client()->GameTickSpeed()) - SinceStart;
