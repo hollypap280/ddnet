@@ -440,6 +440,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	static int s_MacroSubPage = 0;
 	static CButtonContainer s_MacroTab, s_SettingsTab;
 	static CButtonContainer s_RecordButton, s_PlayButton, s_RenameButton, s_DeleteButton;
+	static CButtonContainer s_ImportBindsButton;
 	static CButtonContainer s_aMacroButtons[8];
 	static char s_aSelectedMacro[64] = "";
 	static char s_aRenameInputFor[64] = "";
@@ -602,12 +603,17 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
 		MainView.HSplitTop(28.0f, &Row, &MainView);
 		Ui()->DoLabel(&Row, Localize("Эта сенса используется только при записи; обычная сенса мыши не меняется."), 12.0f, TEXTALIGN_ML);
+		MainView.HSplitTop(34.0f, &Row, &MainView);
+		if(DoButton_Menu(&s_ImportBindsButton, Localize("Импортировать мои бинды"), 0, &Row))
+			Controls.ImportMacroBinds();
+		MainView.HSplitTop(30.0f, &Row, &MainView);
+		Ui()->DoLabel(&Row, Localize("Импортируются бинды движения, прыжка, хука, огня и выбора оружия."), 12.0f, TEXTALIGN_ML);
 		MainView.HSplitTop(28.0f, &Row, &MainView);
-		Ui()->DoLabel(&Row, Localize("Стандартные игровые бинды работают в тренировочном мире автоматически."), 13.0f, TEXTALIGN_ML);
+		Ui()->DoLabel(&Row, Localize("Составные бинды сохраняют остальные команды и работают в обычной игре."), 12.0f, TEXTALIGN_ML);
 		MainView.HSplitTop(28.0f, &Row, &MainView);
-		Ui()->DoLabel(&Row, Localize("Движение, прыжок, хук, огонь, оружие и показ коллизии сохраняются."), 12.0f, TEXTALIGN_ML);
+		Ui()->DoLabel(&Row, Localize("Бинды автоматически подключаются при начале записи и запуске макроса."), 12.0f, TEXTALIGN_ML);
 		MainView.HSplitTop(28.0f, &Row, &MainView);
-		Ui()->DoLabel(&Row, Localize("Прозрачные серверные персонажи стоят на месте и не получают управление."), 12.0f, TEXTALIGN_ML);
+		Ui()->DoLabel(&Row, Localize("Прозрачные серверные персонажи не получают управление из FP."), 12.0f, TEXTALIGN_ML);
 	}
 }
 

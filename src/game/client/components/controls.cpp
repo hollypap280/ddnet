@@ -732,8 +732,6 @@ void CControls::OnConsoleInit()
 		Console()->Register("+prevweapon", "", CFGFLAG_CLIENT, ConKeyInputNextPrevWeapon, &s_Set, "Switch to previous weapon");
 	}
 
-	Console()->Register("tp_to_cursor", "", CFGFLAG_CLIENT, ConTpToCursor, this, "Practice: teleport yourself to your cursor");
-	Console()->Register("tp_dummy_to_cursor", "", CFGFLAG_CLIENT, ConTpDummyToCursor, this, "Practice: teleport the other tee to your cursor");
 	Console()->Register("+auto_triplefly", "", CFGFLAG_CLIENT, ConAutoTripleflyEnable, this, "Hold to assist Triplefly with dummy copy and timed third-tee hook");
 	Console()->Register("-auto_triplefly", "", CFGFLAG_CLIENT, ConAutoTripleflyDisable, this, "Release to stop Triplefly assist");
 	Console()->Register("toggle_auto_triplefly", "", CFGFLAG_CLIENT, ConAutoTriplefly, this, "Toggle Triplefly assist on or off");
@@ -1080,6 +1078,10 @@ bool CControls::StartMacroPractice()
 		GameClient()->Echo("Не найден активный персонаж в подтверждённом игровом мире.");
 		return false;
 	}
+
+	// Route the user's existing movement/attack/weapon binds into the isolated
+	// practice input buffer. Compound binds and unrelated commands are kept.
+	ImportMacroBinds();
 
 	// Freeze the translucent real-server tee markers at the directions they
 	// were facing when the private practice world was created.
@@ -1442,9 +1444,8 @@ void CControls::PopulateMacroPracticeWorld()
 			m_MacroPracticeWorld.InsertEntity(pPracticeCharacter);
 		}
 
-		// A non-controlled local tee is always input-AFK. It is imported only
-		// once, then its state is preserved inside the practice world. It can
-		// still receive forces from the controlled tee, projectiles and map tiles.
+		// A non-controlled local tee is input-AFK and held at its last position
+		// until selected. Remote players continue using their normal private physics.
 		if(!m_aMacroPracticeSnapshotInitialized[ClientId])
 		{
 			pPracticeCharacter->Read(&GameClient()->m_Snap.m_aCharacters[ClientId].m_Cur,
@@ -1462,7 +1463,7 @@ void CControls::PopulateMacroPracticeWorld()
 			m_aMacroPracticeSnapshotInitialized[ClientId] = true;
 		}
 
-		pPracticeCharacter->m_IsMacroPracticeStatic = true;
+		pPracticeCharacter->m_IsMacroPracticeStatic = IsOwnDummy;
 		pPracticeCharacter->m_GameTeam = GameTeam;
 	}
 
@@ -2036,12 +2037,9 @@ bool CControls::StartMacroRecording(const char *pName)
 		return false;
 	}
 	IOHANDLE ExistingFile = Storage()->OpenFile(aPath, IOFLAG_READ, IStorage::TYPE_SAVE);
+	const bool ReplacingExistingMacro = ExistingFile != nullptr;
 	if(ExistingFile)
-	{
 		io_close(ExistingFile);
-		GameClient()->Echo("Макрос с таким названием уже существует.");
-		return false;
-	}
 	if(!StartMacroPractice())
 		return false;
 
@@ -2056,6 +2054,8 @@ bool CControls::StartMacroRecording(const char *pName)
 	m_MacroPlaybackLive = false;
 	m_MacroPlaybackStartPending = false;
 	m_MacroPlaybackPaused = false;
+	if(ReplacingExistingMacro)
+		GameClient()->Echo("Макрос с таким именем будет заменён после сохранения новой записи.");
 	m_MacroPlaybackIndex = 0;
 	m_MacroDisplayedTick = 0;
 	m_MacroPracticeAccumulator = 0.0;
@@ -2364,6 +2364,8 @@ bool CControls::PlayMacro(const char *pName)
 	}
 
 	m_vMacroFrames = std::move(vLoadedFrames);
+	// The same imported controls are used for manual overrides during playback.
+	ImportMacroBinds();
 	str_copy(m_aMacroMapName, aStoredMapName[0] ? aStoredMapName : pCurrentMap);
 	m_MacroRecordingRate = std::clamp((int)RecordedRate, 1, (int)SERVER_TICK_SPEED);
 	m_MacroPlaybackRate = m_MacroRecordingRate;
@@ -2758,11 +2760,18 @@ int CControls::ImportMacroBinds()
 		}
 	}
 
-	char aMessage[160];
-	str_format(aMessage, sizeof(aMessage),
-		"Импортировано игровых биндов для макроса: %d. Составные команды сохранены; вне FP всё работает как обычно.",
-		Imported);
-	GameClient()->Echo(aMessage);
+	if(Imported > 0)
+	{
+		char aMessage[160];
+		str_format(aMessage, sizeof(aMessage),
+			"Подключено игровых биндов для макроса: %d. Остальные команды в составных биндах сохранены.",
+			Imported);
+		GameClient()->Echo(aMessage);
+	}
+	else
+	{
+		GameClient()->Echo("Игровые бинды уже подключены к макросам.");
+	}
 	return Imported;
 }
 

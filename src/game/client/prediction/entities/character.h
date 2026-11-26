@@ -63,8 +63,8 @@ public:
 	void ApplyMoveRestrictions();
 
 	bool m_IsLocal;
-	// Set once when this tee is copied from a live snapshot. In the private
-	// practice world it stays AFK but still runs physics and can be interacted with.
+	// Set for an inactive local tee in the private practice world. It stays AFK
+	// without drifting under gravity until the player switches to it.
 	bool m_IsMacroPracticeStatic = false;
 
 	CTeamsCore *TeamsCore();
