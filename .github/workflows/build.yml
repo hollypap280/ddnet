@@ -381,7 +381,7 @@ jobs:
         grep -q 'clock_gettime64' release/verify/pthread-exports.txt
         grep -q 'nanosleep64' release/verify/pthread-exports.txt
 
-    - name: Put client files into Client 14 folder
+    - name: Put client files into Client 15 folder
       shell: pwsh
       run: |
         @'
@@ -394,7 +394,7 @@ jobs:
         if len(archives) != 1:
             raise SystemExit(f"Expected one Windows package, found {len(archives)}")
 
-        client_dir = artifacts / "Клиент 14"
+        client_dir = artifacts / "Клиент 15"
         if client_dir.exists():
             rmtree(client_dir)
         client_dir.mkdir(parents=True)
@@ -437,16 +437,16 @@ jobs:
         executables = [path for path in client_dir.rglob("DDNet.exe") if path.is_file()]
         runtimes = [path for path in client_dir.rglob("libwinpthread-1.dll") if path.is_file()]
         if len(executables) != 1 or len(runtimes) != 1:
-            raise SystemExit(f"Client 14 package is incomplete: DDNet.exe={len(executables)}, libwinpthread-1.dll={len(runtimes)}")
+            raise SystemExit(f"Client 15 package is incomplete: DDNet.exe={len(executables)}, libwinpthread-1.dll={len(runtimes)}")
 
         archive_path.unlink()
-        print("Prepared Client 14 package")
+        print("Prepared Client 15 package")
         '@ | python -
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v6
       with:
-        name: Клиент 14
+        name: Клиент 15
         path: release/artifacts
 
     - name: Create public Actions artifact mirror
@@ -458,7 +458,7 @@ jobs:
         from zipfile import ZIP_DEFLATED, ZipFile
 
         source_dir = Path("release/artifacts")
-        output_path = Path("release/Клиент 14.zip")
+        output_path = Path("release/Клиент 15.zip")
         files = sorted(path for path in source_dir.rglob("*") if path.is_file())
         if not files:
             raise SystemExit("No packaged Windows build was found")
@@ -472,10 +472,10 @@ jobs:
             bad_file = archive.testzip()
             if bad_file is not None:
                 raise SystemExit(f"Public artifact ZIP is corrupted: {bad_file}")
-            client_files = [name for name in archive.namelist() if name.startswith("Клиент 14/") and not name.endswith("/")]
+            client_files = [name for name in archive.namelist() if name.startswith("Клиент 15/") and not name.endswith("/")]
             executables = [name for name in client_files if PurePosixPath(name).name.lower() == "ddnet.exe"]
             if not client_files or len(executables) != 1:
-                raise SystemExit(f"Expected a complete Client 14 folder with one DDNet.exe, found {len(executables)} executables")
+                raise SystemExit(f"Expected a complete Client 15 folder with one DDNet.exe, found {len(executables)} executables")
         print("Created public Windows mirror")
         '@ | python -
 
@@ -488,14 +488,14 @@ jobs:
         body: |
           Automatically updated Windows x64 build from the master branch.
 
-          Direct Actions artifact mirror: Клиент 14.zip
-          The archive contains the Windows client files in a folder named `Клиент 14`.
+          Direct Actions artifact mirror: Клиент 15.zip
+          The archive contains the Windows client files in a folder named `Клиент 15`.
         target_commitish: ${{ github.sha }}
         prerelease: true
         overwrite_files: true
         fail_on_unmatched_files: true
         files: |
-          release/Клиент 14.zip
+          release/Клиент 15.zip
 
   build-android:
     if: false # This fork currently builds the Windows desktop client only.

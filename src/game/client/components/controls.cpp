@@ -1931,7 +1931,7 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 			const bool HasDummyAction = OtherInput.m_Direction != 0 || OtherInput.m_Jump != 0 ||
 				OtherInput.m_Hook != 0 || (OtherInput.m_Fire & 1) != 0 || OtherInput.m_WantedWeapon > 0 ||
 				(OtherInput.m_NextWeapon & 1) != 0 || (OtherInput.m_PrevWeapon & 1) != 0;
-			if(HasDummyAction)
+			if(HasDummyAction || m_AutoTripleflyBindActive)
 				pPracticeOther->m_IsMacroPracticeParked = false;
 			pPracticeOther->OnPredictedInput(&OtherInput);
 			pPracticeOther->OnDirectInput(&OtherInput);
@@ -4434,6 +4434,8 @@ void CControls::RenderMacroHud()
 
 	// Draw the current private weapon inventory. The selected weapon stays
 	// bright while carried weapons are dimmed, matching DDNet's regular HUD.
+	const int CurrentWeapon = std::clamp(pCurrentPracticeCharacter ? pCurrentPracticeCharacter->GetActiveWeapon() :
+		(pDisplayFrame ? pDisplayFrame->m_Weapon : (int)WEAPON_HAMMER), (int)WEAPON_HAMMER, (int)WEAPON_NINJA);
 	bool aWeaponGot[NUM_WEAPONS]{};
 	if(pCurrentPracticeCharacter)
 	{
