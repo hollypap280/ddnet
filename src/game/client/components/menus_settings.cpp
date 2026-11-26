@@ -444,6 +444,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	static char s_aSelectedMacro[64] = "";
 	static char s_aRenameInputFor[64] = "";
 	static CLineInputBuffered<64> s_RenameInput;
+	static CLineInputBuffered<64> s_NewMacroName;
 	CUIRect TabRow, MacroTab, TabGap, SettingsTab;
 	MainView.HSplitTop(28.0f, &TabRow, &MainView);
 	TabRow.VSplitLeft(TabRow.w * 0.5f - 2.0f, &MacroTab, &TabGap);
@@ -476,6 +477,14 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		}
 
 		MainView.HSplitTop(8.0f, nullptr, &MainView);
+		if(!Controls.MacroRecording() && !Controls.MacroPlaying())
+		{
+			MainView.HSplitTop(30.0f, &Row, &MainView);
+			CUIRect NameLabel, NameInput;
+			Row.VSplitLeft(112.0f, &NameLabel, &NameInput);
+			Ui()->DoLabel(&NameLabel, Localize("Имя до записи:"), 12.0f, TEXTALIGN_ML);
+			Ui()->DoEditBox(&s_NewMacroName, &NameInput, 12.0f);
+		}
 		MainView.HSplitTop(34.0f, &Row, &MainView);
 		CUIRect RecordButton, ButtonGap, PlayButton;
 		Row.VSplitLeft(Row.w * 0.5f - 2.0f, &RecordButton, &ButtonGap);
@@ -488,6 +497,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 				char aSavedName[64];
 				str_copy(aSavedName, Controls.MacroRecordingName());
 				Controls.StopMacroRecording();
+				s_NewMacroName.Set("");
 				str_copy(s_aSelectedMacro, aSavedName);
 				s_RenameInput.Set(aSavedName);
 				str_copy(s_aRenameInputFor, aSavedName);
@@ -500,7 +510,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		}
 		else if(DoButton_Menu(&s_RecordButton, Localize("Начать"), 0, &RecordButton))
 		{
-			Controls.StartMacroRecording();
+			Controls.StartMacroRecording(s_NewMacroName.GetString());
 		}
 
 		const bool CanPlay = !Controls.MacroRecording() && !Controls.MacroPlaying() && s_aSelectedMacro[0];
