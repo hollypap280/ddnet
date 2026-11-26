@@ -1112,7 +1112,7 @@ bool CControls::StartMacroPractice()
 	m_MacroPracticeActive = true;
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeAccumulator = 0.0;
-	m_MacroPracticeLastServerTick = Client()->GameTick(Dummy);
+	m_MacroPracticeLastServerTick = Client()->PredGameTick(Dummy);
 	m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
 	m_MacroPracticeStartTick = m_MacroPracticeTick;
 	m_MacroPracticeStartLocalId = LocalId;
@@ -1458,7 +1458,7 @@ void CControls::PopulateMacroPracticeWorld()
 				m_MacroPracticeFireCounter = m_aInputData[g_Config.m_ClDummy].m_Fire & INPUT_STATE_MASK;
 				m_MacroPracticeInput = m_aInputData[g_Config.m_ClDummy];
 				m_MacroPracticeAccumulator = 0.0f;
-				m_MacroPracticeLastServerTick = Client()->GameTick(g_Config.m_ClDummy);
+				m_MacroPracticeLastServerTick = Client()->PredGameTick(g_Config.m_ClDummy);
 			}
 		}
 	
@@ -2003,7 +2003,7 @@ bool CControls::StartMacroRecording(const char *pName)
 	m_MacroPlaybackIndex = 0;
 	m_MacroDisplayedTick = 0;
 	m_MacroPracticeAccumulator = 0.0;
-	m_MacroPracticeLastServerTick = Client()->GameTick(g_Config.m_ClDummy);
+	m_MacroPracticeLastServerTick = Client()->PredGameTick(g_Config.m_ClDummy);
 	GameClient()->Echo(Localize("Запись началась: каждый игровой тик сохраняется отдельно."));
 	return true;
 }
@@ -2348,7 +2348,7 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroPlaybackStartPending = true;
 	m_MacroPlaybackLastTick = Client()->GameTick(PlaybackDummy);
 	m_MacroPracticeAccumulator = 0.0;
-	m_MacroPracticeLastServerTick = Client()->GameTick(PlaybackDummy);
+	m_MacroPracticeLastServerTick = Client()->PredGameTick(PlaybackDummy);
 	m_MacroPracticeWaiting = false;
 	m_MacroRecording = false;
 	m_MacroRecordingPaused = false;
@@ -2697,7 +2697,7 @@ void CControls::ToggleMacroPause()
 	{
 		m_MacroRecordingPaused = !m_MacroRecordingPaused;
 		m_MacroPracticeAccumulator = 0.0;
-		m_MacroPracticeLastServerTick = Client()->GameTick(g_Config.m_ClDummy);
+		m_MacroPracticeLastServerTick = Client()->PredGameTick(g_Config.m_ClDummy);
 		GameClient()->Echo(m_MacroRecordingPaused ? "Запись макроса на паузе." : "Запись макроса продолжена.");
 		return;
 	}
@@ -2715,7 +2715,7 @@ void CControls::ToggleMacroPause()
 	}
 	else
 	{
-		m_MacroPracticeLastServerTick = Client()->GameTick(g_Config.m_ClDummy);
+		m_MacroPracticeLastServerTick = Client()->PredGameTick(g_Config.m_ClDummy);
 		GameClient()->Echo("Воспроизведение макроса продолжено.");
 	}
 }
@@ -2869,7 +2869,7 @@ bool CControls::RebuildMacroWorldToPosition(int Position)
 	m_MacroDisplayedTick = Position;
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeAccumulator = 0.0;
-	m_MacroPracticeLastServerTick = Client()->GameTick(g_Config.m_ClDummy);
+	m_MacroPracticeLastServerTick = Client()->PredGameTick(g_Config.m_ClDummy);
 	m_MacroPlaybackLastTick = -1;
 	UpdateMacroPracticeGhost(m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId));
 	return true;
@@ -2903,7 +2903,7 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 			return false;
 		m_vMacroFrames.resize(TargetPosition);
 		m_MacroRecordingPaused = !ResumeRecordingAfterSeek;
-		m_MacroPracticeLastServerTick = Client()->GameTick(g_Config.m_ClDummy);
+		m_MacroPracticeLastServerTick = Client()->PredGameTick(g_Config.m_ClDummy);
 		m_MacroPlaybackIndex = (std::size_t)TargetPosition;
 		m_MacroDisplayedTick = TargetPosition;
 		if(ShowMessage)
@@ -2959,7 +2959,7 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 		m_MacroPlaybackIndex = (std::size_t)Target + 1;
 		m_MacroDisplayedTick = Target + 1;
 		m_MacroPracticeAccumulator = 0.0;
-		m_MacroPracticeLastServerTick = Client()->GameTick(g_Config.m_ClDummy);
+		m_MacroPracticeLastServerTick = Client()->PredGameTick(g_Config.m_ClDummy);
 	}
 	else
 	{
@@ -2976,7 +2976,7 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 		m_MacroDisplayedTick = Target + 1;
 		m_MacroPlaying = true;
 		m_MacroPlaybackPaused = WasPlaybackPaused;
-		m_MacroPracticeLastServerTick = Client()->GameTick(g_Config.m_ClDummy);
+		m_MacroPracticeLastServerTick = Client()->PredGameTick(g_Config.m_ClDummy);
 	}
 
 	if(ShowMessage)
@@ -3570,12 +3570,12 @@ void CControls::OnUpdate()
 	PracticeDummyInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
 	PracticeDummyInput.m_TargetX = 1;
 
-	// Drive the private training timeline from the actual game tick counter,
-	// not wall-clock time. This keeps every saved input frame aligned with
-	// the same server tick sequence that live playback will consume.
-	const int CurrentServerTick = Client()->GameTick(Dummy);
-	if(m_MacroPracticeLastServerTick < 0 || CurrentServerTick < m_MacroPracticeLastServerTick)
-		m_MacroPracticeLastServerTick = CurrentServerTick;
+	// Advance the private world on the same 50 Hz prediction clock used by
+	// normal local movement. Server snapshots are usually delivered every
+	// second game tick, so GameTick alone would batch two inputs together.
+	const int CurrentPracticeTick = Client()->PredGameTick(Dummy);
+	if(m_MacroPracticeLastServerTick < 0 || CurrentPracticeTick < m_MacroPracticeLastServerTick)
+		m_MacroPracticeLastServerTick = CurrentPracticeTick;
 
 	// Do not simulate while the player is typing or viewing a menu. Paused
 	// recording and paused playback both keep an exact, stationary world.
@@ -3607,23 +3607,23 @@ void CControls::OnUpdate()
 		if(m_MacroPracticeInput.m_PrevWeapon & 1)
 			++m_MacroPracticeInput.m_PrevWeapon;
 		m_aManualHook[Dummy] = false;
-		m_MacroPracticeLastServerTick = CurrentServerTick;
+		m_MacroPracticeLastServerTick = CurrentPracticeTick;
 		return;
 	}
 	if(MacroPaused)
 	{
-		m_MacroPracticeLastServerTick = CurrentServerTick;
+		m_MacroPracticeLastServerTick = CurrentPracticeTick;
 		return;
 	}
 
-	const int ServerTickDelta = std::max(0, CurrentServerTick - m_MacroPracticeLastServerTick);
-	m_MacroPracticeLastServerTick = CurrentServerTick;
+	const int PracticeTickDelta = std::max(0, CurrentPracticeTick - m_MacroPracticeLastServerTick);
+	m_MacroPracticeLastServerTick = CurrentPracticeTick;
 	// A saved frame is one logical game tick. Recording can run at a slower
 	// fraction of confirmed server ticks, while playback consumes exactly one
 	// saved frame per server tick.
 	const int PracticeRate = m_MacroPlaying ? m_MacroPlaybackRate :
 		(m_MacroRecording ? m_MacroRecordingRate : MacroPracticeRate());
-	m_MacroPracticeAccumulator += (double)ServerTickDelta * (double)PracticeRate / (double)SERVER_TICK_SPEED;
+	m_MacroPracticeAccumulator += (double)PracticeTickDelta * (double)PracticeRate / (double)SERVER_TICK_SPEED;
 
 	int Steps = 0;
 	const int MaxStepsPerUpdate = std::max<int>(SERVER_TICK_SPEED, PracticeRate);
