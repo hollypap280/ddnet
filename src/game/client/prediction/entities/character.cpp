@@ -630,7 +630,8 @@ void CCharacter::PreTick()
 	if(m_IsMacroPracticeParked)
 	{
 		const bool HasInteraction = !m_Core.m_AttachedPlayers.empty() || m_Core.HookedPlayer() >= 0 ||
-			m_Core.m_HookState != HOOK_IDLE || length(m_Core.m_Vel) > 0.001f;
+			m_Core.m_HookState != HOOK_IDLE || length(m_Core.m_Vel) > 0.001f ||
+			m_Input.m_Direction != 0 || m_Input.m_Jump != 0 || m_Input.m_Hook != 0 || (m_Input.m_Fire & 1) != 0;
 		if(HasInteraction)
 			m_IsMacroPracticeParked = false;
 		else
@@ -685,7 +686,8 @@ void CCharacter::TickDeferred()
 	if(m_IsMacroPracticeParked)
 	{
 		const bool HasInteraction = !m_Core.m_AttachedPlayers.empty() || m_Core.HookedPlayer() >= 0 ||
-			m_Core.m_HookState != HOOK_IDLE || length(m_Core.m_Vel) > 0.001f;
+			m_Core.m_HookState != HOOK_IDLE || length(m_Core.m_Vel) > 0.001f ||
+			m_Input.m_Direction != 0 || m_Input.m_Jump != 0 || m_Input.m_Hook != 0 || (m_Input.m_Fire & 1) != 0;
 		if(!HasInteraction)
 			return;
 		m_IsMacroPracticeParked = false;

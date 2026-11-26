@@ -415,6 +415,9 @@ void CGhost::SetMacroPracticeWorld(CGameWorld *pWorld)
 		const int ClientId = pCharacter->GetCid();
 		if(ClientId < 0 || ClientId >= MAX_CLIENTS)
 			continue;
+		const bool IsLocalTee = ClientId == GameClient()->m_aLocalIds[0] || ClientId == GameClient()->m_aLocalIds[1];
+		if(!g_Config.m_ClMacroPracticeShowOthers && !IsLocalTee)
+			continue;
 
 		CNetObj_Character Current{};
 		pCharacter->Core()->Write(&Current);

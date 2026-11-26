@@ -322,6 +322,20 @@ void CControls::SetAutoTriplefly(bool Enable)
 		std::fill(std::begin(m_aTripleflyTargetClientId), std::end(m_aTripleflyTargetClientId), -1);
 		GameClient()->m_DummyInput.m_Hook = 0;
 		m_aInputData[!g_Config.m_ClDummy].m_Hook = 0;
+		if(m_MacroPracticeActive && !m_MacroPracticeDummyEnabled)
+		{
+			CNetObj_PlayerInput IdlePracticeDummy{};
+			IdlePracticeDummy.m_PlayerFlags = PLAYERFLAG_PLAYING;
+			IdlePracticeDummy.m_TargetX = 1;
+			m_MacroPracticeDummyInput = IdlePracticeDummy;
+			const int PracticeDummyId = GameClient()->m_aLocalIds[!g_Config.m_ClDummy];
+			if(CCharacter *pPracticeDummy = m_MacroPracticeWorld.GetCharacterById(PracticeDummyId))
+			{
+				pPracticeDummy->OnPredictedInput(&IdlePracticeDummy);
+				pPracticeDummy->OnDirectInput(&IdlePracticeDummy);
+				pPracticeDummy->SetInput(&IdlePracticeDummy);
+			}
+		}
 		GameClient()->Echo("Triplefly остановлен; настройки дамми восстановлены.");
 	}
 }
@@ -1423,7 +1437,7 @@ void CControls::PopulateMacroPracticeWorld()
 				m_aMacroPracticeSnapshotInitialized[ClientId] = true;
 			continue;
 		}
-		if((!g_Config.m_ClMacroPracticeShowOthers && !IsOwnDummy) || !Info.m_Active)
+		if((!g_Config.m_ClMacroPracticeShowOthers && !IsOwnDummy && !m_AutoTripleflyBindActive) || !Info.m_Active)
 		{
 			if(pPracticeCharacter)
 				pPracticeCharacter->Destroy();
@@ -1493,6 +1507,11 @@ bool CControls::SwitchMacroPracticeCharacter(int ClientId)
 		return false;
 	if(ClientId == m_MacroPracticeLocalId)
 	{
+		if(CCharacter *pCurrentCharacter = m_MacroPracticeWorld.GetCharacterById(ClientId))
+		{
+			pCurrentCharacter->m_IsLocal = true;
+			pCurrentCharacter->m_IsMacroPracticeParked = false;
+		}
 		m_MacroPracticeDummySwapPending = false;
 		return true;
 	}
@@ -1508,9 +1527,9 @@ bool CControls::SwitchMacroPracticeCharacter(int ClientId)
 	IdleInput.m_TargetX = 1;
 	if(CCharacter *pOldCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId))
 	{
-		// Stop feeding this tee live input, but keep its velocity, hook,
-		// freeze, weapon and position so it remains part of the timeline.
-		pOldCharacter->SetInput(&IdleInput);
+		// Keep the last applied input as well as velocity, hook, freeze,
+		// weapon and position. The tee must not behave as if its keys were
+		// released merely because the player switched to the other tee.
 		pOldCharacter->m_IsLocal = false;
 		pOldCharacter->m_IsMacroPracticeParked = true;
 	}
@@ -1910,14 +1929,9 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 			pPracticeOther->OnPredictedInput(&OtherInput);
 			pPracticeOther->OnDirectInput(&OtherInput);
 		}
-		else
-		{
-			CNetObj_PlayerInput IdleInput{};
-			IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
-			IdleInput.m_TargetX = 1;
-			pPracticeOther->OnPredictedInput(&IdleInput);
-			pPracticeOther->OnDirectInput(&IdleInput);
-		}
+		// No dummy controller is active: leave this tee's last input untouched.
+		// This is important after a swap, because clearing it here would release
+		// a hook one physics tick after the swap and drop the other tee.
 	}
 
 	++m_MacroPracticeWorld.m_GameTick;
@@ -2855,10 +2869,8 @@ void CControls::OnMacroPracticeDummySwap()
 	m_MacroPracticeDummySwapPending = true;
 	if(CCharacter *pCurrent = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId))
 	{
-		CNetObj_PlayerInput IdleInput{};
-		IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
-		IdleInput.m_TargetX = 1;
-		pCurrent->SetInput(&IdleInput);
+		// Park it without synthesizing a key release. Its last hook/movement
+		// input remains active while the private world continues simulating.
 		pCurrent->m_IsLocal = false;
 		pCurrent->m_IsMacroPracticeParked = true;
 	}
@@ -3156,7 +3168,7 @@ void CControls::ApplyHookAutomation(int Dummy)
 	// Snapshot velocity can lag behind the driver's real direction by a tick.
 	const vec2 LocalPos = LocalCore.m_Pos;
 	const vec2 LocalVel = LocalCore.m_Vel;
-	const int LocalId = GameClient()->m_Snap.m_LocalClientId;
+	const int LocalId = PracticeActive ? m_MacroPracticeLocalId : GameClient()->m_Snap.m_LocalClientId;
 	const int DummyId = GameClient()->m_aLocalIds[!g_Config.m_ClDummy];
 	const bool PracticeActive = pPracticeLocal != nullptr;
 
