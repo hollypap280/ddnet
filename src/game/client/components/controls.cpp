@@ -2179,12 +2179,16 @@ bool CControls::PlayMacro(const char *pName)
 		return false;
 	}
 
+	// Check the exact payload length before reading frame structs. This also
+	// prevents a truncated or mixed-version file from producing partial frames.
+	const int64_t FileLength = io_length(File);
 	uint32_t Magic = 0;
 	uint32_t Version = 0;
 	uint32_t Count = 0;
 	uint32_t RecordedRate = SERVER_TICK_SPEED;
 	char aStoredMapName[64]{};
-	bool ReadOk = io_read(File, &Magic, sizeof(Magic)) == sizeof(Magic) &&
+	bool ReadOk = FileLength >= 0 &&
+		io_read(File, &Magic, sizeof(Magic)) == sizeof(Magic) &&
 		io_read(File, &Version, sizeof(Version)) == sizeof(Version) &&
 		io_read(File, &Count, sizeof(Count)) == sizeof(Count) &&
 		Magic == MACRO_FILE_MAGIC && Count > 0 && Count <= MACRO_MAX_FRAMES &&
@@ -2193,11 +2197,16 @@ bool CControls::PlayMacro(const char *pName)
 	if(ReadOk)
 		ReadOk = io_read(File, aStoredMapName, sizeof(aStoredMapName)) == sizeof(aStoredMapName);
 	if(ReadOk)
-	{
 		ReadOk = io_read(File, &RecordedRate, sizeof(RecordedRate)) == sizeof(RecordedRate) &&
 			RecordedRate >= 1 && RecordedRate <= SERVER_TICK_SPEED;
-	}
 	aStoredMapName[sizeof(aStoredMapName) - 1] = '\0';
+
+	const int64_t HeaderBytes = (int64_t)sizeof(Magic) + sizeof(Version) + sizeof(Count) +
+		(int64_t)sizeof(aStoredMapName) + (int64_t)sizeof(RecordedRate);
+	const int64_t FrameBytes = (int64_t)Count *
+		(Version == MACRO_FILE_VERSION ? (int64_t)sizeof(SMacroFrame) : (int64_t)sizeof(SMacroFrameV9));
+	if(ReadOk && FileLength != HeaderBytes + FrameBytes)
+		ReadOk = false;
 
 	std::vector<SMacroFrame> vLoadedFrames;
 	if(ReadOk)
@@ -2205,7 +2214,7 @@ bool CControls::PlayMacro(const char *pName)
 		vLoadedFrames.resize(Count);
 		if(Version == MACRO_FILE_VERSION)
 		{
-			ReadOk = io_read(File, vLoadedFrames.data(), Count * sizeof(SMacroFrame)) == Count * sizeof(SMacroFrame);
+			ReadOk = io_read(File, vLoadedFrames.data(), FrameBytes) == FrameBytes;
 		}
 		else
 		{
@@ -2248,7 +2257,7 @@ bool CControls::PlayMacro(const char *pName)
 	}
 
 	const char *pCurrentMap = GameClient()->Map()->BaseName();
-	if(aStoredMapName[0] && pCurrentMap && str_comp(aStoredMapName, pCurrentMap) != 0)
+	if(aStoredMapName[0] && pCurrentMap && str_comp_nocase(aStoredMapName, pCurrentMap) != 0)
 	{
 		char aMessage[160];
 		str_format(aMessage, sizeof(aMessage), "Макрос записан на карте «%s», сейчас открыта «%s».",
@@ -2267,17 +2276,34 @@ bool CControls::PlayMacro(const char *pName)
 		}
 	}
 
+	// Start on the same connection that performed the first recorded tick.
+	// Replay is input-only: the server owns movement, physics, hooks and weapons.
+	int PlaybackDummy = std::clamp(g_Config.m_ClDummy, 0, NUM_DUMMIES - 1);
+	const int FirstFrameConnection = MacroConnectionFromStoredClientId(vLoadedFrames.front().m_ClientId);
+	if(FirstFrameConnection >= 0)
+		PlaybackDummy = FirstFrameConnection;
+	const int PlaybackLocalId = GameClient()->m_aLocalIds[PlaybackDummy];
+	if(PlaybackLocalId < 0 || PlaybackLocalId >= MAX_CLIENTS ||
+		!GameClient()->m_PredictedWorld.GetCharacterById(PlaybackLocalId))
+	{
+		GameClient()->Echo("Для воспроизведения нужен доступный персонаж: основной тии или дамми.");
+		return false;
+	}
+
 	m_vMacroFrames = std::move(vLoadedFrames);
 	str_copy(m_aMacroMapName, aStoredMapName[0] ? aStoredMapName : pCurrentMap);
 	m_MacroRecordingRate = std::clamp((int)RecordedRate, 1, (int)SERVER_TICK_SPEED);
 	m_MacroPlaybackRate = m_MacroRecordingRate;
-	m_MacroPlaybackDummy = std::clamp(g_Config.m_ClDummy, 0, NUM_DUMMIES - 1);
-	m_MacroPlaybackOriginalDummy = m_MacroPlaybackDummy;
+
+	m_MacroPlaybackOriginalDummy = g_Config.m_ClDummy;
 	for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
 		m_aMacroPlaybackSavedMousePos[Dummy] = m_aMousePos[Dummy];
 	m_MacroPlaybackSavedMousePosValid = true;
+	g_Config.m_ClDummy = PlaybackDummy;
+	m_MacroPlaybackDummy = PlaybackDummy;
 
 	std::fill(std::begin(m_aMacroPlaybackConnectionUsed), std::end(m_aMacroPlaybackConnectionUsed), false);
+	m_aMacroPlaybackConnectionUsed[PlaybackDummy] = true;
 	std::fill(std::begin(m_aMacroPlaybackWeaponOverride), std::end(m_aMacroPlaybackWeaponOverride), -1);
 	std::fill(std::begin(m_aMacroPickupWeaponOverride), std::end(m_aMacroPickupWeaponOverride), -1);
 	std::fill(std::begin(m_aMacroLiveFireOffset), std::end(m_aMacroLiveFireOffset), 0);
@@ -2288,11 +2314,7 @@ bool CControls::PlayMacro(const char *pName)
 	std::fill(std::begin(m_aMacroManualHookActive), std::end(m_aMacroManualHookActive), false);
 	std::fill(std::begin(m_aMacroManualAimActive), std::end(m_aMacroManualAimActive), false);
 
-	const int Dummy = m_MacroPlaybackDummy;
-	m_aMacroPlaybackConnectionUsed[Dummy] = true;
-	m_aInputDirectionLeft[Dummy] = false;
-	m_aInputDirectionRight[Dummy] = false;
-	CNetObj_PlayerInput Neutral = m_aLastData[Dummy];
+	CNetObj_PlayerInput Neutral = m_aLastData[PlaybackDummy];
 	Neutral.m_Direction = 0;
 	Neutral.m_Jump = 0;
 	Neutral.m_Hook = 0;
@@ -2306,11 +2328,14 @@ bool CControls::PlayMacro(const char *pName)
 	Neutral.m_Fire &= INPUT_STATE_MASK;
 	Neutral.m_NextWeapon &= INPUT_STATE_MASK;
 	Neutral.m_PrevWeapon &= INPUT_STATE_MASK;
-	m_aInputData[Dummy] = Neutral;
+	m_aInputData[PlaybackDummy] = Neutral;
+	m_aInputDirectionLeft[PlaybackDummy] = false;
+	m_aInputDirectionRight[PlaybackDummy] = false;
+	m_aManualHook[PlaybackDummy] = false;
 
 	m_MacroPlaybackIndex = 0;
 	m_MacroStartFrameIndex = 0;
-	m_MacroDisplayedTick = 0;
+	m_MacroDisplayedTick = 1;
 	m_MacroCurrentFrame = {};
 	m_MacroHasCurrentFrame = false;
 	m_MacroHoldCurrentFrame = false;
@@ -2322,16 +2347,19 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroPlaybackOwnsPractice = false;
 	m_MacroPlaybackHistoryAvailable = true;
 	m_MacroPlaybackStartPending = true;
-	m_MacroPlaybackLastTick = Client()->GameTick(Dummy);
+	m_MacroPlaybackLastTick = Client()->GameTick(PlaybackDummy);
 	m_MacroPracticeAccumulator = 0.0;
+	m_MacroPracticeLastServerTick = Client()->GameTick(PlaybackDummy);
 	m_MacroPracticeWaiting = false;
 	m_MacroRecording = false;
+	m_MacroRecordingPaused = false;
 	m_MacroPlaying = true;
 	m_MacroPlaybackLive = true;
 	m_aRecordingMacroName[0] = '\0';
 
-	char aMessage[128];
-	str_format(aMessage, sizeof(aMessage), "Запущен макрос «%s»: %d тиков.", aName, (int)m_vMacroFrames.size());
+	char aMessage[160];
+	str_format(aMessage, sizeof(aMessage), "Запущен макрос «%s»: %d тиков, скорость %d тик/с.",
+		aName, (int)m_vMacroFrames.size(), m_MacroPlaybackRate);
 	GameClient()->Echo(aMessage);
 	return true;
 }
