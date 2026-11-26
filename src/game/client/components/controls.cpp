@@ -920,6 +920,9 @@ void CControls::SendMacroFrame(int Index, EMacroFrameMode Mode)
 			m_MacroPlaybackDummy = RequestedDummy;
 			m_aMacroPlaybackConnectionUsed[RequestedDummy] = true;
 			g_Config.m_ClDummy = RequestedDummy;
+			// When the macro itself changes tees, keep that final selection
+			// after playback instead of restoring an old camera/tee connection.
+			m_MacroPlaybackOriginalDummy = RequestedDummy;
 			RebaseMacroPlaybackCounters(RequestedDummy, Index - 1);
 			m_MacroPlaybackLastTick = Client()->PredGameTick(m_MacroPlaybackDummy);
 			m_MacroPracticeAccumulator = 0.0;
@@ -1405,7 +1408,11 @@ void CControls::PopulateMacroPracticeWorld()
 		// it and recreating it at an old server snapshot position.
 		if(IsOwnDummy && !Info.m_Active)
 		{
-			m_aMacroPracticeSnapshotInitialized[ClientId] = true;
+			// Only preserve the initialized flag if a private clone already
+			// exists. If the tee appears later, its first active snapshot must
+			// still initialize the newly created clone from its real position.
+			if(pPracticeCharacter)
+				m_aMacroPracticeSnapshotInitialized[ClientId] = true;
 			continue;
 		}
 		if((!g_Config.m_ClMacroPracticeShowOthers && !IsOwnDummy) || !Info.m_Active)
