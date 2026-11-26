@@ -1070,17 +1070,31 @@ bool CControls::StartMacroPractice()
 
 	const int Dummy = std::clamp(g_Config.m_ClDummy, 0, NUM_DUMMIES - 1);
 	const int LocalId = GameClient()->m_aLocalIds[Dummy];
-	if(LocalId < 0 || LocalId >= MAX_CLIENTS)
+	if(LocalId < 0 || LocalId >= MAX_CLIENTS ||
+		!GameClient()->m_PredictedWorld.GetCharacterById(LocalId))
 	{
-		GameClient()->Echo("Не найден активный персонаж для тренировочного мира.");
+		GameClient()->Echo("Не найден активный персонаж в предсказанном мире.");
 		return false;
 	}
 
-	// Build an isolated copy of the current predicted world. The server-side
-	// tee stays at the original place and receives neutral input while recording.
+	// Build an isolated copy of the current predicted world. Detach the copy
+	// from the prediction world's invalidation chain so the server snapshot
+	// cannot mark this independent training timeline as stale.
 	m_MacroPracticeWorld.CopyWorld(&GameClient()->m_PredictedWorld);
+	if(m_MacroPracticeWorld.m_pParent && m_MacroPracticeWorld.m_pParent->m_pChild == &m_MacroPracticeWorld)
+		m_MacroPracticeWorld.m_pParent->m_pChild = nullptr;
 	m_MacroPracticeWorld.m_pParent = nullptr;
 	m_MacroPracticeWorld.m_pChild = nullptr;
+
+	// Practice should always simulate local weapons, freeze, tiles and DDRace
+	// rules, regardless of which prediction options the live server enabled.
+	m_MacroPracticeWorld.m_WorldConfig = GameClient()->m_PredictedWorld.m_WorldConfig;
+	m_MacroPracticeWorld.m_WorldConfig.m_PredictWeapons = true;
+	m_MacroPracticeWorld.m_WorldConfig.m_PredictFreeze = true;
+	m_MacroPracticeWorld.m_WorldConfig.m_PredictTiles = true;
+	m_MacroPracticeWorld.m_WorldConfig.m_PredictDDRace = true;
+	m_MacroPracticeWorld.m_WorldConfig.m_PredictEvents = true;
+	m_MacroPracticeWorld.m_WorldConfig.m_UseTuneZones = true;
 	m_MacroPracticeLocalId = LocalId;
 	m_MacroPracticeWorld.m_LocalClientId = LocalId;
 	m_MacroPracticeWorld.m_GameTick = Client()->PredGameTick(Dummy);
@@ -1129,10 +1143,13 @@ bool CControls::StartMacroPractice()
 
 	// Keep a full starting snapshot for deterministic rewind within this take.
 	m_MacroPracticeStartWorld.CopyWorld(&m_MacroPracticeWorld);
-	m_MacroPracticeWorld.m_pParent = nullptr;
-	m_MacroPracticeWorld.m_pChild = nullptr;
+	if(m_MacroPracticeStartWorld.m_pParent &&
+		m_MacroPracticeStartWorld.m_pParent->m_pChild == &m_MacroPracticeStartWorld)
+		m_MacroPracticeStartWorld.m_pParent->m_pChild = nullptr;
 	m_MacroPracticeStartWorld.m_pParent = nullptr;
 	m_MacroPracticeStartWorld.m_pChild = nullptr;
+	m_MacroPracticeWorld.m_pParent = nullptr;
+	m_MacroPracticeWorld.m_pChild = nullptr;
 	std::copy(std::begin(m_aMacroPracticeSnapshotInitialized),
 		std::end(m_aMacroPracticeSnapshotInitialized),
 		std::begin(m_aMacroPracticeStartSnapshotInitialized));
@@ -1149,6 +1166,26 @@ bool CControls::StartMacroPractice()
 	m_MacroPracticeDummyEnabled = false;
 	m_MacroPracticeDummyLeft = false;
 	m_MacroPracticeDummyRight = false;
+
+	// Clear held controls on both real server connections before the private
+	// simulation starts. The live tees receive neutral packets only and never
+	// inherit movement, hook, fire or cursor input from the practice tee.
+	for(int InputDummy = 0; InputDummy < NUM_DUMMIES; ++InputDummy)
+	{
+		m_aInputData[InputDummy] = {};
+		m_aInputData[InputDummy].m_PlayerFlags = PLAYERFLAG_PLAYING;
+		m_aInputData[InputDummy].m_TargetX = 1;
+		m_aLastData[InputDummy] = m_aInputData[InputDummy];
+		m_aInputDirectionLeft[InputDummy] = 0;
+		m_aInputDirectionRight[InputDummy] = 0;
+		m_aManualHook[InputDummy] = false;
+	}
+	GameClient()->m_DummyInput = {};
+	GameClient()->m_DummyInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+	GameClient()->m_DummyInput.m_TargetX = 1;
+	m_LastSendTime = 0;
+	m_MacroPlaybackHistoryAvailable = false;
+
 	m_MacroPracticePendingFireTransitions = 0;
 	m_MacroPracticePendingNextWeaponTransitions = 0;
 	m_MacroPracticePendingPrevWeaponTransitions = 0;
@@ -2156,7 +2193,11 @@ bool CControls::PlayMacro(const char *pName)
 	if(ReadOk)
 		ReadOk = io_read(File, aStoredMapName, sizeof(aStoredMapName)) == sizeof(aStoredMapName);
 	if(ReadOk)
-		ReadOk = io_read(File, &RecordedRate, sizeof(RecordedRate)) == sizeof(RecordedRate);
+	{
+		ReadOk = io_read(File, &RecordedRate, sizeof(RecordedRate)) == sizeof(RecordedRate) &&
+			RecordedRate >= 1 && RecordedRate <= SERVER_TICK_SPEED;
+	}
+	aStoredMapName[sizeof(aStoredMapName) - 1] = '\0';
 
 	std::vector<SMacroFrame> vLoadedFrames;
 	if(ReadOk)
