@@ -389,10 +389,13 @@ void CGhost::OnRender()
 			if(!m_aMacroPracticeVisible[ClientId] || !m_apMacroPracticeRenderInfo[ClientId])
 				continue;
 			CTeeRenderInfo RenderInfo = m_apMacroPracticeRenderInfo[ClientId]->TeeRenderInfo();
+			if(ClientId == GameClient()->m_Controls.MacroPracticeLocalId())
+				GameClient()->m_Players.RenderHookCollLine(ScreenRect, &m_aMacroPracticePrev[ClientId],
+					&m_aMacroPracticeCurrent[ClientId], -3, ClientId);
 			GameClient()->m_Players.RenderHook(ScreenRect, &m_aMacroPracticePrev[ClientId], &m_aMacroPracticeCurrent[ClientId], &RenderInfo, -3, 1.0f);
 
 			GameClient()->m_Players.RenderPlayer(ScreenRect, &m_aMacroPracticePrev[ClientId], &m_aMacroPracticeCurrent[ClientId],
-				&RenderInfo, -3, 1.0f, 1.0f);
+				&RenderInfo, -3, 1.0f, 1.0f, ClientId);
 
 		}
 	}
