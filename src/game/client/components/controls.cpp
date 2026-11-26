@@ -292,6 +292,12 @@ void CControls::SetAutoTriplefly(bool Enable)
 
 		m_AutoTripleflyBindActive = true;
 		g_Config.m_ClAutoTriplefly = 1;
+		if(m_MacroPracticeActive && !m_MacroPracticeDummyEnabled)
+		{
+			m_MacroPracticeDummyInput = {};
+			m_MacroPracticeDummyInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+			m_MacroPracticeDummyInput.m_TargetX = 1;
+		}
 		g_Config.m_ClDummyCopyMoves = 1;
 		g_Config.m_ClDummyHook = 0;
 		// The helper adds brief hook windows and leaves hammer/fire/jump
@@ -305,7 +311,9 @@ void CControls::SetAutoTriplefly(bool Enable)
 		m_TripleflyHammerBeforeHook = false;
 		std::fill(std::begin(m_aTripleflyTargetFound), std::end(m_aTripleflyTargetFound), false);
 		std::fill(std::begin(m_aTripleflyTargetClientId), std::end(m_aTripleflyTargetClientId), -1);
-		GameClient()->Echo("Triplefly активен, пока удерживается бинд. Начни флайт — дамми сам ищет третьего тии.");
+		GameClient()->Echo(m_MacroPracticeActive ?
+			"FP-флай активен: дамми целится в активного тии и бьёт молотом." :
+			"Triplefly активен, пока удерживается бинд. Начни флайт — дамми сам ищет третьего тии.");
 	}
 	else
 	{
@@ -334,6 +342,7 @@ void CControls::SetAutoTriplefly(bool Enable)
 				pPracticeDummy->OnPredictedInput(&IdlePracticeDummy);
 				pPracticeDummy->OnDirectInput(&IdlePracticeDummy);
 				pPracticeDummy->SetInput(&IdlePracticeDummy);
+				pPracticeDummy->m_IsMacroPracticeParked = true;
 			}
 		}
 		GameClient()->Echo("Triplefly остановлен; настройки дамми восстановлены.");
@@ -1486,10 +1495,10 @@ void CControls::PopulateMacroPracticeWorld()
 
 		if(IsOwnDummy && ClientId != m_MacroPracticeLocalId)
 		{
-			const CCharacterCore &InactiveCore = *pPracticeCharacter->Core();
-			const bool HasInteraction = !InactiveCore.m_AttachedPlayers.empty() || InactiveCore.HookedPlayer() >= 0 ||
-				InactiveCore.m_HookState != HOOK_IDLE || length(InactiveCore.m_Vel) > 0.001f;
-			pPracticeCharacter->m_IsMacroPracticeParked = !HasInteraction;
+			// Switching tees pauses the complete private character state:
+			// position, velocity, hook, freeze and weapon timers remain untouched.
+			// It resumes only when the player selects this tee again.
+			pPracticeCharacter->m_IsMacroPracticeParked = true;
 		}
 
 		pPracticeCharacter->m_GameTeam = GameTeam;
@@ -1661,9 +1670,7 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 			SecondaryCore.m_aWeapons[Weapon].m_Ammo = Frame.m_aSecondaryWeaponAmmo[Weapon];
 		}
 		pSecondary->SetCore(SecondaryCore);
-		pSecondary->m_IsMacroPracticeParked =
-			SecondaryCore.m_AttachedPlayers.empty() && SecondaryCore.HookedPlayer() < 0 &&
-			SecondaryCore.m_HookState == HOOK_IDLE && length(SecondaryCore.m_Vel) <= 0.001f;
+		pSecondary->m_IsMacroPracticeParked = true;
 		pSecondary->m_Pos = SecondaryCore.m_Pos;
 		pSecondary->m_PrevPos = SecondaryCore.m_Pos;
 		pSecondary->m_PrevPrevPos = SecondaryCore.m_Pos;
@@ -3168,9 +3175,31 @@ void CControls::ApplyHookAutomation(int Dummy)
 	// Snapshot velocity can lag behind the driver's real direction by a tick.
 	const vec2 LocalPos = LocalCore.m_Pos;
 	const vec2 LocalVel = LocalCore.m_Vel;
+	const bool PracticeActive = pPracticeLocal != nullptr;
 	const int LocalId = PracticeActive ? m_MacroPracticeLocalId : GameClient()->m_Snap.m_LocalClientId;
 	const int DummyId = GameClient()->m_aLocalIds[!g_Config.m_ClDummy];
-	const bool PracticeActive = pPracticeLocal != nullptr;
+
+	// In the isolated macro world the fly bind is a direct dummy-hammer assist:
+	// the dummy aims at the currently controlled tee and does not need a third tee.
+	if(m_AutoTripleflyBindActive && PracticeActive)
+	{
+		const CCharacter *pPracticeDummy = m_MacroPracticeWorld.GetCharacterById(DummyId);
+		if(pPracticeDummy)
+		{
+			vec2 Aim = LocalPos - pPracticeDummy->Core()->m_Pos;
+			if(length(Aim) < 1.0f)
+				Aim = vec2(1.0f, 0.0f);
+			m_aTripleflyTargetFound[Dummy] = true;
+			m_aTripleflyTargetClientId[Dummy] = m_MacroPracticeLocalId;
+			m_aTripleflyAimX[Dummy] = round_to_int(Aim.x);
+			m_aTripleflyAimY[Dummy] = round_to_int(Aim.y);
+			m_TripleflyFlightActive = true;
+		}
+		m_aAutoHookActive[Dummy] = false;
+		m_aAutoHookFireActive[Dummy] = false;
+		m_aAutoAvoidActive[Dummy] = false;
+		return;
+	}
 
 	if(m_AutoTripleflyBindActive)
 	{
@@ -3794,7 +3823,43 @@ void CControls::OnUpdate()
 			StepDummyInput.m_Direction = m_MacroPracticeDummyLeft == m_MacroPracticeDummyRight ? 0 :
 				(m_MacroPracticeDummyLeft ? -1 : 1);
 		}
-		if(m_AutoTripleflyBindActive)
+		if(m_AutoTripleflyBindActive && m_MacroPracticeActive)
+		{
+			CCharacter *pPracticeDriver = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId);
+			const int PracticeDummyId = GameClient()->m_aLocalIds[!Dummy];
+			CCharacter *pPracticeDummy = m_MacroPracticeWorld.GetCharacterById(PracticeDummyId);
+			if(pPracticeDriver && pPracticeDummy)
+			{
+				vec2 Aim = pPracticeDriver->Core()->m_Pos - pPracticeDummy->Core()->m_Pos;
+				if(length(Aim) < 1.0f)
+					Aim = vec2(1.0f, 0.0f);
+
+				StepDummyInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+				StepDummyInput.m_TargetX = round_to_int(Aim.x);
+				StepDummyInput.m_TargetY = round_to_int(Aim.y);
+				StepDummyInput.m_Direction = 0;
+				StepDummyInput.m_Hook = 0;
+				StepDummyInput.m_WantedWeapon =
+					pPracticeDummy->GetActiveWeapon() == WEAPON_HAMMER ? 0 : WEAPON_HAMMER + 1;
+
+				// A short hammer press every eight private-world ticks leaves
+				// time for the hammer cooldown and makes the hit repeatable.
+				const int PracticeTick = m_MacroPracticeWorld.GameTick();
+				if(m_TripleflyNextHookTick < 0 || PracticeTick >= m_TripleflyNextHookTick)
+				{
+					if(!(m_MacroPracticeDummyInput.m_Fire & 1))
+						++m_MacroPracticeDummyInput.m_Fire;
+					m_TripleflyNextHookTick = PracticeTick + 8;
+				}
+				else if(m_MacroPracticeDummyInput.m_Fire & 1)
+				{
+					++m_MacroPracticeDummyInput.m_Fire;
+				}
+				m_MacroPracticeDummyInput.m_Fire &= INPUT_STATE_MASK;
+				StepDummyInput.m_Fire = m_MacroPracticeDummyInput.m_Fire;
+			}
+		}
+		else if(m_AutoTripleflyBindActive)
 		{
 			StepDummyInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
 			StepDummyInput.m_TargetX = m_aTripleflyAimX[Dummy] == 0 && m_aTripleflyAimY[Dummy] == 0 ? 1 : m_aTripleflyAimX[Dummy];
@@ -4340,7 +4405,7 @@ void CControls::RenderMacroHud()
 	Graphics()->DrawRect(BoxX + 4.0f, BoxY + 4.0f, BoxWidth - 8.0f, BoxHeight - 8.0f,
 		ColorRGBA(0.42f, 0.42f, 0.42f, 0.88f), IGraphics::CORNER_ALL, 2.0f);
 
-	const char *pClientName = "КЛИЕНТ 10";
+	const char *pClientName = "SPARKI CLIENT";
 	const float ClientFontSize = 15.0f;
 	const float ClientWidth = TextRender()->TextWidth(ClientFontSize, pClientName);
 	TextRender()->TextColor(0.55f, 0.9f, 1.0f, 1.0f);
@@ -4367,57 +4432,88 @@ void CControls::RenderMacroHud()
 		pDisplayFrame = &DisplayFrame;
 	}
 
-	char aWeaponInfo[96];
-	const int CurrentWeapon = std::clamp(pCurrentPracticeCharacter ? pCurrentPracticeCharacter->GetActiveWeapon() :
-		(pDisplayFrame ? pDisplayFrame->m_Weapon : (int)WEAPON_HAMMER), (int)WEAPON_HAMMER, (int)WEAPON_NINJA);
-	const char *pCurrentWeaponName = "ОРУЖИЕ";
-	switch(CurrentWeapon)
-	{
-	case WEAPON_HAMMER: pCurrentWeaponName = "МОЛОТ"; break;
-	case WEAPON_GUN: pCurrentWeaponName = "ПИСТОЛЕТ"; break;
-	case WEAPON_SHOTGUN: pCurrentWeaponName = "ДРОБОВИК"; break;
-	case WEAPON_GRENADE: pCurrentWeaponName = "ГРАНАТА"; break;
-	case WEAPON_LASER: pCurrentWeaponName = "ЛАЗЕР"; break;
-	case WEAPON_NINJA: pCurrentWeaponName = "НИНДЗЯ"; break;
-	}
-	str_format(aWeaponInfo, sizeof(aWeaponInfo), "ОРУЖИЕ: %s", pCurrentWeaponName);
-
-	char aJumpInfo[96];
+	// Draw the current private weapon inventory. The selected weapon stays
+	// bright while carried weapons are dimmed, matching DDNet's regular HUD.
+	bool aWeaponGot[NUM_WEAPONS]{};
 	if(pCurrentPracticeCharacter)
 	{
 		const CCharacterCore &Core = *pCurrentPracticeCharacter->Core();
-		if(Core.m_EndlessJump)
-			str_copy(aJumpInfo, "ВОЗДУШНЫЕ ПРЫЖКИ: ∞");
-		else
-		{
-			const int AirJumpLimit = std::max(0, Core.m_Jumps - 1);
-			const int AirJumpsUsed = std::clamp(Core.m_JumpedTotal, 0, AirJumpLimit);
-			str_format(aJumpInfo, sizeof(aJumpInfo), "ДВОЙНЫЕ ПРЫЖКИ: %d-%d",
-				AirJumpsUsed, AirJumpLimit - AirJumpsUsed);
-		}
+		for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+			aWeaponGot[Weapon] = Core.m_aWeapons[Weapon].m_Got;
 	}
-	else if(pDisplayFrame && pDisplayFrame->m_HasDDNetState)
+	else if(pDisplayFrame && pDisplayFrame->m_HasWeaponInventoryState)
 	{
-		const CNetObj_DDNetCharacter &State = pDisplayFrame->m_PreDDNetCharacter;
-		const int AirJumpLimit = std::max(0, State.m_Jumps - 1);
-		const int AirJumpsUsed = std::clamp(State.m_JumpedTotal, 0, AirJumpLimit);
-		str_format(aJumpInfo, sizeof(aJumpInfo), "ДВОЙНЫЕ ПРЫЖКИ: %d-%d",
-			AirJumpsUsed, AirJumpLimit - AirJumpsUsed);
+		for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+			aWeaponGot[Weapon] = pDisplayFrame->m_aWeaponGot[Weapon] != 0;
 	}
 	else
-		str_copy(aJumpInfo, "ДВОЙНЫЕ ПРЫЖКИ: --");
+		aWeaponGot[CurrentWeapon] = true;
 
-	const float InfoX = 12.0f;
-	const float InfoY = 28.0f;
-	const float InfoWidth = std::min(226.0f, ScreenWidth - 24.0f);
-	const float InfoHeight = 48.0f;
-	Graphics()->DrawRect(InfoX, InfoY, InfoWidth, InfoHeight,
-		ColorRGBA(0.0f, 0.0f, 0.0f, 0.78f), IGraphics::CORNER_ALL, 2.0f);
-	Graphics()->DrawRect(InfoX + 2.0f, InfoY + 2.0f, InfoWidth - 4.0f, InfoHeight - 4.0f,
-		ColorRGBA(0.42f, 0.42f, 0.42f, 0.82f), IGraphics::CORNER_ALL, 2.0f);
-	TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
-	TextRender()->Text(InfoX + 9.0f, InfoY + 6.0f, 12.0f, aWeaponInfo);
-	TextRender()->Text(InfoX + 9.0f, InfoY + 27.0f, 12.0f, aJumpInfo);
+	float WeaponX = 18.0f;
+	const float WeaponY = 8.0f;
+	const float WeaponSize = 36.0f;
+	const float WeaponStep = 43.0f;
+	for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+	{
+		if(!aWeaponGot[Weapon])
+			continue;
+		const float Alpha = Weapon == CurrentWeapon ? 1.0f : 0.42f;
+		Graphics()->TextureSet(GameClient()->m_GameSkin.m_aSpritePickupWeapons[Weapon]);
+		Graphics()->QuadsBegin();
+		Graphics()->SetColor(1.0f, 1.0f, 1.0f, Alpha);
+		Graphics()->QuadsSetRotation(pi * 7.0f / 4.0f);
+		IGraphics::CQuadItem WeaponQuad(WeaponX, WeaponY, WeaponSize, WeaponSize);
+		Graphics()->QuadsDrawTL(&WeaponQuad, 1);
+		Graphics()->QuadsEnd();
+		Graphics()->QuadsSetRotation(0.0f);
+		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+		WeaponX += WeaponStep;
+	}
+
+	// Available air-jump icons are filled; used jumps turn into the empty
+	// icon one by one, just like the ordinary DDNet HUD.
+	if(pCurrentPracticeCharacter)
+	{
+		const CCharacterCore &Core = *pCurrentPracticeCharacter->Core();
+		const int TotalJumps = std::clamp(absolute(Core.m_Jumps), 0, 10);
+		int UsedJumps = Core.m_JumpedTotal;
+		const bool Grounded = Collision()->IsOnGround(Core.m_Pos, CCharacterCore::PhysicalSize());
+		if(Core.m_Jumps > 1)
+			UsedJumps += !Grounded;
+		else if(Core.m_Jumps == 1)
+			UsedJumps = Core.m_Jumped & 2;
+		else if(Core.m_Jumps == -1)
+			UsedJumps = !Grounded;
+
+		if(Core.m_EndlessJump && TotalJumps > 0 && UsedJumps >= TotalJumps)
+			UsedJumps = TotalJumps - 1;
+		int AvailableJumps = std::clamp(TotalJumps - UsedJumps, 0, TotalJumps);
+		if(!(Core.m_Jumped & 2) && AvailableJumps <= 0 && TotalJumps > 0)
+			AvailableJumps = 1;
+
+		const float JumpX = 18.0f;
+		const float JumpY = 54.0f;
+		const float JumpSize = 28.0f;
+		const float JumpStep = 36.0f;
+		Graphics()->TextureSet(GameClient()->m_HudSkin.m_SpriteHudAirjump);
+		Graphics()->QuadsBegin();
+		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+		for(int i = 0; i < AvailableJumps; ++i)
+		{
+			IGraphics::CQuadItem JumpQuad(JumpX + i * JumpStep, JumpY, JumpSize, JumpSize);
+			Graphics()->QuadsDrawTL(&JumpQuad, 1);
+		}
+		Graphics()->QuadsEnd();
+
+		Graphics()->TextureSet(GameClient()->m_HudSkin.m_SpriteHudAirjumpEmpty);
+		Graphics()->QuadsBegin();
+		for(int i = AvailableJumps; i < TotalJumps; ++i)
+		{
+			IGraphics::CQuadItem JumpQuad(JumpX + i * JumpStep, JumpY, JumpSize, JumpSize);
+			Graphics()->QuadsDrawTL(&JumpQuad, 1);
+		}
+		Graphics()->QuadsEnd();
+	}
 
 	char aActionLabel[192];
 	str_copy(aActionLabel, "ДЕЙСТВИЕ: ОЖИДАНИЕ");
