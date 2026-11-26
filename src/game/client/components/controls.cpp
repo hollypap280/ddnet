@@ -1130,6 +1130,11 @@ bool CControls::StartMacroPractice()
 	m_MacroPracticeLastServerTick = Client()->PredGameTick(Dummy);
 	m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
 	m_MacroPracticeStartTick = m_MacroPracticeTick;
+	m_MacroPracticeDummySwapPending = false;
+	m_MacroPracticeEmoticon = -1;
+	m_MacroPracticeEmoticonStartTick = -1;
+	m_MacroPracticeEyeEmote = -1;
+	m_MacroPracticeEyeEmoteEndTick = -1;
 	m_MacroPracticeStartLocalId = LocalId;
 	m_MacroPracticeBaselineValid = false;
 	std::fill(std::begin(m_aMacroPracticeSnapshotInitialized), std::end(m_aMacroPracticeSnapshotInitialized), false);
@@ -1294,6 +1299,11 @@ void CControls::StopMacroPractice()
 	m_MacroPracticeAccumulator = 0.0f;
 	m_MacroPracticeLastServerTick = -1;
 	m_MacroPracticeLocalId = -1;
+	m_MacroPracticeDummySwapPending = false;
+	m_MacroPracticeEmoticon = -1;
+	m_MacroPracticeEmoticonStartTick = -1;
+	m_MacroPracticeEyeEmote = -1;
+	m_MacroPracticeEyeEmoteEndTick = -1;
 	m_MacroPracticeStartLocalId = -1;
 	std::fill(std::begin(m_aMacroPracticeSnapshotInitialized), std::end(m_aMacroPracticeSnapshotInitialized), false);
 	std::fill(std::begin(m_aMacroPracticeStartSnapshotInitialized), std::end(m_aMacroPracticeStartSnapshotInitialized), false);
@@ -1390,6 +1400,14 @@ void CControls::PopulateMacroPracticeWorld()
 		}
 
 		const bool IsOwnDummy = ClientId == GameClient()->m_aLocalIds[0] || ClientId == GameClient()->m_aLocalIds[1];
+		// A dummy connection can briefly disappear from the active snapshot
+		// during a swap. Keep its private-world character instead of destroying
+		// it and recreating it at an old server snapshot position.
+		if(IsOwnDummy && !Info.m_Active)
+		{
+			m_aMacroPracticeSnapshotInitialized[ClientId] = true;
+			continue;
+		}
 		if((!g_Config.m_ClMacroPracticeShowOthers && !IsOwnDummy) || !Info.m_Active)
 		{
 			if(pPracticeCharacter)
@@ -1468,6 +1486,7 @@ void CControls::PopulateMacroPracticeWorld()
 				pNewCharacter->m_IsMacroPracticeStatic = false;
 				m_MacroPracticeLocalId = RequestedLocalId;
 				m_MacroPracticeWorld.m_LocalClientId = RequestedLocalId;
+				m_MacroPracticeDummySwapPending = false;
 				m_MacroPracticePendingFireTransitions = 0;
 				m_MacroPracticePendingNextWeaponTransitions = 0;
 				m_MacroPracticePendingPrevWeaponTransitions = 0;
@@ -1524,6 +1543,7 @@ bool CControls::SwitchMacroPracticeCharacter(int ClientId)
 		g_Config.m_ClDummy = 1;
 	m_MacroPracticeLocalId = ClientId;
 	m_MacroPracticeWorld.m_LocalClientId = ClientId;
+	m_MacroPracticeDummySwapPending = false;
 	m_MacroPracticePendingFireTransitions = 0;
 	m_MacroPracticePendingNextWeaponTransitions = 0;
 	m_MacroPracticePendingPrevWeaponTransitions = 0;
@@ -1984,9 +2004,6 @@ bool CControls::StartMacroRecording(const char *pName)
 		return false;
 	}
 
-	if(!StartMacroPractice())
-		return false;
-
 	char aName[64];
 	if(pName && pName[0])
 		str_copy(aName, pName);
@@ -2009,9 +2026,17 @@ bool CControls::StartMacroRecording(const char *pName)
 	if(!MacroFilePath(aName, aPath, sizeof(aPath)))
 	{
 		GameClient()->Echo("Название макроса содержит недопустимые символы.");
-		StopMacroPractice();
 		return false;
 	}
+	IOHANDLE ExistingFile = Storage()->OpenFile(aPath, IOFLAG_READ, IStorage::TYPE_SAVE);
+	if(ExistingFile)
+	{
+		io_close(ExistingFile);
+		GameClient()->Echo("Макрос с таким названием уже существует.");
+		return false;
+	}
+	if(!StartMacroPractice())
+		return false;
 
 	m_vMacroFrames.clear();
 	str_copy(m_aRecordingMacroName, aName);
@@ -2792,6 +2817,9 @@ void CControls::OnMacroPracticeDummySwap()
 		{
 			m_MacroPlaybackDummy = RequestedDummy;
 			m_MacroPlaybackManualDummyOverride = true;
+			// Keep the tee selected by the player after playback stops. Otherwise
+			// cleanup jumps back to the connection that was active before replay.
+			m_MacroPlaybackOriginalDummy = RequestedDummy;
 			m_MacroPlaybackLastTick = Client()->PredGameTick(RequestedDummy);
 			m_MacroPracticeAccumulator = 0.0;
 			if(m_MacroHasCurrentFrame)
@@ -2805,9 +2833,11 @@ void CControls::OnMacroPracticeDummySwap()
 
 	if(!m_MacroPracticeActive || m_MacroPlaying)
 		return;
-	const int RequestedLocalId = GameClient()->m_aLocalIds[g_Config.m_ClDummy];
-	if(RequestedLocalId >= 0 && RequestedLocalId < MAX_CLIENTS)
-		SwitchMacroPracticeCharacter(RequestedLocalId);
+
+	// Let PopulateMacroPracticeWorld switch after the new connection's snapshot
+	// is available. Switching immediately can race the snapshot update and
+	// rebuild a tee from its stale server position.
+	m_MacroPracticeDummySwapPending = true;
 }
 void CControls::OnMacroObserverInputSent(const CNetObj_PlayerInput &Input)
 {
@@ -3880,12 +3910,17 @@ int CControls::SnapInput(int *pData)
 		{
 			CNetObj_PlayerInput MacroInput = m_MacroCurrentFrame.m_Input;
 			MacroInput.m_PlayerFlags = m_aInputData[MacroDummy].m_PlayerFlags;
-			if(m_MacroCurrentFrame.m_HasDDNetState &&
-				m_MacroCurrentFrame.m_Weapon != m_MacroCurrentFrame.m_PreWeapon)
+			const int RecordedWeapon = m_MacroCurrentFrame.m_Weapon;
+			const int LocalClientId = GameClient()->m_aLocalIds[MacroDummy];
+			if(RecordedWeapon >= 0 && RecordedWeapon < NUM_WEAPONS &&
+				LocalClientId >= 0 && LocalClientId < MAX_CLIENTS &&
+				(!m_MacroCurrentFrame.m_HasWeaponInventoryState || m_MacroCurrentFrame.m_aWeaponGot[RecordedWeapon]) &&
+				GameClient()->m_aClients[LocalClientId].m_Predicted.m_ActiveWeapon != RecordedWeapon)
 			{
-				// Repeat weapon changes caused by pickups as well as explicit key
-				// presses. The server still validates weapon ownership/ammo.
-				MacroInput.m_WantedWeapon = m_MacroCurrentFrame.m_Weapon + 1;
+				// Keep requesting the recorded weapon until the server-side
+				// prediction confirms the switch. This covers pickups and key
+				// presses even when one input packet is delayed or missed.
+				MacroInput.m_WantedWeapon = RecordedWeapon + 1;
 			}
 			MacroInput.m_Fire = (MacroInput.m_Fire + m_aMacroLiveFireOffset[MacroDummy]) & INPUT_STATE_MASK;
 			MacroInput.m_NextWeapon = (MacroInput.m_NextWeapon + m_aMacroLiveNextWeaponOffset[MacroDummy]) & INPUT_STATE_MASK;
