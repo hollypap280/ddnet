@@ -85,6 +85,36 @@ public:
 	int MacroPlaybackRate() const { return m_MacroPlaybackRate; }
 	int MacroPracticeRate() const;
 	bool MacroPracticeActive() const { return m_MacroPracticeActive; }
+	int MacroPracticeLocalId() const { return m_MacroPracticeLocalId; }
+	void SetMacroPracticeEmoticon(int Emoticon)
+	{
+		if(m_MacroPracticeActive && Emoticon >= 0 && Emoticon < NUM_EMOTICONS)
+		{
+			m_MacroPracticeEmoticon = Emoticon;
+			m_MacroPracticeEmoticonStartTick = m_MacroPracticeTick;
+		}
+	}
+	int MacroPracticeEmoticon() const
+	{
+		if(!m_MacroPracticeActive || m_MacroPracticeEmoticon < 0 || m_MacroPracticeEmoticonStartTick < 0)
+			return -1;
+		const int Age = m_MacroPracticeTick - m_MacroPracticeEmoticonStartTick;
+		return Age >= 0 && Age < 2 * m_MacroPracticeWorld.GameTickSpeed() ? m_MacroPracticeEmoticon : -1;
+	}
+	int MacroPracticeEmoticonStartTick() const { return m_MacroPracticeEmoticonStartTick; }
+	void SetMacroPracticeEyeEmote(int Emote, int DurationSeconds)
+	{
+		if(!m_MacroPracticeActive || Emote < 0 || Emote > EMOTE_BLINK)
+			return;
+		m_MacroPracticeEyeEmote = Emote;
+		m_MacroPracticeEyeEmoteEndTick = m_MacroPracticeTick +
+			(DurationSeconds > 0 ? DurationSeconds : 1) * m_MacroPracticeWorld.GameTickSpeed();
+	}
+	int MacroPracticeEyeEmote() const
+	{
+		return m_MacroPracticeActive && m_MacroPracticeEyeEmote >= 0 &&
+			m_MacroPracticeTick < m_MacroPracticeEyeEmoteEndTick ? m_MacroPracticeEyeEmote : -1;
+	}
 	vec2 MacroPracticeMarkerAim(int Connection) const
 	{
 		return Connection >= 0 && Connection < NUM_DUMMIES ? m_aMacroPracticeMarkerAim[Connection] : vec2(1.0f, 0.0f);
@@ -345,6 +375,11 @@ private:
 	int m_MacroPracticeLastServerTick = -1;
 	int m_MacroPracticeTick = 0;
 	int m_MacroPracticeLocalId = -1;
+	bool m_MacroPracticeDummySwapPending = false;
+	int m_MacroPracticeEmoticon = -1;
+	int m_MacroPracticeEmoticonStartTick = -1;
+	int m_MacroPracticeEyeEmote = -1;
+	int m_MacroPracticeEyeEmoteEndTick = -1;
 	int m_MacroPracticeStartTick = 0;
 	CNetObj_CharacterCore m_MacroPracticeStartCore{};
 	int m_MacroPracticeStartWeapon = WEAPON_HAMMER;
