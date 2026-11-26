@@ -432,90 +432,18 @@ bool CMenus::RenderHslaScrollbars(CUIRect *pRect, unsigned int *pColor, bool Alp
 
 void CMenus::RenderSettingsGame(CUIRect MainView)
 {
-	CUIRect Row, Label;
-	MainView.HSplitTop(28.0f, &Label, &MainView);
-	Ui()->DoLabel(&Label, Localize("Игровые функции"), 20.0f, TEXTALIGN_ML);
-	MainView.HSplitTop(5.0f, nullptr, &MainView);
-
-	static CButtonContainer s_AutoHook, s_Angle, s_Radius, s_Avoid, s_Edge;
-	static CButtonContainer s_Gun, s_Shotgun, s_Grenade, s_Laser;
-	static CButtonContainer s_AutoTriplefly, s_EdgeHook, s_DummyFlight;
-	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoHook, Localize("Автохук"), g_Config.m_ClAutoHook, &Row))
-		g_Config.m_ClAutoHook ^= 1;
-	Ui()->DoToolTip(&s_AutoHook, &Row, Localize("Автоматически цепляется за ближайшего видимого тии в заданном радиусе"));
-
-	MainView.HSplitTop(28.0f, &Row, &MainView);
-	Ui()->DoScrollbarOption(&g_Config.m_ClAutoHookAngle, &g_Config.m_ClAutoHookAngle, &Row, Localize("Угол автохука (градусы)"), 10, 360);
-	Ui()->DoToolTip(&s_Angle, &Row, Localize("Меняет угол поиска независимо от дальности. 250° исключает направление строго за спиной, 360° разрешает полный круг."));
-
-	MainView.HSplitTop(28.0f, &Row, &MainView);
-	Ui()->DoScrollbarOption(&g_Config.m_ClAutoHookRange, &g_Config.m_ClAutoHookRange, &Row, Localize("Дальность автохука"), 32, 360);
-
-	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoHookShowRadius, Localize("Показывать круг зоны крюка"), g_Config.m_ClAutoHookShowRadius, &Row))
-		g_Config.m_ClAutoHookShowRadius ^= 1;
-	Ui()->DoToolTip(&s_Radius, &Row, Localize("Показывает вокруг тии круг максимальной дальности крюка"));
-
-	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoAvoid, Localize("Защита от фриза"), g_Config.m_ClAutoAvoid, &Row))
-		g_Config.m_ClAutoAvoid ^= 1;
-	Ui()->DoToolTip(&s_Avoid, &Row, Localize("При подъёме или падении автоматически ищет стену для крюка, чтобы не сорваться во фриз"));
-
-	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoEdge, Localize("Точная наводка на край"), g_Config.m_ClAutoEdge, &Row))
-		g_Config.m_ClAutoEdge ^= 1;
-	Ui()->DoToolTip(&s_Edge, &Row, Localize("Пока зажат крюк, ищет точку зацепа рядом с прицелом, чтобы точнее цепляться за углы"));
-
-	MainView.HSplitTop(22.0f, &Row, &MainView);
-	Ui()->DoLabel(&Row, Localize("Прицеливание оружием в той же зоне"), 14.0f, TEXTALIGN_ML);
-
-	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoHookWeaponGun, Localize("Автовыстрел: пистолет"), g_Config.m_ClAutoHookWeaponGun, &Row))
-		g_Config.m_ClAutoHookWeaponGun ^= 1;
-	Ui()->DoToolTip(&s_Gun, &Row, Localize("Стреляет выбранным оружием по тии, на которого навёлся автохук"));
-
-	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoHookWeaponShotgun, Localize("Автовыстрел: дробовик"), g_Config.m_ClAutoHookWeaponShotgun, &Row))
-		g_Config.m_ClAutoHookWeaponShotgun ^= 1;
-	Ui()->DoToolTip(&s_Shotgun, &Row, Localize("Стреляет выбранным оружием по тии, на которого навёлся автохук"));
-
-	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoHookWeaponGrenade, Localize("Автовыстрел: гранатомёт"), g_Config.m_ClAutoHookWeaponGrenade, &Row))
-		g_Config.m_ClAutoHookWeaponGrenade ^= 1;
-	Ui()->DoToolTip(&s_Grenade, &Row, Localize("Стреляет выбранным оружием по тии, на которого навёлся автохук"));
-
-	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoHookWeaponLaser, Localize("Автовыстрел: лазер"), g_Config.m_ClAutoHookWeaponLaser, &Row))
-		g_Config.m_ClAutoHookWeaponLaser ^= 1;
-	Ui()->DoToolTip(&s_Laser, &Row, Localize("Стреляет выбранным оружием по тии, на которого навёлся автохук"));
-
-
-	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoTriplefly, Localize("Автотрёххук (цепляться за третьего тии)"), g_Config.m_ClAutoTriplefly, &Row))
-		g_Config.m_ClAutoTriplefly ^= 1;
-	Ui()->DoToolTip(&s_AutoTriplefly, &Row, Localize("Выбирает третьего ближайшего подходящего тии в зоне крюка"));
-
-	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClAutoEdgeHook, Localize("Подхват крюком у края (без прыжка)"), g_Config.m_ClAutoEdgeHook, &Row))
-		g_Config.m_ClAutoEdgeHook ^= 1;
-	Ui()->DoToolTip(&s_EdgeHook, &Row, Localize("Автоматически цепляется крюком за поверхность у края платформы. Прыжок не нажимается."));
-
-	MainView.HSplitTop(24.0f, &Row, &MainView);
-	if(DoButton_CheckBox(&g_Config.m_ClDummyHammer, Localize("Полёт дамми (обычный хаммерфлай)"), g_Config.m_ClDummyHammer, &Row))
-		g_Config.m_ClDummyHammer ^= 1;
-	Ui()->DoToolTip(&s_DummyFlight, &Row, Localize("Использует обычный ввод хаммерфлая для дамми"));
-
+	(void)MainView;
 }
 
 void CMenus::RenderSettingsMacros(CUIRect MainView)
 {
 	static int s_MacroSubPage = 0;
 	static CButtonContainer s_MacroTab, s_SettingsTab;
-	static CButtonContainer s_RecordButton, s_PlayButton, s_ImportBindsButton;
+	static CButtonContainer s_RecordButton, s_PlayButton, s_RenameButton, s_DeleteButton;
 	static CButtonContainer s_aMacroButtons[8];
 	static char s_aSelectedMacro[64] = "";
-	static int s_ImportedBinds = -1;
+	static char s_aRenameInputFor[64] = "";
+	static CLineInputBuffered<64> s_RenameInput;
 	CUIRect TabRow, MacroTab, TabGap, SettingsTab;
 	MainView.HSplitTop(28.0f, &TabRow, &MainView);
 	TabRow.VSplitLeft(TabRow.w * 0.5f - 2.0f, &MacroTab, &TabGap);
@@ -529,26 +457,61 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	CUIRect Row;
 	if(s_MacroSubPage == 0)
 	{
+		std::vector<CControls::SMacroInfo> vMacros;
+		Controls.GetMacroList(vMacros);
+
+		bool SelectionExists = false;
+		for(const CControls::SMacroInfo &Info : vMacros)
+			if(str_comp(s_aSelectedMacro, Info.m_aName) == 0)
+				SelectionExists = true;
+		if(!SelectionExists)
+		{
+			str_copy(s_aSelectedMacro, vMacros.empty() ? "" : vMacros.front().m_aName);
+			str_copy(s_aRenameInputFor, "");
+		}
+		if(str_comp(s_aRenameInputFor, s_aSelectedMacro) != 0)
+		{
+			s_RenameInput.Set(s_aSelectedMacro);
+			str_copy(s_aRenameInputFor, s_aSelectedMacro);
+		}
+
 		MainView.HSplitTop(8.0f, nullptr, &MainView);
 		MainView.HSplitTop(34.0f, &Row, &MainView);
+		CUIRect RecordButton, ButtonGap, PlayButton;
+		Row.VSplitLeft(Row.w * 0.5f - 2.0f, &RecordButton, &ButtonGap);
+		ButtonGap.VSplitLeft(4.0f, nullptr, &PlayButton);
+
 		if(Controls.MacroRecording())
 		{
-			if(DoButton_Menu(&s_RecordButton, Localize("Остановить и сохранить"), 0, &Row))
+			if(DoButton_Menu(&s_RecordButton, Localize("Остановить и сохранить"), 0, &RecordButton))
 			{
 				char aSavedName[64];
 				str_copy(aSavedName, Controls.MacroRecordingName());
 				Controls.StopMacroRecording();
 				str_copy(s_aSelectedMacro, aSavedName);
+				s_RenameInput.Set(aSavedName);
+				str_copy(s_aRenameInputFor, aSavedName);
 			}
 		}
 		else if(Controls.MacroPlaying())
 		{
-			Ui()->DoLabel(&Row, Localize("Воспроизведение макроса..."), 14.0f, TEXTALIGN_MC);
+			if(DoButton_Menu(&s_RecordButton, Localize("Остановить"), 0, &RecordButton))
+				Controls.StopMacroRecording();
+		}
+		else if(DoButton_Menu(&s_RecordButton, Localize("Начать"), 0, &RecordButton))
+		{
+			Controls.StartMacroRecording();
+		}
+
+		const bool CanPlay = !Controls.MacroRecording() && !Controls.MacroPlaying() && s_aSelectedMacro[0];
+		if(CanPlay)
+		{
+			if(DoButton_Menu(&s_PlayButton, Localize("Запустить"), 0, &PlayButton))
+				Controls.PlayMacro(s_aSelectedMacro);
 		}
 		else
 		{
-			if(DoButton_Menu(&s_RecordButton, Localize("Начать"), 0, &Row))
-				Controls.StartMacroRecording();
+			DoButton_Menu(&s_PlayButton, Localize("Запустить"), 0, &PlayButton);
 		}
 
 		MainView.HSplitTop(24.0f, &Row, &MainView);
@@ -560,64 +523,75 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			str_format(aStatus, sizeof(aStatus), "Воспроизведение: тик %d / %d",
 				Controls.MacroPosition(), Controls.MacroFrameCount());
 		else
-			str_copy(aStatus, Localize("Один сохранённый кадр соответствует одному игровому тику."));
+			str_copy(aStatus, Localize("1 игровой тик = 20 мс. Сохраняется каждый серверный тик."));
 		Ui()->DoLabel(&Row, aStatus, 13.0f, TEXTALIGN_ML);
 
-		MainView.HSplitTop(28.0f, &Row, &MainView);
+		MainView.HSplitTop(26.0f, &Row, &MainView);
 		Ui()->DoLabel(&Row, Localize("Сохранённые макросы"), 14.0f, TEXTALIGN_ML);
-		std::vector<CControls::SMacroInfo> vMacros;
-		Controls.GetMacroList(vMacros);
-		if(!vMacros.empty() && !s_aSelectedMacro[0])
-			str_copy(s_aSelectedMacro, vMacros.front().m_aName);
-
 		const int VisibleMacros = std::min((int)vMacros.size(), (int)std::size(s_aMacroButtons));
 		for(int i = 0; i < VisibleMacros; ++i)
 		{
-			MainView.HSplitTop(30.0f, &Row, &MainView);
+			MainView.HSplitTop(27.0f, &Row, &MainView);
 			char aLabel[160];
 			str_format(aLabel, sizeof(aLabel), "%s  |  %d тиков  |  %s",
 				vMacros[i].m_aName, vMacros[i].m_TickCount, vMacros[i].m_aMapName);
 			const bool Selected = str_comp(s_aSelectedMacro, vMacros[i].m_aName) == 0;
 			if(DoButton_Menu(&s_aMacroButtons[i], aLabel, Selected, &Row))
+			{
 				str_copy(s_aSelectedMacro, vMacros[i].m_aName);
+				s_RenameInput.Set(s_aSelectedMacro);
+				str_copy(s_aRenameInputFor, s_aSelectedMacro);
+			}
 		}
 		if((int)vMacros.size() > VisibleMacros)
 		{
-			MainView.HSplitTop(20.0f, &Row, &MainView);
+			MainView.HSplitTop(18.0f, &Row, &MainView);
 			Ui()->DoLabel(&Row, Localize("Показаны первые 8 макросов."), 11.0f, TEXTALIGN_ML);
 		}
 
-		if(Controls.MacroPlaying())
+		if(s_aSelectedMacro[0] && !Controls.MacroRecording() && !Controls.MacroPlaying())
 		{
-			MainView.HSplitBottom(34.0f, &MainView, &Row);
-			if(DoButton_Menu(&s_PlayButton, Localize("Остановить"), 0, &Row))
-				Controls.StopMacroRecording();
-		}
-		else if(!Controls.MacroRecording() && s_aSelectedMacro[0])
-		{
-			MainView.HSplitBottom(34.0f, &MainView, &Row);
-			if(DoButton_Menu(&s_PlayButton, Localize("Начать"), 0, &Row))
-				Controls.PlayMacro(s_aSelectedMacro);
+			MainView.HSplitTop(30.0f, &Row, &MainView);
+			CUIRect NameLabel, NameInput;
+			Row.VSplitLeft(72.0f, &NameLabel, &NameInput);
+			Ui()->DoLabel(&NameLabel, Localize("Название:"), 12.0f, TEXTALIGN_ML);
+			Ui()->DoEditBox(&s_RenameInput, &NameInput, 12.0f);
+
+			MainView.HSplitTop(30.0f, &Row, &MainView);
+			CUIRect RenameButton, ActionGap, DeleteButton;
+			Row.VSplitLeft(Row.w * 0.5f - 2.0f, &RenameButton, &ActionGap);
+			ActionGap.VSplitLeft(4.0f, nullptr, &DeleteButton);
+			if(DoButton_Menu(&s_RenameButton, Localize("Переименовать"), 0, &RenameButton))
+			{
+				if(Controls.RenameMacro(s_aSelectedMacro, s_RenameInput.GetString()))
+				{
+					str_copy(s_aSelectedMacro, s_RenameInput.GetString());
+					str_copy(s_aRenameInputFor, s_aSelectedMacro);
+					GameClient()->Echo("Макрос переименован.");
+				}
+			}
+			if(DoButton_Menu(&s_DeleteButton, Localize("Удалить"), 0, &DeleteButton))
+			{
+				if(Controls.DeleteMacro(s_aSelectedMacro))
+				{
+					GameClient()->Echo("Макрос удалён.");
+					s_aSelectedMacro[0] = '\0';
+					s_aRenameInputFor[0] = '\0';
+				}
+				else
+					GameClient()->Echo("Не удалось удалить макрос.");
+			}
 		}
 	}
 	else
 	{
-		MainView.HSplitTop(12.0f, nullptr, &MainView);
-		MainView.HSplitTop(36.0f, &Row, &MainView);
-		if(DoButton_Menu(&s_ImportBindsButton, Localize("Импортировать мои бинды"), 0, &Row))
-			s_ImportedBinds = Controls.ImportMacroBinds();
-
-		MainView.HSplitTop(32.0f, &Row, &MainView);
-		Ui()->DoLabel(&Row, Localize("Текущие клавиши движения, прыжка, хука, огня и выбора оружия будут работать в тренировочном мире."), 12.0f, TEXTALIGN_ML);
-		MainView.HSplitTop(28.0f, &Row, &MainView);
-		Ui()->DoLabel(&Row, Localize("Вне записи обычные игровые бинды продолжают работать как раньше."), 12.0f, TEXTALIGN_ML);
-		if(s_ImportedBinds >= 0)
-		{
-			MainView.HSplitTop(26.0f, &Row, &MainView);
-			char aMessage[96];
-			str_format(aMessage, sizeof(aMessage), "Перенесено команд: %d", s_ImportedBinds);
-			Ui()->DoLabel(&Row, aMessage, 13.0f, TEXTALIGN_ML);
-		}
+		MainView.HSplitTop(18.0f, nullptr, &MainView);
+		MainView.HSplitTop(30.0f, &Row, &MainView);
+		Ui()->DoLabel(&Row, Localize("Обычные игровые бинды работают в тренировочном мире автоматически."), 13.0f, TEXTALIGN_ML);
+		MainView.HSplitTop(30.0f, &Row, &MainView);
+		Ui()->DoLabel(&Row, Localize("Движение, прыжок, хук, огонь и выбор оружия не нужно импортировать или переназначать."), 12.0f, TEXTALIGN_ML);
+		MainView.HSplitTop(30.0f, &Row, &MainView);
+		Ui()->DoLabel(&Row, Localize("Прозрачные серверные персонажи остаются на месте и не получают управление."), 12.0f, TEXTALIGN_ML);
 	}
 }
 

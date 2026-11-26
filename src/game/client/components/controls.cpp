@@ -1071,23 +1071,22 @@ bool CControls::StartMacroPractice()
 	const int Dummy = std::clamp(g_Config.m_ClDummy, 0, NUM_DUMMIES - 1);
 	const int LocalId = GameClient()->m_aLocalIds[Dummy];
 	if(LocalId < 0 || LocalId >= MAX_CLIENTS ||
-		!GameClient()->m_PredictedWorld.GetCharacterById(LocalId))
+		!GameClient()->m_GameWorld.GetCharacterById(LocalId))
 	{
-		GameClient()->Echo("Не найден активный персонаж в предсказанном мире.");
+		GameClient()->Echo("Не найден активный персонаж в подтверждённом игровом мире.");
 		return false;
 	}
 
-	// Build an isolated copy of the current predicted world. Detach the copy
-	// from the prediction world's invalidation chain so the server snapshot
-	// cannot mark this independent training timeline as stale.
-	m_MacroPracticeWorld.CopyWorld(&GameClient()->m_PredictedWorld);
+	// Start from the last confirmed server state, not the already-predicted
+	// future. Each saved frame now advances exactly GameTick + 1, matching
+	// the tick where normal live playback sends that same input.
+	m_MacroPracticeWorld.CopyWorld(&GameClient()->m_GameWorld);
 	if(m_MacroPracticeWorld.m_pParent && m_MacroPracticeWorld.m_pParent->m_pChild == &m_MacroPracticeWorld)
 		m_MacroPracticeWorld.m_pParent->m_pChild = nullptr;
 	m_MacroPracticeWorld.m_pParent = nullptr;
 	m_MacroPracticeWorld.m_pChild = nullptr;
 
-	// Practice should always simulate local weapons, freeze, tiles and DDRace
-	// rules, regardless of which prediction options the live server enabled.
+	// Use the same local physics features as normal client prediction.
 	m_MacroPracticeWorld.m_WorldConfig = GameClient()->m_PredictedWorld.m_WorldConfig;
 	m_MacroPracticeWorld.m_WorldConfig.m_PredictWeapons = true;
 	m_MacroPracticeWorld.m_WorldConfig.m_PredictFreeze = true;
@@ -1097,7 +1096,7 @@ bool CControls::StartMacroPractice()
 	m_MacroPracticeWorld.m_WorldConfig.m_UseTuneZones = true;
 	m_MacroPracticeLocalId = LocalId;
 	m_MacroPracticeWorld.m_LocalClientId = LocalId;
-	m_MacroPracticeWorld.m_GameTick = Client()->PredGameTick(Dummy);
+	m_MacroPracticeWorld.m_GameTick = Client()->GameTick(Dummy);
 
 	CCharacter *pCharacter = m_MacroPracticeWorld.GetCharacterById(LocalId);
 	if(!pCharacter)
@@ -2367,6 +2366,32 @@ bool CControls::DeleteMacro(const char *pName)
 {
 	char aPath[128];
 	return MacroFilePath(pName, aPath, sizeof(aPath)) && Storage()->RemoveFile(aPath, IStorage::TYPE_SAVE);
+}
+
+bool CControls::RenameMacro(const char *pOldName, const char *pNewName)
+{
+	char aOldPath[128];
+	char aNewPath[128];
+	if(!MacroFilePath(pOldName, aOldPath, sizeof(aOldPath)) ||
+		!MacroFilePath(pNewName, aNewPath, sizeof(aNewPath)))
+		return false;
+	if(str_comp(pOldName, pNewName) == 0)
+		return true;
+
+	IOHANDLE Existing = Storage()->OpenFile(aNewPath, IOFLAG_READ, IStorage::TYPE_SAVE);
+	if(Existing)
+	{
+		io_close(Existing);
+		GameClient()->Echo("Макрос с таким названием уже существует.");
+		return false;
+	}
+
+	if(!Storage()->RenameFile(aOldPath, aNewPath, IStorage::TYPE_SAVE))
+	{
+		GameClient()->Echo("Не удалось переименовать макрос.");
+		return false;
+	}
+	return true;
 }
 
 void CControls::ConMacroPractice(IConsole::IResult *pResult, void *pUserData)

@@ -999,9 +999,9 @@ void CPlayers::OnRender()
 			(i == GameClient()->m_aLocalIds[0] || i == GameClient()->m_aLocalIds[1]);
 		if(IsMacroPracticeServerTee)
 		{
-			// The live server tees are only faint position markers. Their
-			// freeze skin must not remain visible over the local practice clones.
-			aRenderInfo[i].m_TeeRenderFlags = 0;
+			// The real server tees are stationary translucent markers only.
+			// Hide their weapons so the practice cursor never moves their aim.
+			aRenderInfo[i].m_TeeRenderFlags = TEE_NO_WEAPON;
 			Frozen = false;
 		}
 		if(!IsMacroPracticeServerTee &&
@@ -1032,10 +1032,10 @@ void CPlayers::OnRender()
 	const int LocalClientId = GameClient()->m_Snap.m_LocalClientId;
 	for(int ClientId = 0; ClientId < MAX_CLIENTS; ClientId++)
 	{
-		if(ClientId == LocalClientId || !IsPlayerInfoAvailable(ClientId))
-		{
+		const bool IsPracticeMarker = GameClient()->m_Controls.MacroPracticeActive() &&
+			(ClientId == GameClient()->m_aLocalIds[0] || ClientId == GameClient()->m_aLocalIds[1]);
+		if(ClientId == LocalClientId || !IsPlayerInfoAvailable(ClientId) || IsPracticeMarker)
 			continue;
-		}
 		RenderHook(ScreenRect, &GameClient()->m_aClients[ClientId].m_RenderPrev, &GameClient()->m_aClients[ClientId].m_RenderCur, &aRenderInfo[ClientId], ClientId);
 	}
 	if(LocalClientId != -1 && IsPlayerInfoAvailable(LocalClientId))
@@ -1069,17 +1069,21 @@ void CPlayers::OnRender()
 	for(int ClientId = 0; ClientId < MAX_CLIENTS; ClientId++)
 	{
 		if(ClientId == RenderLastId || !IsPlayerInfoAvailable(ClientId))
-		{
 			continue;
-		}
 
-		RenderHookCollLine(ScreenRect, &GameClient()->m_aClients[ClientId].m_RenderPrev, &GameClient()->m_aClients[ClientId].m_RenderCur, ClientId);
+		const bool IsPracticeMarker = GameClient()->m_Controls.MacroPracticeActive() &&
+			(ClientId == GameClient()->m_aLocalIds[0] || ClientId == GameClient()->m_aLocalIds[1]);
+		if(!IsPracticeMarker)
+			RenderHookCollLine(ScreenRect, &GameClient()->m_aClients[ClientId].m_RenderPrev, &GameClient()->m_aClients[ClientId].m_RenderCur, ClientId);
 		RenderPlayer(ScreenRect, &GameClient()->m_aClients[ClientId].m_RenderPrev, &GameClient()->m_aClients[ClientId].m_RenderCur, &aRenderInfo[ClientId], ClientId);
 	}
 	if(RenderLastId != -1 && IsPlayerInfoAvailable(RenderLastId))
 	{
 		const CGameClient::CClientData *pClientData = &GameClient()->m_aClients[RenderLastId];
-		RenderHookCollLine(ScreenRect, &pClientData->m_RenderPrev, &pClientData->m_RenderCur, RenderLastId);
+		const bool IsPracticeMarker = GameClient()->m_Controls.MacroPracticeActive() &&
+			(RenderLastId == GameClient()->m_aLocalIds[0] || RenderLastId == GameClient()->m_aLocalIds[1]);
+		if(!IsPracticeMarker)
+			RenderHookCollLine(ScreenRect, &pClientData->m_RenderPrev, &pClientData->m_RenderCur, RenderLastId);
 		RenderPlayer(ScreenRect, &pClientData->m_RenderPrev, &pClientData->m_RenderCur, &aRenderInfo[RenderLastId], RenderLastId);
 	}
 }

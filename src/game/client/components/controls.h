@@ -107,6 +107,7 @@ public:
 	bool SaveMacro(const char *pName);
 	bool PlayMacro(const char *pName);
 	bool DeleteMacro(const char *pName);
+	bool RenameMacro(const char *pOldName, const char *pNewName);
 
 private:
 	enum class EMacroFrameMode { PAUSE = 0, STEP = 1, RESTORE_PAUSED = 2, STOP = 3 };
