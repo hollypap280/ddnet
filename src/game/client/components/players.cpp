@@ -23,6 +23,8 @@
 #include <game/client/components/skins.h>
 #include <game/client/components/sounds.h>
 #include <game/client/gameclient.h>
+#include <game/client/prediction/entities/character.h>
+#include <game/client/prediction/gameworld.h>
 #include <game/collision.h>
 #include <game/gamecore.h>
 #include <game/mapitems.h>
@@ -186,6 +188,45 @@ void CPlayers::RenderHookCollLine(
 	const bool IsMacroPracticeCopy = ClientId == -3;
 	const int SourceClientId = IsMacroPracticeCopy ? MacroPracticeClientId : ClientId;
 	dbg_assert(in_range(SourceClientId, MAX_CLIENTS - 1), "invalid client id (%d)", SourceClientId);
+	CGameWorld *pPracticeWorld = IsMacroPracticeCopy ? GameClient()->m_Controls.MacroPracticeWorld() : nullptr;
+	CCharacter *pPracticeSource = pPracticeWorld ? pPracticeWorld->GetCharacterById(SourceClientId) : nullptr;
+	if(IsMacroPracticeCopy && !pPracticeSource)
+		return;
+
+	auto IntersectHookCharacter = [&](vec2 HookPos, vec2 NewPos, vec2 &NewPos2, vec2 *pPlayerPosition) {
+		if(!IsMacroPracticeCopy)
+			return GameClient()->IntersectCharacter(HookPos, NewPos, NewPos2, SourceClientId, pPlayerPosition);
+
+		const CCharacterCore &OwnCore = *pPracticeSource->Core();
+		float ClosestDistance = 0.0f;
+		int ClosestId = -1;
+		for(CEntity *pEntity = pPracticeWorld->FindFirst(CGameWorld::ENTTYPE_CHARACTER); pEntity; pEntity = pEntity->TypeNext())
+		{
+			auto *pTarget = static_cast<CCharacter *>(pEntity);
+			if(pTarget == pPracticeSource)
+				continue;
+			const CCharacterCore &TargetCore = *pTarget->Core();
+			const bool IsOneSuper = TargetCore.m_Super || OwnCore.m_Super;
+			const bool IsOneSolo = TargetCore.m_Solo || OwnCore.m_Solo;
+			if(!IsOneSuper && (!pTarget->SameTeam(SourceClientId) || IsOneSolo || OwnCore.m_HookHitDisabled))
+				continue;
+
+			vec2 ClosestPoint;
+			if(!closest_point_on_line(HookPos, NewPos, TargetCore.m_Pos, ClosestPoint) ||
+				distance(TargetCore.m_Pos, ClosestPoint) >= CCharacterCore::PhysicalSize() + 2.0f)
+				continue;
+			const float CandidateDistance = distance(HookPos, TargetCore.m_Pos);
+			if(ClosestId == -1 || CandidateDistance < ClosestDistance)
+			{
+				NewPos2 = ClosestPoint;
+				ClosestId = pTarget->GetCid();
+				ClosestDistance = CandidateDistance;
+				if(pPlayerPosition)
+					*pPlayerPosition = TargetCore.m_Pos;
+			}
+		}
+		return ClosestId;
+	};
 
 	if(!GameClient()->m_GameInfo.m_AllowHookColl)
 		return;
@@ -245,7 +286,9 @@ void CPlayers::RenderHookCollLine(
 
 	// When the other player isn't predicted, we don't know their tunes.
 	// Use our own tunes instead. This is wrong, but a good heuristic.
-	const CCharacterCore &PlayerCore = GameClient()->m_aClients[SourceClientId].m_IsPredicted ? GameClient()->m_aClients[SourceClientId].m_Predicted : GameClient()->m_aClients[GameClient()->m_aLocalIds[g_Config.m_ClDummy]].m_Predicted;
+	const CCharacterCore &PlayerCore = IsMacroPracticeCopy ? *pPracticeSource->Core() :
+		(GameClient()->m_aClients[SourceClientId].m_IsPredicted ? GameClient()->m_aClients[SourceClientId].m_Predicted :
+			GameClient()->m_aClients[GameClient()->m_aLocalIds[g_Config.m_ClDummy]].m_Predicted);
 	float HookLength = PlayerCore.m_Tuning.m_HookLength;
 	float HookFireSpeed = PlayerCore.m_Tuning.m_HookFireSpeed;
 
@@ -324,7 +367,7 @@ void CPlayers::RenderHookCollLine(
 				// you can't hook a player, if the hook is behind solids, however you miss the solids as well
 				int Hit = Collision()->IntersectLineTeleHook(SegmentStartPos, RetractingHookEndPos, &HitPos, nullptr, &Tele);
 
-				if(GameClient()->IntersectCharacter(SegmentStartPos, HitPos, RetractingHookEndPos, SourceClientId, &IntersectedPlayerPosition) != -1)
+				if(IntersectHookCharacter(SegmentStartPos, HitPos, RetractingHookEndPos, &IntersectedPlayerPosition) != -1)
 				{
 					AddHookPlayerSegment(LineStartPos, SegmentEndPos, IntersectedPlayerPosition, RetractingHookEndPos);
 					break;
@@ -355,7 +398,7 @@ void CPlayers::RenderHookCollLine(
 		int Hit = Collision()->IntersectLineTeleHook(SegmentStartPos, SegmentEndPos, &HitPos, nullptr, &Tele);
 
 		// check if we intersect a player
-		if(GameClient()->IntersectCharacter(SegmentStartPos, HitPos, SegmentEndPos, SourceClientId, &IntersectedPlayerPosition) != -1)
+		if(IntersectHookCharacter(SegmentStartPos, HitPos, SegmentEndPos, &IntersectedPlayerPosition) != -1)
 		{
 			AddHookPlayerSegment(LineStartPos, HitPos, IntersectedPlayerPosition, SegmentEndPos);
 			break;
@@ -660,7 +703,15 @@ void CPlayers::RenderPlayer(
 	bool PredictLocalWeapons = false;
 	float AttackTime = (Client()->PrevGameTick(g_Config.m_ClDummy) - Player.m_AttackTick) / (float)Client()->GameTickSpeed() + Client()->GameTickTime(g_Config.m_ClDummy);
 	float LastAttackTime = (Client()->PrevGameTick(g_Config.m_ClDummy) - Player.m_AttackTick) / (float)Client()->GameTickSpeed() + s_LastGameTickTime;
-	if(ClientId >= 0 && GameClient()->m_aClients[ClientId].m_IsPredictedLocal && GameClient()->AntiPingGunfire())
+	if(IsMacroPracticeCopy)
+	{
+		const CGameWorld *pPracticeWorld = GameClient()->m_Controls.MacroPracticeWorld();
+		if(pPracticeWorld)
+			AttackTime = LastAttackTime =
+				((float)(pPracticeWorld->GameTick() - 1 - Player.m_AttackTick) +
+					GameClient()->m_Controls.MacroPracticeTickFraction()) / (float)Client()->GameTickSpeed();
+	}
+	else if(ClientId >= 0 && GameClient()->m_aClients[ClientId].m_IsPredictedLocal && GameClient()->AntiPingGunfire())
 	{
 		PredictLocalWeapons = true;
 		AttackTime = (Client()->PredIntraGameTick(g_Config.m_ClDummy) + (Client()->PredGameTick(g_Config.m_ClDummy) - 1 - Player.m_AttackTick)) / (float)Client()->GameTickSpeed();

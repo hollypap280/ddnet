@@ -17,7 +17,6 @@ enum class EBindOptionGroup
 	VOTING,
 	CHAT,
 	DUMMY,
-	PRACTICE,
 	MISCELLANEOUS,
 	CUSTOM,
 	NUM,

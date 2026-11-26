@@ -375,7 +375,6 @@ private:
 	int m_MacroPracticeLastServerTick = -1;
 	int m_MacroPracticeTick = 0;
 	int m_MacroPracticeLocalId = -1;
-	bool m_MacroPracticeDummySwapPending = false;
 	int m_MacroPracticeEmoticon = -1;
 	int m_MacroPracticeEmoticonStartTick = -1;
 	int m_MacroPracticeEyeEmote = -1;
@@ -481,6 +480,7 @@ private:
 		JUMP,
 		HOOK,
 		FIRE,
+		SHOW_HOOK_COLL,
 		WEAPON_HAMMER,
 		WEAPON_GUN,
 		WEAPON_SHOTGUN,

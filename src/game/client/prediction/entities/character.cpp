@@ -630,18 +630,7 @@ void CCharacter::PreTick()
 	DDRaceTick();
 
 	m_Core.m_Input = m_Input;
-	const bool DoDeferredTick = !m_pGameWorld->m_WorldConfig.m_NoWeakHookAndBounce;
-	if(m_IsMacroPracticeStatic)
-	{
-		// The inactive local practice tee is parked until the player switches
-		// to it. Keep its height without disabling hook/weapon interactions.
-		m_Core.Tick(false, DoDeferredTick);
-		m_Core.m_Vel.y -= GetTuning(GetOverriddenTuneZone())->m_Gravity;
-	}
-	else
-	{
-		m_Core.Tick(true, DoDeferredTick);
-	}
+	m_Core.Tick(true, !m_pGameWorld->m_WorldConfig.m_NoWeakHookAndBounce);
 }
 
 void CCharacter::Tick()

@@ -347,6 +347,12 @@ void CControls::ConMacroPracticeInput(IConsole::IResult *pResult, void *pUserDat
 	const bool Pressed = pResult->GetInteger(0) != 0;
 	const int Dummy = pSelf->m_MacroPlaybackLive ? pSelf->m_MacroPlaybackDummy : g_Config.m_ClDummy;
 
+	if(pBind->m_Action == EMacroPracticeDummyAction::SHOW_HOOK_COLL)
+	{
+		pSelf->m_aShowHookColl[Dummy] = Pressed;
+		return;
+	}
+
 	// Weapon selection commands are one-tick events and also work while a
 	// macro is playing, where they become manual overrides for that tee.
 	int WantedWeapon = 0;
@@ -761,6 +767,8 @@ void CControls::OnConsoleInit()
 	static const SMacroPracticeDummyBind s_PlayerJump{this, EMacroPracticeDummyAction::JUMP};
 	static const SMacroPracticeDummyBind s_PlayerHook{this, EMacroPracticeDummyAction::HOOK};
 	static const SMacroPracticeDummyBind s_PlayerFire{this, EMacroPracticeDummyAction::FIRE};
+	static const SMacroPracticeDummyBind s_MacroShowHookColl{this, EMacroPracticeDummyAction::SHOW_HOOK_COLL};
+	Console()->Register("+macro_showhookcoll", "", CFGFLAG_CLIENT, ConMacroPracticeInput, (void *)&s_MacroShowHookColl, "Show hook collision in the FP practice tee");
 	Console()->Register("+macro_left", "", CFGFLAG_CLIENT, ConMacroPracticeInput, (void *)&s_PlayerLeft, "Move the FP practice tee left");
 	Console()->Register("+macro_right", "", CFGFLAG_CLIENT, ConMacroPracticeInput, (void *)&s_PlayerRight, "Move the FP practice tee right");
 	Console()->Register("+macro_jump", "", CFGFLAG_CLIENT, ConMacroPracticeInput, (void *)&s_PlayerJump, "Jump with the FP practice tee");
@@ -856,7 +864,6 @@ void CControls::TeleportMacroPracticeCharacter(int ClientId, vec2 Pos)
 	pCharacter->m_Pos = Pos;
 	pCharacter->m_PrevPos = Pos;
 	pCharacter->m_PrevPrevPos = Pos;
-	pCharacter->m_IsMacroPracticeStatic = false;
 	UpdateMacroPracticeGhost(pCharacter);
 }
 
@@ -1128,14 +1135,12 @@ bool CControls::StartMacroPractice()
 	}
 
 	pCharacter->m_IsLocal = true;
-	pCharacter->m_IsMacroPracticeStatic = false;
 	m_MacroPracticeActive = true;
 	m_MacroPracticeWaiting = false;
 	m_MacroPracticeAccumulator = 0.0;
 	m_MacroPracticeLastServerTick = Client()->PredGameTick(Dummy);
 	m_MacroPracticeTick = m_MacroPracticeWorld.GameTick();
 	m_MacroPracticeStartTick = m_MacroPracticeTick;
-	m_MacroPracticeDummySwapPending = false;
 	m_MacroPracticeEmoticon = -1;
 	m_MacroPracticeEmoticonStartTick = -1;
 	m_MacroPracticeEyeEmote = -1;
@@ -1259,7 +1264,6 @@ void CControls::ResetMacroPracticeCharacter()
 	pCharacter->SetActiveWeapon(m_MacroPracticeStartWeapon);
 	pCharacter->m_FreezeTime = m_MacroPracticeStartFreezeTime;
 	pCharacter->m_FrozenLastTick = m_MacroPracticeStartFrozenLastTick;
-	pCharacter->m_IsMacroPracticeStatic = false;
 	pCharacter->ReleaseHook();
 	CNetObj_PlayerInput IdleInput{};
 	IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
@@ -1304,7 +1308,6 @@ void CControls::StopMacroPractice()
 	m_MacroPracticeAccumulator = 0.0f;
 	m_MacroPracticeLastServerTick = -1;
 	m_MacroPracticeLocalId = -1;
-	m_MacroPracticeDummySwapPending = false;
 	m_MacroPracticeEmoticon = -1;
 	m_MacroPracticeEmoticonStartTick = -1;
 	m_MacroPracticeEyeEmote = -1;
@@ -1463,54 +1466,11 @@ void CControls::PopulateMacroPracticeWorld()
 			m_aMacroPracticeSnapshotInitialized[ClientId] = true;
 		}
 
-		pPracticeCharacter->m_IsMacroPracticeStatic = IsOwnDummy;
 		pPracticeCharacter->m_GameTeam = GameTeam;
 	}
 
 	m_MacroPracticeWorld.RemoveMarkedEntities();
 	m_MacroPracticeWorld.m_GameTick = PracticeTick;
-
-	// While a macro is replaying, the recorded tee id controls the private world.
-	if(!m_MacroPlaybackOwnsDummy && !m_MacroPlaying)
-	{
-		// The dummy connection can finish switching after OnDummySwap() ran.
-		// Promote it as soon as its character has appeared in the active snapshot,
-		// while keeping the previous tee alive in this private world.
-		const int RequestedLocalId = GameClient()->m_aLocalIds[g_Config.m_ClDummy];
-		if(RequestedLocalId >= 0 && RequestedLocalId < MAX_CLIENTS && RequestedLocalId != m_MacroPracticeLocalId)
-		{
-			if(CCharacter *pNewCharacter = m_MacroPracticeWorld.GetCharacterById(RequestedLocalId))
-			{
-				CNetObj_PlayerInput IdleInput{};
-				IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
-				IdleInput.m_TargetX = 1;
-				if(CCharacter *pOldCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId))
-				{
-					pOldCharacter->SetInput(&IdleInput);
-					pOldCharacter->m_IsLocal = false;
-					pOldCharacter->m_IsMacroPracticeStatic = true;
-				}
-				pNewCharacter->m_IsLocal = true;
-				pNewCharacter->m_IsMacroPracticeStatic = false;
-				m_MacroPracticeLocalId = RequestedLocalId;
-				m_MacroPracticeWorld.m_LocalClientId = RequestedLocalId;
-				m_MacroPracticeDummySwapPending = false;
-				m_MacroPracticePendingFireTransitions = 0;
-				m_MacroPracticePendingNextWeaponTransitions = 0;
-				m_MacroPracticePendingPrevWeaponTransitions = 0;
-				m_MacroPracticePendingWantedWeapon = 0;
-				m_MacroPracticePendingJump = false;
-				m_MacroPracticePendingHook = false;
-				m_MacroPracticePendingDirectionLeft = false;
-				m_MacroPracticePendingDirectionRight = false;
-				m_MacroPracticeFireCounter = m_aInputData[g_Config.m_ClDummy].m_Fire & INPUT_STATE_MASK;
-				m_MacroPracticeInput = m_aInputData[g_Config.m_ClDummy];
-				m_MacroPracticeAccumulator = 0.0f;
-				m_MacroPracticeLastServerTick = Client()->PredGameTick(g_Config.m_ClDummy);
-			}
-		}
-	
-	}
 
 	UpdateMacroPracticeGhost(m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId));
 }
@@ -1522,12 +1482,9 @@ bool CControls::SwitchMacroPracticeCharacter(int ClientId)
 	if(ClientId == m_MacroPracticeLocalId)
 		return true;
 
+	// Switch only to the clone already simulated in the private world.
+	// Rebuilding it from a server snapshot here would snap a tee to stale ground coordinates.
 	CCharacter *pNewCharacter = m_MacroPracticeWorld.GetCharacterById(ClientId);
-	if(!pNewCharacter)
-	{
-		PopulateMacroPracticeWorld();
-		pNewCharacter = m_MacroPracticeWorld.GetCharacterById(ClientId);
-	}
 	if(!pNewCharacter)
 		return false;
 
@@ -1540,18 +1497,15 @@ bool CControls::SwitchMacroPracticeCharacter(int ClientId)
 		// freeze, weapon and position so it remains part of the timeline.
 		pOldCharacter->SetInput(&IdleInput);
 		pOldCharacter->m_IsLocal = false;
-		pOldCharacter->m_IsMacroPracticeStatic = true;
 	}
 
 	pNewCharacter->m_IsLocal = true;
-	pNewCharacter->m_IsMacroPracticeStatic = false;
 	if(ClientId == GameClient()->m_aLocalIds[0])
 		g_Config.m_ClDummy = 0;
 	else if(ClientId == GameClient()->m_aLocalIds[1])
 		g_Config.m_ClDummy = 1;
 	m_MacroPracticeLocalId = ClientId;
 	m_MacroPracticeWorld.m_LocalClientId = ClientId;
-	m_MacroPracticeDummySwapPending = false;
 	m_MacroPracticePendingFireTransitions = 0;
 	m_MacroPracticePendingNextWeaponTransitions = 0;
 	m_MacroPracticePendingPrevWeaponTransitions = 0;
@@ -1608,7 +1562,6 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 	if(!pPrimary)
 		return false;
 	pPrimary->m_IsLocal = true;
-	pPrimary->m_IsMacroPracticeStatic = false;
 
 	CCharacterCore Core = pPrimary->GetCore();
 	Core.Read(&Frame.m_Core);
@@ -1658,7 +1611,6 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 			if(!pSecondary)
 				return false;
 			pSecondary->m_IsLocal = false;
-			pSecondary->m_IsMacroPracticeStatic = true;
 			m_MacroPracticeWorld.Teams()->Team(SecondaryClientId, m_MacroPracticeWorld.Teams()->Team(PrimaryClientId));
 			m_MacroPracticeWorld.InsertEntity(pSecondary);
 		}
@@ -1679,7 +1631,6 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 		pSecondary->m_FreezeTime = Frame.m_SecondaryFreezeTime;
 		pSecondary->m_FrozenLastTick = Frame.m_SecondaryFrozenLastTick != 0;
 		pSecondary->m_IsLocal = false;
-		pSecondary->m_IsMacroPracticeStatic = true;
 		CNetObj_PlayerInput IdleInput{};
 		IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
 		IdleInput.m_TargetX = 1;
@@ -2666,6 +2617,7 @@ int CControls::ImportMacroBinds()
 		{"+right", "+macro_right"},
 		{"+jump", "+macro_jump"},
 		{"+hook", "+macro_hook"},
+		{"+showhookcoll", "+macro_showhookcoll"},
 		{"+fire", "+macro_fire"},
 		{"+weapon1", "+macro_weapon1"},
 		{"+weapon2", "+macro_weapon2"},
@@ -2850,10 +2802,11 @@ void CControls::OnMacroPracticeDummySwap()
 	if(!m_MacroPracticeActive || m_MacroPlaying)
 		return;
 
-	// Let PopulateMacroPracticeWorld switch after the new connection's snapshot
-	// is available. Switching immediately can race the snapshot update and
-	// rebuild a tee from its stale server position.
-	m_MacroPracticeDummySwapPending = true;
+	const int RequestedLocalId = GameClient()->m_aLocalIds[g_Config.m_ClDummy];
+	if(RequestedLocalId < 0 || RequestedLocalId >= MAX_CLIENTS)
+		return;
+	if(!SwitchMacroPracticeCharacter(RequestedLocalId))
+		GameClient()->Echo("Копия выбранного тии ещё не создана в FP-мире. Его позиция не изменена.");
 }
 void CControls::OnMacroObserverInputSent(const CNetObj_PlayerInput &Input)
 {

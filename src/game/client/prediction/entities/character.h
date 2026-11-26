@@ -63,9 +63,6 @@ public:
 	void ApplyMoveRestrictions();
 
 	bool m_IsLocal;
-	// Set for an inactive local tee in the private practice world. It stays AFK
-	// without drifting under gravity until the player switches to it.
-	bool m_IsMacroPracticeStatic = false;
 
 	CTeamsCore *TeamsCore();
 	bool Freeze(int Seconds);
