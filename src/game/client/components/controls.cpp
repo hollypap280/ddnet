@@ -1495,10 +1495,13 @@ void CControls::PopulateMacroPracticeWorld()
 
 		if(IsOwnDummy && ClientId != m_MacroPracticeLocalId)
 		{
-			// Switching tees pauses the complete private character state:
-			// position, velocity, hook, freeze and weapon timers remain untouched.
-			// It resumes only when the player selects this tee again.
-			pPracticeCharacter->m_IsMacroPracticeParked = true;
+			// Pause an inactive local tee unless the currently controlled tee
+			// has actually attached its hook to it. While hooked, its own physics
+			// tick must run so the hook force can update its position.
+			const CCharacterCore &InactiveCore = *pPracticeCharacter->Core();
+			const bool HookedByActiveTee =
+				InactiveCore.m_AttachedPlayers.find(m_MacroPracticeLocalId) != InactiveCore.m_AttachedPlayers.end();
+			pPracticeCharacter->m_IsMacroPracticeParked = !HookedByActiveTee;
 		}
 
 		pPracticeCharacter->m_GameTeam = GameTeam;

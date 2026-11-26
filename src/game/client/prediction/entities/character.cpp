@@ -628,7 +628,11 @@ void CCharacter::ResetInput()
 void CCharacter::PreTick()
 {
 	if(m_IsMacroPracticeParked)
-		return;
+	{
+		if(m_Core.m_AttachedPlayers.empty())
+			return;
+		m_IsMacroPracticeParked = false;
+	}
 
 	DDRaceTick();
 
@@ -639,7 +643,11 @@ void CCharacter::PreTick()
 void CCharacter::Tick()
 {
 	if(m_IsMacroPracticeParked)
-		return;
+	{
+		if(m_Core.m_AttachedPlayers.empty())
+			return;
+		m_IsMacroPracticeParked = false;
+	}
 
 	if(m_pGameWorld->m_WorldConfig.m_NoWeakHookAndBounce)
 	{
@@ -676,7 +684,11 @@ void CCharacter::Tick()
 void CCharacter::TickDeferred()
 {
 	if(m_IsMacroPracticeParked)
-		return;
+	{
+		if(m_Core.m_AttachedPlayers.empty())
+			return;
+		m_IsMacroPracticeParked = false;
+	}
 
 	m_Core.Move();
 	m_Core.Quantize();
