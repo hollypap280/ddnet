@@ -48,6 +48,17 @@ CControls::CControls()
 	std::fill(std::begin(m_aMouseInputType), std::end(m_aMouseInputType), EMouseInputType::ABSOLUTE);
 }
 
+
+void CControls::OnShutdown()
+{
+	if(m_MacroRecording || m_MacroPlaying || m_MacroPlaybackLive)
+		StopMacroRecording();
+	if(m_MacroPracticeActive)
+		StopMacroPractice();
+	else
+		RestoreMacroBinds();
+}
+
 void CControls::OnReset()
 {
 	// A held +auto_triplefly bind may not receive its release event when the
@@ -1243,7 +1254,8 @@ bool CControls::MoveMacroToFolder(const char *pName, const char *pFolder)
 		return true;
 	if(!MacroFilePath(aNewName, aNewPath, sizeof(aNewPath)) ||
 		!MacroPinPath(aNewName, aNewPinPath, sizeof(aNewPinPath)) ||
-		Storage()->FileExists(aNewPath, IStorage::TYPE_SAVE))
+		Storage()->FileExists(aNewPath, IStorage::TYPE_SAVE) ||
+		Storage()->FileExists(aNewPinPath, IStorage::TYPE_SAVE))
 		return false;
 
 	if(pFolder && pFolder[0] && !Storage()->CreateFolder(aFolderPath, IStorage::TYPE_SAVE) &&
@@ -2861,7 +2873,8 @@ bool CControls::RenameMacro(const char *pOldName, const char *pNewName)
 	IOHANDLE Existing = Storage()->OpenFile(aNewPath, IOFLAG_READ, IStorage::TYPE_SAVE);
 	if(Existing || Storage()->FileExists(aNewPinPath, IStorage::TYPE_SAVE))
 	{
-		io_close(Existing);
+		if(Existing)
+			io_close(Existing);
 		GameClient()->Echo("Макрос с таким названием уже существует.");
 		return false;
 	}
