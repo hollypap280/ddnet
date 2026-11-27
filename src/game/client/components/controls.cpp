@@ -1246,6 +1246,10 @@ bool CControls::StartMacroPractice()
 				m_MacroPracticeWorld.InsertEntity(pPracticeOther);
 			}
 			pPracticeOther->SetCore(OtherCore);
+			// The copied core came from the live predicted world. Rebind its
+			// world/collision/team pointers to the isolated FP world before
+			// this tee is allowed to simulate there.
+			pPracticeOther->SetCoreWorld(&m_MacroPracticeWorld);
 			pPracticeOther->m_Pos = OtherCore.m_Pos;
 			pPracticeOther->m_PrevPos = OtherCore.m_Pos;
 			pPracticeOther->m_PrevPrevPos = OtherCore.m_Pos;
