@@ -99,7 +99,6 @@ void CMenusSettingsControls::OnInterfacesInit(CGameClient *pClient)
 		{EBindOptionGroup::GAME, Localizable("Laser"), "+weapon5"},
 		{EBindOptionGroup::GAME, Localizable("Next weapon"), "+nextweapon"},
 		{EBindOptionGroup::GAME, Localizable("Prev. weapon"), "+prevweapon"},
-		{EBindOptionGroup::MACRO, Localizable("Отмотать запись макроса"), "macro_record_rewind"},
 		{EBindOptionGroup::VOTING, Localizable("Vote yes"), "vote yes"},
 		{EBindOptionGroup::VOTING, Localizable("Vote no"), "vote no"},
 		{EBindOptionGroup::CHAT, Localizable("Chat"), "+show_chat; chat all"},
@@ -202,7 +201,6 @@ void CMenusSettingsControls::Render(CUIRect MainView)
 	RenderSettingsBlock(MeasureSettingsJoystickHeight(), &LeftColumn,
 		Localize("Controller"), nullptr, nullptr, std::bind_front(&CMenusSettingsControls::RenderSettingsJoystick, this));
 	RenderSettingsBindsBlock(EBindOptionGroup::GAME, &LeftColumn, Localize("Игровые функции"));
-	RenderSettingsBindsBlock(EBindOptionGroup::MACRO, &LeftColumn, Localize("Макросы"));
 
 	// Right column
 	RenderSettingsBindsBlock(EBindOptionGroup::VOTING, &RightColumn, Localize("Voting"));

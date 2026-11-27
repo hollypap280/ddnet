@@ -610,12 +610,6 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		MainView.HSplitTop(24.0f, &Row, &MainView);
 		Ui()->DoLabel(&Row, Localize("Можно записывать от 1 тика/с; сохранённый макрос запускается с обычной скоростью."), 11.0f, TEXTALIGN_ML);
 		MainView.HSplitTop(34.0f, &Row, &MainView);
-		Ui()->DoScrollbarOption(&g_Config.m_ClMacroRewindStep, &g_Config.m_ClMacroRewindStep, &Row,
-			Localize("Отмотка записи (тиков)"), 1, 18000, &CUi::ms_LogarithmicScrollbarScale,
-			CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
-		MainView.HSplitTop(24.0f, &Row, &MainView);
-		Ui()->DoLabel(&Row, Localize("Клавиша настраивается в разделе управления «Макросы» и действует только во время записи."), 11.0f, TEXTALIGN_ML);
-		MainView.HSplitTop(34.0f, &Row, &MainView);
 		if(DoButton_Menu(&s_ImportBindsButton, Localize("Импортировать мои бинды"), 0, &Row))
 			Controls.ImportMacroBinds();
 		MainView.HSplitTop(30.0f, &Row, &MainView);
@@ -633,6 +627,7 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 {
 	static int s_ButtonSubPage = 0;
 	static CButtonContainer s_MacroTab, s_GameTab;
+	static CButtonContainer s_MacroRewindKeyReader, s_MacroRewindKeyClear;
 	CUIRect TabRow, MacroTab, TabGap, GameTab;
 	MainView.HSplitTop(28.0f, &TabRow, &MainView);
 	TabRow.VSplitLeft(TabRow.w * 0.5f - 2.0f, &MacroTab, &TabGap);
@@ -641,4 +636,58 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 		s_ButtonSubPage = 0;
 	if(DoButton_Menu(&s_GameTab, Localize("Игровые функции"), s_ButtonSubPage == 1, &GameTab))
 		s_ButtonSubPage = 1;
+
+	if(s_ButtonSubPage == 0)
+	{
+		CUIRect Row, Label, KeyReader;
+		MainView.HSplitTop(14.0f, nullptr, &MainView);
+		MainView.HSplitTop(34.0f, &Row, &MainView);
+		Row.VSplitLeft(220.0f, &Label, &KeyReader);
+		Ui()->DoLabel(&Label, Localize("Отмотать запись макроса"), 13.0f, TEXTALIGN_ML);
+
+		CBindSlot CurrentBind = EMPTY_BIND_SLOT;
+		for(int Modifier = KeyModifier::NONE; Modifier < KeyModifier::COMBINATION_COUNT && CurrentBind.m_Key == KEY_UNKNOWN; ++Modifier)
+		{
+			for(int Key = KEY_FIRST; Key < KEY_LAST; ++Key)
+			{
+				if(str_comp(GameClient()->m_Binds.Get(Key, Modifier), "macro_record_rewind") == 0)
+				{
+					CurrentBind = CBindSlot(Key, Modifier);
+					break;
+				}
+			}
+		}
+
+		const CKeyBinder::CKeyReaderResult KeyResult = GameClient()->m_KeyBinder.DoKeyReader(
+			&s_MacroRewindKeyReader, &s_MacroRewindKeyClear, &KeyReader, CurrentBind, false);
+		if(!KeyResult.m_Aborted && KeyResult.m_Bind != CurrentBind)
+		{
+			// Keep one clear, user-selected key for the recording-only action.
+			for(int Modifier = KeyModifier::NONE; Modifier < KeyModifier::COMBINATION_COUNT; ++Modifier)
+			{
+				for(int Key = KEY_FIRST; Key < KEY_LAST; ++Key)
+				{
+					if(str_comp(GameClient()->m_Binds.Get(Key, Modifier), "macro_record_rewind") == 0)
+						GameClient()->m_Binds.Bind(Key, "", false, Modifier);
+				}
+			}
+			if(KeyResult.m_Bind.m_Key != KEY_UNKNOWN)
+			{
+				GameClient()->m_Binds.Bind(KeyResult.m_Bind.m_Key, "macro_record_rewind", false, KeyResult.m_Bind.m_ModifierMask);
+				GameClient()->Echo("Клавиша отмотки записи назначена.");
+			}
+			else
+			{
+				GameClient()->Echo("Клавиша отмотки записи удалена.");
+			}
+		}
+
+		MainView.HSplitTop(12.0f, nullptr, &MainView);
+		MainView.HSplitTop(34.0f, &Row, &MainView);
+		Ui()->DoScrollbarOption(&g_Config.m_ClMacroRewindStep, &g_Config.m_ClMacroRewindStep, &Row,
+			Localize("Шаг отмотки (тиков)"), 1, 18000, &CUi::ms_LogarithmicScrollbarScale,
+			CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+		MainView.HSplitTop(24.0f, &Row, &MainView);
+		Ui()->DoLabel(&Row, Localize("Команда действует только во время записи. Отмотанное будущее удаляется, запись продолжается с выбранного тика."), 11.0f, TEXTALIGN_ML);
+	}
 }
