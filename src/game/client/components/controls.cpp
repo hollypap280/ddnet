@@ -4998,17 +4998,27 @@ void CControls::RenderMacroTrajectory()
 
 	CGameWorld PreviewWorld;
 	CGameWorld *pSourceWorld = m_MacroPracticeActive ? &m_MacroPracticeWorld : &GameClient()->m_PredictedWorld;
+	// CGameWorld::CopyWorld normally invalidates an existing child copy and
+	// overwrites each source entity's child pointer. Preserve both links because
+	// the FP recording world relies on its baseline copy for rewind.
+	std::vector<std::pair<CEntity *, CEntity *>> vOriginalEntityChildren;
+	for(int Type = 0; Type < CGameWorld::NUM_ENTTYPES; ++Type)
+	{
+		for(CEntity *pEntity = pSourceWorld->FindFirst(Type); pEntity; pEntity = pEntity->TypeNext())
+			vOriginalEntityChildren.emplace_back(pEntity, pEntity->m_pChild);
+	}
+	CGameWorld *pOriginalSourceChild = pSourceWorld->m_pChild;
+	pSourceWorld->m_pChild = nullptr;
 	PreviewWorld.CopyWorld(pSourceWorld);
-	if(PreviewWorld.m_pParent && PreviewWorld.m_pParent->m_pChild == &PreviewWorld)
-		PreviewWorld.m_pParent->m_pChild = nullptr;
+	pSourceWorld->m_pChild = pOriginalSourceChild;
+	for(const auto &Entry : vOriginalEntityChildren)
+		Entry.first->m_pChild = Entry.second;
 	PreviewWorld.m_pParent = nullptr;
 	PreviewWorld.m_pChild = nullptr;
 	for(int Type = 0; Type < CGameWorld::NUM_ENTTYPES; ++Type)
 	{
 		for(CEntity *pEntity = PreviewWorld.FindFirst(Type); pEntity; pEntity = pEntity->TypeNext())
 		{
-			if(pEntity->m_pParent && pEntity->m_pParent->m_pChild == pEntity)
-				pEntity->m_pParent->m_pChild = nullptr;
 			pEntity->m_pParent = nullptr;
 			pEntity->m_pChild = nullptr;
 		}
