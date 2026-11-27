@@ -658,8 +658,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 				{
 					char aFolder[48];
 					const size_t FolderLength = (size_t)(pSlash - s_aSelectedMacro);
-					mem_copy(aFolder, s_aSelectedMacro, FolderLength);
-					aFolder[FolderLength] = '\0';
+					str_copy(aFolder, s_aSelectedMacro, (int)FolderLength + 1);
 					str_format(aNewName, sizeof(aNewName), "%s/%s", aFolder, s_RenameInput.GetString());
 				}
 				else
