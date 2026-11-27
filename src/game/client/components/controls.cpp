@@ -1716,7 +1716,7 @@ void CControls::UpdateMacroPracticeGhost(CCharacter *pCharacter)
 	GameClient()->m_Ghost.SetMacroPracticeWorld(&m_MacroPracticeWorld);
 }
 
-void CControls::RebuildMacroPracticeHookLinks()void CControls::RebuildMacroPracticeHookLinks()
+void CControls::RebuildMacroPracticeHookLinks()
 {
 	// CopyWorld and the extra predicted dummy clone can carry HookedPlayer ids
 	// from a different CWorldCore. Rebuild both sides of every local/remote
