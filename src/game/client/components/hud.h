@@ -10,6 +10,8 @@
 
 #include <game/client/component.h>
 
+class CCharacter;
+
 struct SScoreInfo
 {
 	SScoreInfo()
@@ -75,7 +77,7 @@ class CHud : public CComponent
 	void RenderAmmoHealthAndArmor(const CNetObj_Character *pCharacter);
 
 	void PreparePlayerStateQuads();
-	void RenderPlayerState(int ClientId);
+	void RenderPlayerState(int ClientId, const CCharacter *pPracticeCharacter = nullptr);
 
 	int m_LastSpectatorCountTick;
 	void RenderSpectatorCount();
@@ -122,6 +124,7 @@ public:
 
 	void OnMessage(int MsgType, void *pRawMsg) override;
 	void RenderNinjaBarPos(float x, float y, float Width, float Height, float Progress, float Alpha = 1.0f);
+	void RenderMacroPracticePlayerState(const CCharacter *pCharacter);
 
 private:
 	void RenderRecord();
