@@ -447,6 +447,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	static char s_aSelectedMacro[96] = "";
 	static char s_aRenameInputFor[96] = "";
 	static char s_aMacroFolder[48] = "";
+	static char s_aDraggingMacro[96] = "";
 	static CLineInputBuffered<64> s_RenameInput;
 	static CLineInputBuffered<64> s_NewMacroName;
 	static CLineInputBuffered<48> s_NewFolderName;
@@ -463,6 +464,8 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 
 	CControls &Controls = GameClient()->m_Controls;
 	CUIRect Row;
+	bool DropRequested = false;
+	char aDropFolder[48] = "";
 	if(s_MacroSubPage == 0)
 	{
 		std::vector<CControls::SMacroInfo> vMacros;
@@ -565,15 +568,25 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		if(s_aMacroFolder[0])
 		{
 			char aFolderLabel[96];
-			str_format(aFolderLabel, sizeof(aFolderLabel), "Папка: %s", s_aMacroFolder);
+			str_format(aFolderLabel, sizeof(aFolderLabel), s_aDraggingMacro[0] ? "Папка: %s  |  Отпусти для корня" : "Папка: %s", s_aMacroFolder);
 			CUIRect FolderLabel, BackButton;
 			Row.VSplitRight(100.0f, &FolderLabel, &BackButton);
 			Ui()->DoLabel(&FolderLabel, aFolderLabel, 13.0f, TEXTALIGN_ML);
-			if(DoButton_Menu(&s_BackToRootButton, Localize("В корень"), 0, &BackButton))
+			const bool DropOnRoot = s_aDraggingMacro[0] && !Ui()->MouseButton(0) && Ui()->MouseHovered(&BackButton);
+			if(DropOnRoot)
+			{
+				DropRequested = true;
+				aDropFolder[0] = '\0';
+			}
+			if(!DropOnRoot && DoButton_Menu(&s_BackToRootButton, Localize("В корень"), 0, &BackButton))
 				s_aMacroFolder[0] = '\0';
 		}
 		else
-			Ui()->DoLabel(&Row, Localize("Библиотека макросов / корень"), 13.0f, TEXTALIGN_ML);
+		{
+			Ui()->DoLabel(&Row, s_aDraggingMacro[0] ? Localize("Отпусти макрос на папке, чтобы переместить") : Localize("Библиотека макросов / корень"), 13.0f, TEXTALIGN_ML);
+			if(s_aDraggingMacro[0] && !Ui()->MouseButton(0) && Ui()->MouseHovered(&Row))
+				DropRequested = true;
+		}
 
 		if(!s_aMacroFolder[0] && !Controls.MacroRecording() && !Controls.MacroPlaying())
 		{
@@ -600,19 +613,23 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		ScrollParams.m_ScrollUnit = 27.0f;
 		s_MacroListScrollRegion.Begin(&Row, &ScrollParams);
 		CUIRect Content = Row;
-		if(!s_aMacroFolder[0])
+		for(size_t i = 0; i < vFolders.size() && i < std::size(s_aFolderButtons); ++i)
 		{
-			for(size_t i = 0; i < vFolders.size() && i < std::size(s_aFolderButtons); ++i)
+			CUIRect FolderRow;
+			Content.HSplitTop(27.0f, &FolderRow, &Content);
+			if(!s_MacroListScrollRegion.AddRect(FolderRow))
+				continue;
+			char aFolderName[96];
+			str_format(aFolderName, sizeof(aFolderName), "[ПАПКА] %s%s",
+				vFolders[i].c_str(), s_aDraggingMacro[0] ? "  ← отпусти" : "");
+			const bool DropOnFolder = s_aDraggingMacro[0] && !Ui()->MouseButton(0) && Ui()->MouseHovered(&FolderRow);
+			if(DropOnFolder)
 			{
-				CUIRect FolderRow;
-				Content.HSplitTop(27.0f, &FolderRow, &Content);
-				if(!s_MacroListScrollRegion.AddRect(FolderRow))
-					continue;
-				char aFolderName[96];
-				str_format(aFolderName, sizeof(aFolderName), "[ПАПКА] %s", vFolders[i].c_str());
-				if(DoButton_Menu(&s_aFolderButtons[i], aFolderName, 0, &FolderRow))
-					str_copy(s_aMacroFolder, vFolders[i].c_str());
+				DropRequested = true;
+				str_copy(aDropFolder, vFolders[i].c_str());
 			}
+			if(!DropOnFolder && DoButton_Menu(&s_aFolderButtons[i], aFolderName, 0, &FolderRow))
+				str_copy(s_aMacroFolder, vFolders[i].c_str());
 		}
 		for(size_t i = 0; i < vMacros.size() && i < std::size(s_aMacroButtons); ++i)
 		{
@@ -621,6 +638,12 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			const bool Selected = str_comp(s_aSelectedMacro, vMacros[i].m_aName) == 0;
 			if(!s_MacroListScrollRegion.AddRect(MacroRow, Selected))
 				continue;
+			if(Input()->ShiftIsPressed() && Ui()->MouseButtonClicked(0) && Ui()->MouseHovered(&MacroRow))
+			{
+				str_copy(s_aDraggingMacro, vMacros[i].m_aName);
+				str_copy(s_aSelectedMacro, vMacros[i].m_aName);
+				str_copy(s_aRenameInputFor, "");
+			}
 			char aLabel[180];
 			str_format(aLabel, sizeof(aLabel), "%s%s  |  %d тиков  |  %s",
 				vMacros[i].m_Pinned ? "★ " : "",
@@ -636,6 +659,31 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			}
 		}
 		s_MacroListScrollRegion.End();
+
+		if(s_aDraggingMacro[0] && !Ui()->MouseButton(0))
+		{
+			if(DropRequested)
+			{
+				char aDraggingMacro[96];
+				char aBaseName[96];
+				str_copy(aDraggingMacro, s_aDraggingMacro);
+				const char *pBaseName = strrchr(aDraggingMacro, '/');
+				str_copy(aBaseName, pBaseName ? pBaseName + 1 : aDraggingMacro);
+				if(Controls.MoveMacroToFolder(aDraggingMacro, aDropFolder))
+				{
+					if(aDropFolder[0])
+						str_format(s_aSelectedMacro, sizeof(s_aSelectedMacro), "%s/%s", aDropFolder, aBaseName);
+					else
+						str_copy(s_aSelectedMacro, aBaseName);
+					str_copy(s_aMacroFolder, aDropFolder);
+					str_copy(s_aRenameInputFor, "");
+					GameClient()->Echo("Макрос перемещён в выбранную папку.");
+				}
+				else
+					GameClient()->Echo("Не удалось переместить макрос. Возможно, в папке уже есть такое имя.");
+			}
+			s_aDraggingMacro[0] = '\0';
+		}
 
 		if(s_aSelectedMacro[0] && !Controls.MacroRecording() && !Controls.MacroPlaying())
 		{
