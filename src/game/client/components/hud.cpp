@@ -1730,7 +1730,9 @@ void CHud::OnRender()
 			{
 				RenderAmmoHealthAndArmor(GameClient()->m_Snap.m_pLocalCharacter);
 			}
-			if(GameClient()->m_Snap.m_aCharacters[GameClient()->m_Snap.m_LocalClientId].m_HasExtendedData && g_Config.m_ClShowhudDDRace && GameClient()->m_GameInfo.m_HudDDRace)
+			if(!GameClient()->m_Controls.MacroPracticeActive() &&
+				GameClient()->m_Snap.m_aCharacters[GameClient()->m_Snap.m_LocalClientId].m_HasExtendedData &&
+				g_Config.m_ClShowhudDDRace && GameClient()->m_GameInfo.m_HudDDRace)
 			{
 				RenderPlayerState(GameClient()->m_Snap.m_LocalClientId);
 			}
