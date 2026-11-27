@@ -440,12 +440,18 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	static int s_MacroSubPage = 0;
 	static CButtonContainer s_MacroTab, s_SettingsTab;
 	static CButtonContainer s_RecordButton, s_PlayButton, s_RenameButton, s_DeleteButton;
-	static CButtonContainer s_ImportBindsButton;
-	static CButtonContainer s_aMacroButtons[8];
-	static char s_aSelectedMacro[64] = "";
-	static char s_aRenameInputFor[64] = "";
+	static CButtonContainer s_ImportBindsButton, s_CreateFolderButton, s_BackToRootButton;
+	static CButtonContainer s_PinButton, s_MoveButton, s_TrajectoryToggle;
+	static CButtonContainer s_aMacroButtons[256];
+	static CButtonContainer s_aFolderButtons[64];
+	static char s_aSelectedMacro[96] = "";
+	static char s_aRenameInputFor[96] = "";
+	static char s_aMacroFolder[48] = "";
 	static CLineInputBuffered<64> s_RenameInput;
 	static CLineInputBuffered<64> s_NewMacroName;
+	static CLineInputBuffered<48> s_NewFolderName;
+	static CScrollRegion s_MacroListScrollRegion;
+
 	CUIRect TabRow, MacroTab, TabGap, SettingsTab;
 	MainView.HSplitTop(28.0f, &TabRow, &MainView);
 	TabRow.VSplitLeft(TabRow.w * 0.5f - 2.0f, &MacroTab, &TabGap);
@@ -460,21 +466,37 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	if(s_MacroSubPage == 0)
 	{
 		std::vector<CControls::SMacroInfo> vMacros;
-		Controls.GetMacroList(vMacros);
+		std::vector<std::string> vFolders;
+		Controls.GetMacroList(vMacros, s_aMacroFolder);
+		Controls.GetMacroFolders(vFolders);
 
+		if(Controls.MacroRecording())
+			str_copy(s_aSelectedMacro, Controls.MacroRecordingName());
+
+		bool SelectionInCurrentFolder = false;
+		const char *pSelectedSlash = strrchr(s_aSelectedMacro, '/');
+		const std::string SelectedFolder = pSelectedSlash ?
+			std::string(s_aSelectedMacro, pSelectedSlash - s_aSelectedMacro) : std::string();
+		SelectionInCurrentFolder = SelectedFolder == s_aMacroFolder;
 		bool SelectionExists = false;
 		for(const CControls::SMacroInfo &Info : vMacros)
 			if(str_comp(s_aSelectedMacro, Info.m_aName) == 0)
 				SelectionExists = true;
-		if(!SelectionExists)
-		{
-			str_copy(s_aSelectedMacro, vMacros.empty() ? "" : vMacros.front().m_aName);
-			str_copy(s_aRenameInputFor, "");
-		}
+		if(s_aSelectedMacro[0] && SelectionInCurrentFolder && !SelectionExists)
+			s_aSelectedMacro[0] = '\0';
+		if(!s_aSelectedMacro[0] && !vMacros.empty())
+			str_copy(s_aSelectedMacro, vMacros.front().m_aName);
+
 		if(str_comp(s_aRenameInputFor, s_aSelectedMacro) != 0)
 		{
-			s_RenameInput.Set(s_aSelectedMacro);
+			const char *pBaseName = strrchr(s_aSelectedMacro, '/');
+			s_RenameInput.Set(pBaseName ? pBaseName + 1 : s_aSelectedMacro);
 			str_copy(s_aRenameInputFor, s_aSelectedMacro);
+		}
+		if(!Controls.MacroRecording() && s_aSelectedMacro[0] && !s_NewMacroName.GetString()[0])
+		{
+			const char *pBaseName = strrchr(s_aSelectedMacro, '/');
+			s_NewMacroName.Set(pBaseName ? pBaseName + 1 : s_aSelectedMacro);
 		}
 
 		MainView.HSplitTop(8.0f, nullptr, &MainView);
@@ -483,7 +505,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			MainView.HSplitTop(30.0f, &Row, &MainView);
 			CUIRect NameLabel, NameInput;
 			Row.VSplitLeft(112.0f, &NameLabel, &NameInput);
-			Ui()->DoLabel(&NameLabel, Localize("Имя до записи:"), 12.0f, TEXTALIGN_ML);
+			Ui()->DoLabel(&NameLabel, Localize("Имя макроса:"), 12.0f, TEXTALIGN_ML);
 			Ui()->DoEditBox(&s_NewMacroName, &NameInput, 12.0f);
 		}
 		MainView.HSplitTop(34.0f, &Row, &MainView);
@@ -494,36 +516,37 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		if(Controls.MacroRecording())
 		{
 			if(DoButton_Menu(&s_RecordButton, Localize("Остановить и сохранить"), 0, &RecordButton))
-			{
-				char aSavedName[64];
-				str_copy(aSavedName, Controls.MacroRecordingName());
 				Controls.StopMacroRecording();
-				s_NewMacroName.Set("");
-				str_copy(s_aSelectedMacro, aSavedName);
-				s_RenameInput.Set(aSavedName);
-				str_copy(s_aRenameInputFor, aSavedName);
-			}
 		}
 		else if(Controls.MacroPlaying())
 		{
 			if(DoButton_Menu(&s_RecordButton, Localize("Остановить"), 0, &RecordButton))
 				Controls.StopMacroRecording();
 		}
-		else if(DoButton_Menu(&s_RecordButton, Localize("Начать"), 0, &RecordButton))
+		else if(DoButton_Menu(&s_RecordButton, Localize("Начать запись"), 0, &RecordButton))
 		{
-			Controls.StartMacroRecording(s_NewMacroName.GetString());
+			char aMacroName[96];
+			if(s_aMacroFolder[0])
+				str_format(aMacroName, sizeof(aMacroName), "%s/%s", s_aMacroFolder, s_NewMacroName.GetString());
+			else
+				str_copy(aMacroName, s_NewMacroName.GetString());
+			if(Controls.StartMacroRecording(aMacroName))
+			{
+				str_copy(s_aSelectedMacro, Controls.MacroRecordingName());
+				str_copy(s_aRenameInputFor, "");
+				const char *pBaseName = strrchr(s_aSelectedMacro, '/');
+				s_RenameInput.Set(pBaseName ? pBaseName + 1 : s_aSelectedMacro);
+			}
 		}
 
 		const bool CanPlay = !Controls.MacroRecording() && !Controls.MacroPlaying() && s_aSelectedMacro[0];
 		if(CanPlay)
 		{
-			if(DoButton_Menu(&s_PlayButton, Localize("Запустить"), 0, &PlayButton))
+			if(DoButton_Menu(&s_PlayButton, Localize("Запустить выбранный"), 0, &PlayButton))
 				Controls.PlayMacro(s_aSelectedMacro);
 		}
 		else
-		{
-			DoButton_Menu(&s_PlayButton, Localize("Запустить"), 0, &PlayButton);
-		}
+			DoButton_Menu(&s_PlayButton, Localize("Запустить выбранный"), 0, &PlayButton);
 
 		MainView.HSplitTop(24.0f, &Row, &MainView);
 		char aStatus[160];
@@ -534,34 +557,89 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			str_format(aStatus, sizeof(aStatus), "Воспроизведение: тик %d / %d",
 				Controls.MacroPosition(), Controls.MacroFrameCount());
 		else
-			str_copy(aStatus, Localize("Управление и прицел сохраняются автоматически."));
-		Ui()->DoLabel(&Row, aStatus, 13.0f, TEXTALIGN_ML);
+			str_copy(aStatus, Localize("Управление вернётся к обычным биндам после остановки."));
+		Ui()->DoLabel(&Row, aStatus, 12.0f, TEXTALIGN_ML);
 
-		MainView.HSplitTop(26.0f, &Row, &MainView);
-		Ui()->DoLabel(&Row, Localize("Сохранённые макросы"), 14.0f, TEXTALIGN_ML);
-		const int VisibleMacros = std::min((int)vMacros.size(), (int)std::size(s_aMacroButtons));
-		for(int i = 0; i < VisibleMacros; ++i)
+		// Folder navigation and creation.
+		MainView.HSplitTop(28.0f, &Row, &MainView);
+		if(s_aMacroFolder[0])
 		{
-			MainView.HSplitTop(27.0f, &Row, &MainView);
-			char aLabel[160];
-			str_format(aLabel, sizeof(aLabel), "%s  |  %d тиков  |  %s",
-				vMacros[i].m_aName, vMacros[i].m_TickCount, vMacros[i].m_aMapName);
+			char aFolderLabel[96];
+			str_format(aFolderLabel, sizeof(aFolderLabel), "Папка: %s", s_aMacroFolder);
+			CUIRect FolderLabel, BackButton;
+			Row.VSplitRight(100.0f, &FolderLabel, &BackButton);
+			Ui()->DoLabel(&FolderLabel, aFolderLabel, 13.0f, TEXTALIGN_ML);
+			if(DoButton_Menu(&s_BackToRootButton, Localize("В корень"), 0, &BackButton))
+				s_aMacroFolder[0] = '\0';
+		}
+		else
+			Ui()->DoLabel(&Row, Localize("Библиотека макросов / корень"), 13.0f, TEXTALIGN_ML);
+
+		if(!s_aMacroFolder[0] && !Controls.MacroRecording() && !Controls.MacroPlaying())
+		{
+			MainView.HSplitTop(30.0f, &Row, &MainView);
+			CUIRect FolderInput, CreateFolder;
+			Row.VSplitRight(112.0f, &FolderInput, &CreateFolder);
+			FolderInput.VSplitRight(5.0f, &FolderInput, nullptr);
+			Ui()->DoEditBox(&s_NewFolderName, &FolderInput, 12.0f);
+			if(DoButton_Menu(&s_CreateFolderButton, Localize("Создать папку"), 0, &CreateFolder))
+			{
+				if(Controls.CreateMacroFolder(s_NewFolderName.GetString()))
+				{
+					GameClient()->Echo("Папка создана.");
+					str_copy(s_aMacroFolder, s_NewFolderName.GetString());
+					s_NewFolderName.Set("");
+				}
+				else
+					GameClient()->Echo("Не удалось создать папку. Проверь название.");
+			}
+		}
+
+		MainView.HSplitTop(178.0f, &Row, &MainView);
+		static CScrollRegionParams ScrollParams;
+		ScrollParams.m_ScrollUnit = 27.0f;
+		s_MacroListScrollRegion.Begin(&Row, &ScrollParams);
+		CUIRect Content = Row;
+		if(!s_aMacroFolder[0])
+		{
+			for(size_t i = 0; i < vFolders.size() && i < std::size(s_aFolderButtons); ++i)
+			{
+				CUIRect FolderRow;
+				Content.HSplitTop(27.0f, &FolderRow, &Content);
+				if(!s_MacroListScrollRegion.AddRect(FolderRow))
+					continue;
+				char aFolderName[96];
+				str_format(aFolderName, sizeof(aFolderName), "[ПАПКА] %s", vFolders[i].c_str());
+				if(DoButton_Menu(&s_aFolderButtons[i], aFolderName, 0, &FolderRow))
+					str_copy(s_aMacroFolder, vFolders[i].c_str());
+			}
+		}
+		for(size_t i = 0; i < vMacros.size() && i < std::size(s_aMacroButtons); ++i)
+		{
+			CUIRect MacroRow;
+			Content.HSplitTop(27.0f, &MacroRow, &Content);
 			const bool Selected = str_comp(s_aSelectedMacro, vMacros[i].m_aName) == 0;
-			if(DoButton_Menu(&s_aMacroButtons[i], aLabel, Selected, &Row))
+			if(!s_MacroListScrollRegion.AddRect(MacroRow, Selected))
+				continue;
+			char aLabel[180];
+			str_format(aLabel, sizeof(aLabel), "%s%s  |  %d тиков  |  %s",
+				vMacros[i].m_Pinned ? "★ " : "",
+				strrchr(vMacros[i].m_aName, '/') ? strrchr(vMacros[i].m_aName, '/') + 1 : vMacros[i].m_aName,
+				vMacros[i].m_TickCount, vMacros[i].m_aMapName);
+			if(DoButton_Menu(&s_aMacroButtons[i], aLabel, Selected, &MacroRow))
 			{
 				str_copy(s_aSelectedMacro, vMacros[i].m_aName);
-				s_RenameInput.Set(s_aSelectedMacro);
+				const char *pBaseName = strrchr(s_aSelectedMacro, '/');
+				s_RenameInput.Set(pBaseName ? pBaseName + 1 : s_aSelectedMacro);
+				s_NewMacroName.Set(pBaseName ? pBaseName + 1 : s_aSelectedMacro);
 				str_copy(s_aRenameInputFor, s_aSelectedMacro);
 			}
 		}
-		if((int)vMacros.size() > VisibleMacros)
-		{
-			MainView.HSplitTop(18.0f, &Row, &MainView);
-			Ui()->DoLabel(&Row, Localize("Показаны первые 8 макросов."), 11.0f, TEXTALIGN_ML);
-		}
+		s_MacroListScrollRegion.End();
 
 		if(s_aSelectedMacro[0] && !Controls.MacroRecording() && !Controls.MacroPlaying())
 		{
+			const bool Pinned = Controls.IsMacroPinned(s_aSelectedMacro);
 			MainView.HSplitTop(30.0f, &Row, &MainView);
 			CUIRect NameLabel, NameInput;
 			Row.VSplitLeft(72.0f, &NameLabel, &NameInput);
@@ -569,17 +647,33 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			Ui()->DoEditBox(&s_RenameInput, &NameInput, 12.0f);
 
 			MainView.HSplitTop(30.0f, &Row, &MainView);
-			CUIRect RenameButton, ActionGap, DeleteButton;
-			Row.VSplitLeft(Row.w * 0.5f - 2.0f, &RenameButton, &ActionGap);
-			ActionGap.VSplitLeft(4.0f, nullptr, &DeleteButton);
+			CUIRect RenameButton, PinButton, DeleteButton, Half;
+			Row.VSplitLeft(Row.w / 3.0f, &RenameButton, &Half);
+			Half.VSplitLeft(Row.w / 3.0f, &PinButton, &DeleteButton);
 			if(DoButton_Menu(&s_RenameButton, Localize("Переименовать"), 0, &RenameButton))
 			{
-				if(Controls.RenameMacro(s_aSelectedMacro, s_RenameInput.GetString()))
+				const char *pSlash = strrchr(s_aSelectedMacro, '/');
+				char aNewName[96];
+				if(pSlash)
 				{
-					str_copy(s_aSelectedMacro, s_RenameInput.GetString());
-					str_copy(s_aRenameInputFor, s_aSelectedMacro);
+					char aFolder[48];
+					str_copy(aFolder, s_aSelectedMacro);
+					aFolder[pSlash - s_aSelectedMacro] = '\0';
+					str_format(aNewName, sizeof(aNewName), "%s/%s", aFolder, s_RenameInput.GetString());
+				}
+				else
+					str_copy(aNewName, s_RenameInput.GetString());
+				if(Controls.RenameMacro(s_aSelectedMacro, aNewName))
+				{
+					str_copy(s_aSelectedMacro, aNewName);
+					str_copy(s_aRenameInputFor, "");
 					GameClient()->Echo("Макрос переименован.");
 				}
+			}
+			if(DoButton_Menu(&s_PinButton, Pinned ? Localize("Снять ⭐") : Localize("Закрепить ⭐"), Pinned, &PinButton))
+			{
+				if(Controls.ToggleMacroPin(s_aSelectedMacro))
+					GameClient()->Echo(Pinned ? "Макрос откреплён." : "Макрос закреплён ⭐.");
 			}
 			if(DoButton_Menu(&s_DeleteButton, Localize("Удалить"), 0, &DeleteButton))
 			{
@@ -590,7 +684,31 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 					s_aRenameInputFor[0] = '\0';
 				}
 				else
-					GameClient()->Echo("Не удалось удалить макрос.");
+					GameClient()->Echo(Pinned ? "Закреплённый макрос нельзя удалить. Сними звезду." : "Не удалось удалить макрос.");
+			}
+
+			const char *pSelectedSlash = strrchr(s_aSelectedMacro, '/');
+			const std::string SelectedFolder = pSelectedSlash ?
+				std::string(s_aSelectedMacro, pSelectedSlash - s_aSelectedMacro) : std::string();
+			if(SelectedFolder != s_aMacroFolder)
+			{
+				MainView.HSplitTop(30.0f, &Row, &MainView);
+				const char *pMoveLabel = s_aMacroFolder[0] ? "Переместить в эту папку" : "Переместить в корень";
+				if(DoButton_Menu(&s_MoveButton, Localize(pMoveLabel), 0, &Row))
+				{
+					const char *pBaseName = pSelectedSlash ? pSelectedSlash + 1 : s_aSelectedMacro;
+					if(Controls.MoveMacroToFolder(s_aSelectedMacro, s_aMacroFolder))
+					{
+						if(s_aMacroFolder[0])
+							str_format(s_aSelectedMacro, sizeof(s_aSelectedMacro), "%s/%s", s_aMacroFolder, pBaseName);
+						else
+							str_copy(s_aSelectedMacro, pBaseName);
+						str_copy(s_aRenameInputFor, "");
+						GameClient()->Echo("Макрос перемещён.");
+					}
+					else
+						GameClient()->Echo("Не удалось переместить макрос в эту папку.");
+				}
 			}
 		}
 	}
@@ -613,11 +731,12 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		if(DoButton_Menu(&s_ImportBindsButton, Localize("Импортировать мои бинды"), 0, &Row))
 			Controls.ImportMacroBinds();
 		MainView.HSplitTop(30.0f, &Row, &MainView);
-		Ui()->DoLabel(&Row, Localize("Импортируются бинды движения, прыжка, хука, огня и выбора оружия."), 12.0f, TEXTALIGN_ML);
+		Ui()->DoLabel(&Row, Localize("Бинды временно переключаются на управление макросом и восстанавливаются после остановки или выхода."), 12.0f, TEXTALIGN_ML);
+		MainView.HSplitTop(30.0f, &Row, &MainView);
+		if(DoButton_CheckBox(&s_TrajectoryToggle, Localize("Показывать траекторию гранаты и лазера"), g_Config.m_ClMacroTrajectory, &Row))
+			g_Config.m_ClMacroTrajectory = !g_Config.m_ClMacroTrajectory;
 		MainView.HSplitTop(28.0f, &Row, &MainView);
-		Ui()->DoLabel(&Row, Localize("Составные бинды сохраняют остальные команды и работают в обычной игре."), 12.0f, TEXTALIGN_ML);
-		MainView.HSplitTop(28.0f, &Row, &MainView);
-		Ui()->DoLabel(&Row, Localize("Бинды автоматически подключаются при начале записи и запуске макроса."), 12.0f, TEXTALIGN_ML);
+		Ui()->DoLabel(&Row, Localize("Показывает путь полёта, попадание и отскоки по текущим настройкам карты."), 11.0f, TEXTALIGN_ML);
 		MainView.HSplitTop(28.0f, &Row, &MainView);
 		Ui()->DoLabel(&Row, Localize("Прозрачные серверные персонажи не получают управление из FP."), 12.0f, TEXTALIGN_ML);
 	}
