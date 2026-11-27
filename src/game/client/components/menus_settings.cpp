@@ -693,7 +693,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			CUIRect NameLabel, NameInput;
 			Row.VSplitLeft(72.0f, &NameLabel, &NameInput);
 			Ui()->DoLabel(&NameLabel, Localize("Название:"), 12.0f, TEXTALIGN_ML);
-			Ui()->DoEditBox(&s_RenameInput, &NameInput, 12.0f);
+			Ui()->DoClearableEditBox(&s_RenameInput, &NameInput, 12.0f);
 
 			MainView.HSplitTop(30.0f, &Row, &MainView);
 			CUIRect RenameButton, PinButton, DeleteButton, Half;
@@ -701,7 +701,13 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			Half.VSplitLeft(Row.w / 3.0f, &PinButton, &DeleteButton);
 			if(DoButton_Menu(&s_RenameButton, Localize("Переименовать"), 0, &RenameButton))
 			{
-				const char *pSlash = strrchr(s_aSelectedMacro, '/');
+				if(s_RenameInput.IsEmpty())
+				{
+					GameClient()->Echo("Название макроса не может быть пустым. Введи новое название.");
+				}
+				else
+				{
+					const char *pSlash = strrchr(s_aSelectedMacro, '/');
 				char aNewName[96];
 				if(pSlash)
 				{
@@ -712,11 +718,16 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 				}
 				else
 					str_copy(aNewName, s_RenameInput.GetString());
-				if(Controls.RenameMacro(s_aSelectedMacro, aNewName))
-				{
-					str_copy(s_aSelectedMacro, aNewName);
-					str_copy(s_aRenameInputFor, "");
-					GameClient()->Echo("Макрос переименован.");
+					if(Controls.RenameMacro(s_aSelectedMacro, aNewName))
+					{
+						str_copy(s_aSelectedMacro, aNewName);
+						str_copy(s_aRenameInputFor, "");
+						GameClient()->Echo("Макрос переименован.");
+					}
+					else
+					{
+						GameClient()->Echo("Не удалось переименовать макрос. Проверь название и закрепление.");
+					}
 				}
 			}
 			if(DoButton_Menu(&s_PinButton, Pinned ? Localize("Снять ⭐") : Localize("Закрепить ⭐"), Pinned, &PinButton))
