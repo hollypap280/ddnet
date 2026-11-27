@@ -63,8 +63,6 @@ public:
 	void ApplyMoveRestrictions();
 
 	bool m_IsLocal;
-	// Inactive local practice tee: hold its exact position until a real interaction wakes it.
-	bool m_IsMacroPracticeParked = false;
 
 	CTeamsCore *TeamsCore();
 	bool Freeze(int Seconds);

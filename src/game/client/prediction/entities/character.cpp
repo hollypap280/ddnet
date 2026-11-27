@@ -627,13 +627,6 @@ void CCharacter::ResetInput()
 
 void CCharacter::PreTick()
 {
-	if(m_IsMacroPracticeParked)
-	{
-		if(m_Core.m_AttachedPlayers.empty())
-			return;
-		m_IsMacroPracticeParked = false;
-	}
-
 	DDRaceTick();
 
 	m_Core.m_Input = m_Input;
@@ -642,13 +635,6 @@ void CCharacter::PreTick()
 
 void CCharacter::Tick()
 {
-	if(m_IsMacroPracticeParked)
-	{
-		if(m_Core.m_AttachedPlayers.empty())
-			return;
-		m_IsMacroPracticeParked = false;
-	}
-
 	if(m_pGameWorld->m_WorldConfig.m_NoWeakHookAndBounce)
 	{
 		m_Core.TickDeferred();
@@ -683,13 +669,6 @@ void CCharacter::Tick()
 
 void CCharacter::TickDeferred()
 {
-	if(m_IsMacroPracticeParked)
-	{
-		if(m_Core.m_AttachedPlayers.empty())
-			return;
-		m_IsMacroPracticeParked = false;
-	}
-
 	m_Core.Move();
 	m_Core.Quantize();
 	m_Pos = m_Core.m_Pos;
@@ -697,8 +676,6 @@ void CCharacter::TickDeferred()
 
 bool CCharacter::TakeDamage(vec2 Force, int Dmg, int From, int Weapon)
 {
-	if(m_IsMacroPracticeParked)
-		return true;
 	vec2 Temp = m_Core.m_Vel + Force;
 	m_Core.m_Vel = ClampVel(m_MoveRestrictions, Temp);
 	return true;

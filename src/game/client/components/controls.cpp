@@ -342,7 +342,6 @@ void CControls::SetAutoTriplefly(bool Enable)
 				pPracticeDummy->OnPredictedInput(&IdlePracticeDummy);
 				pPracticeDummy->OnDirectInput(&IdlePracticeDummy);
 				pPracticeDummy->SetInput(&IdlePracticeDummy);
-				pPracticeDummy->m_IsMacroPracticeParked = true;
 			}
 		}
 		GameClient()->Echo("Triplefly остановлен; настройки дамми восстановлены.");
@@ -1489,19 +1488,7 @@ void CControls::PopulateMacroPracticeWorld()
 			pPracticeCharacter->SetInput(&IdleInput);
 			pPracticeCharacter->OnDirectInput(&IdleInput);
 			pPracticeCharacter->OnPredictedInput(&IdleInput);
-			pPracticeCharacter->m_IsMacroPracticeParked = IsOwnDummy;
 			m_aMacroPracticeSnapshotInitialized[ClientId] = true;
-		}
-
-		if(IsOwnDummy && ClientId != m_MacroPracticeLocalId)
-		{
-			// Pause an inactive local tee unless the currently controlled tee
-			// has actually attached its hook to it. While hooked, its own physics
-			// tick must run so the hook force can update its position.
-			const CCharacterCore &InactiveCore = *pPracticeCharacter->Core();
-			const bool HookedByActiveTee =
-				InactiveCore.m_AttachedPlayers.find(m_MacroPracticeLocalId) != InactiveCore.m_AttachedPlayers.end();
-			pPracticeCharacter->m_IsMacroPracticeParked = !HookedByActiveTee;
 		}
 
 		pPracticeCharacter->m_GameTeam = GameTeam;
@@ -1522,7 +1509,6 @@ bool CControls::SwitchMacroPracticeCharacter(int ClientId)
 		if(CCharacter *pCurrentCharacter = m_MacroPracticeWorld.GetCharacterById(ClientId))
 		{
 			pCurrentCharacter->m_IsLocal = true;
-			pCurrentCharacter->m_IsMacroPracticeParked = false;
 		}
 		m_MacroPracticeDummySwapPending = false;
 		return true;
@@ -1534,26 +1520,25 @@ bool CControls::SwitchMacroPracticeCharacter(int ClientId)
 	if(!pNewCharacter)
 		return false;
 
-	CNetObj_PlayerInput IdleInput{};
-	IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
-	IdleInput.m_TargetX = 1;
+	// The two local tees have independent input state. Restore the selected
+	// tee's own last input instead of resetting it to an idle packet.
+	CNetObj_PlayerInput SelectedInput = pNewCharacter->m_Input;
+	SelectedInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+	if(SelectedInput.m_TargetX == 0 && SelectedInput.m_TargetY == 0)
+		SelectedInput.m_TargetX = 1;
+
 	if(CCharacter *pOldCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId))
-	{
-		// Keep the last applied input as well as velocity, hook, freeze,
-		// weapon and position. The tee must not behave as if its keys were
-		// released merely because the player switched to the other tee.
 		pOldCharacter->m_IsLocal = false;
-		pOldCharacter->m_IsMacroPracticeParked = true;
-	}
 
 	pNewCharacter->m_IsLocal = true;
-	pNewCharacter->m_IsMacroPracticeParked = false;
 	if(ClientId == GameClient()->m_aLocalIds[0])
 		g_Config.m_ClDummy = 0;
 	else if(ClientId == GameClient()->m_aLocalIds[1])
 		g_Config.m_ClDummy = 1;
 	m_MacroPracticeLocalId = ClientId;
 	m_MacroPracticeWorld.m_LocalClientId = ClientId;
+	m_MacroPracticeLastServerTick = Client()->PredGameTick(g_Config.m_ClDummy);
+	m_MacroPracticeAccumulator = 0.0;
 	m_MacroPracticeDummySwapPending = false;
 	m_MacroPracticePendingFireTransitions = 0;
 	m_MacroPracticePendingNextWeaponTransitions = 0;
@@ -1563,14 +1548,13 @@ bool CControls::SwitchMacroPracticeCharacter(int ClientId)
 	m_MacroPracticePendingHook = false;
 	m_MacroPracticePendingDirectionLeft = false;
 	m_MacroPracticePendingDirectionRight = false;
-	m_MacroPracticeDirectionLeft = false;
-	m_MacroPracticeDirectionRight = false;
-	m_MacroPracticeInput = IdleInput;
-	m_MacroPracticeInput.m_TargetX = 1;
-	m_MacroPracticeFireCounter = 0;
-	m_MacroPracticeFirePressed = false;
-	m_MacroPracticeNextWeaponPressed = false;
-	m_MacroPracticePrevWeaponPressed = false;
+	m_MacroPracticeInput = SelectedInput;
+	m_MacroPracticeDirectionLeft = SelectedInput.m_Direction < 0;
+	m_MacroPracticeDirectionRight = SelectedInput.m_Direction > 0;
+	m_MacroPracticeFireCounter = SelectedInput.m_Fire & INPUT_STATE_MASK;
+	m_MacroPracticeFirePressed = (SelectedInput.m_Fire & 1) != 0;
+	m_MacroPracticeNextWeaponPressed = (SelectedInput.m_NextWeapon & 1) != 0;
+	m_MacroPracticePrevWeaponPressed = (SelectedInput.m_PrevWeapon & 1) != 0;
 	UpdateMacroPracticeGhost(pNewCharacter);
 	return true;
 }
@@ -1611,8 +1595,6 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 	if(!pPrimary)
 		return false;
 	pPrimary->m_IsLocal = true;
-	pPrimary->m_IsMacroPracticeParked = false;
-
 	CCharacterCore Core = pPrimary->GetCore();
 	Core.Read(&Frame.m_Core);
 	if(Frame.m_HasWeaponInventoryState)
@@ -1673,7 +1655,6 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 			SecondaryCore.m_aWeapons[Weapon].m_Ammo = Frame.m_aSecondaryWeaponAmmo[Weapon];
 		}
 		pSecondary->SetCore(SecondaryCore);
-		pSecondary->m_IsMacroPracticeParked = true;
 		pSecondary->m_Pos = SecondaryCore.m_Pos;
 		pSecondary->m_PrevPos = SecondaryCore.m_Pos;
 		pSecondary->m_PrevPrevPos = SecondaryCore.m_Pos;
@@ -1935,7 +1916,6 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 				OtherInput.m_Hook != 0 || (OtherInput.m_Fire & 1) != 0 || OtherInput.m_WantedWeapon > 0 ||
 				(OtherInput.m_NextWeapon & 1) != 0 || (OtherInput.m_PrevWeapon & 1) != 0;
 			if(HasDummyAction || m_AutoTripleflyBindActive)
-				pPracticeOther->m_IsMacroPracticeParked = false;
 			pPracticeOther->OnPredictedInput(&OtherInput);
 			pPracticeOther->OnDirectInput(&OtherInput);
 		}
@@ -2877,13 +2857,6 @@ void CControls::OnMacroPracticeDummySwap()
 	}
 
 	m_MacroPracticeDummySwapPending = true;
-	if(CCharacter *pCurrent = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId))
-	{
-		// Park it without synthesizing a key release. Its last hook/movement
-		// input remains active while the private world continues simulating.
-		pCurrent->m_IsLocal = false;
-		pCurrent->m_IsMacroPracticeParked = true;
-	}
 	SwitchMacroPracticeCharacter(RequestedLocalId);
 }
 void CControls::OnMacroObserverInputSent(const CNetObj_PlayerInput &Input)
