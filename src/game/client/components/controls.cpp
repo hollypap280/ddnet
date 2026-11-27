@@ -1670,6 +1670,7 @@ void CControls::StopMacroPractice()
 	m_MacroPracticeStartWorld.Clear();
 	if(GameClient())
 		GameClient()->m_Ghost.ClearMacroPracticeCharacter();
+	RestoreMacroBinds();
 }
 
 void CControls::UpdateMacroPracticeGhost(CCharacter *pCharacter)
@@ -2339,7 +2340,7 @@ bool CControls::StartMacroRecording(const char *pName)
 		return false;
 	}
 
-	char aName[64];
+	char aName[96];
 	if(pName && pName[0])
 		str_copy(aName, pName);
 	else
@@ -2357,7 +2358,7 @@ bool CControls::StartMacroRecording(const char *pName)
 		}
 	}
 
-	char aPath[128];
+	char aPath[160];
 	if(!MacroFilePath(aName, aPath, sizeof(aPath)))
 	{
 		GameClient()->Echo("Название макроса содержит недопустимые символы.");
@@ -2367,6 +2368,23 @@ bool CControls::StartMacroRecording(const char *pName)
 	const bool ReplacingExistingMacro = ExistingFile != nullptr;
 	if(ExistingFile)
 		io_close(ExistingFile);
+	if(ReplacingExistingMacro && IsMacroPinned(aName))
+	{
+		GameClient()->Echo("Этот макрос закреплён ⭐. Сначала сними закрепление, чтобы перезаписать его.");
+		return false;
+	}
+	if(strchr(aName, '/'))
+	{
+		char aFolder[48];
+		str_copy(aFolder, aName);
+		char *pSlash = strchr(aFolder, '/');
+		*pSlash = '\\0';
+		if(!CreateMacroFolder(aFolder))
+		{
+			GameClient()->Echo("Не удалось открыть папку макросов.");
+			return false;
+		}
+	}
 	if(!StartMacroPractice())
 		return false;
 
@@ -2501,15 +2519,28 @@ void CControls::StopMacroRecording(bool RestorePlaybackView)
 		StopMacroPractice();
 		GameClient()->Echo("Запись сохранена. FP выключена, управление возвращено обычному DDNet.");
 	}
+	RestoreMacroBinds();
 }
 
 bool CControls::SaveMacro(const char *pName)
 {
-	char aPath[128];
-	if(m_MacroRecording || m_vMacroFrames.empty() || !MacroFilePath(pName, aPath, sizeof(aPath)))
+	char aPath[160];
+	if(m_MacroRecording || m_vMacroFrames.empty() || !MacroFilePath(pName, aPath, sizeof(aPath)) || IsMacroPinned(pName))
 		return false;
 	Storage()->CreateFolder("macros", IStorage::TYPE_SAVE);
-	IOHANDLE File = Storage()->OpenFile(aPath, IOFLAG_WRITE, IStorage::TYPE_SAVE);
+	const char *pSlash = strchr(pName, '/');
+	if(pSlash)
+	{
+		char aFolder[48];
+		str_copy(aFolder, pName);
+		aFolder[pSlash - pName] = '\\0';
+		if(!CreateMacroFolder(aFolder))
+			return false;
+	}
+	char aTempPath[180], aBackupPath[180];
+	str_format(aTempPath, sizeof(aTempPath), "%s.tmp", aPath);
+	str_format(aBackupPath, sizeof(aBackupPath), "%s.bak", aPath);
+	IOHANDLE File = Storage()->OpenFile(aTempPath, IOFLAG_WRITE, IStorage::TYPE_SAVE);
 	if(!File)
 		return false;
 	const uint32_t Magic = MACRO_FILE_MAGIC;
@@ -2523,7 +2554,31 @@ bool CControls::SaveMacro(const char *pName)
 		io_write(File, &RecordedRate, sizeof(RecordedRate)) == sizeof(RecordedRate) &&
 		io_write(File, m_vMacroFrames.data(), Count * sizeof(SMacroFrame)) == Count * sizeof(SMacroFrame);
 	io_close(File);
-	return Written;
+	if(!Written)
+	{
+		Storage()->RemoveFile(aTempPath, IStorage::TYPE_SAVE);
+		return false;
+	}
+	const bool HadPrevious = Storage()->FileExists(aPath, IStorage::TYPE_SAVE);
+	if(HadPrevious)
+	{
+		Storage()->RemoveFile(aBackupPath, IStorage::TYPE_SAVE);
+		if(!Storage()->RenameFile(aPath, aBackupPath, IStorage::TYPE_SAVE))
+		{
+			Storage()->RemoveFile(aTempPath, IStorage::TYPE_SAVE);
+			return false;
+		}
+	}
+	if(!Storage()->RenameFile(aTempPath, aPath, IStorage::TYPE_SAVE))
+	{
+		if(HadPrevious)
+			Storage()->RenameFile(aBackupPath, aPath, IStorage::TYPE_SAVE);
+		Storage()->RemoveFile(aTempPath, IStorage::TYPE_SAVE);
+		return false;
+	}
+	if(HadPrevious)
+		Storage()->RemoveFile(aBackupPath, IStorage::TYPE_SAVE);
+	return true;
 }
 
 bool CControls::PlayMacro(const char *pName)
@@ -2543,7 +2598,7 @@ bool CControls::PlayMacro(const char *pName)
 	if(m_MacroPracticeActive)
 		StopMacroPractice();
 
-	char aName[64];
+	char aName[96];
 	if(pName && pName[0])
 		str_copy(aName, pName);
 	else
@@ -2558,7 +2613,7 @@ bool CControls::PlayMacro(const char *pName)
 		str_copy(aName, vMacros.front().m_aName);
 	}
 
-	char aPath[128];
+	char aPath[160];
 	if(!MacroFilePath(aName, aPath, sizeof(aPath)))
 		return false;
 	IOHANDLE File = Storage()->OpenFile(aPath, IOFLAG_READ, IStorage::TYPE_SAVE);
@@ -2772,8 +2827,10 @@ bool CControls::PlayMacro(const char *pName)
 }
 bool CControls::DeleteMacro(const char *pName)
 {
-	char aPath[128];
-	return MacroFilePath(pName, aPath, sizeof(aPath)) && Storage()->RemoveFile(aPath, IStorage::TYPE_SAVE);
+	char aPath[160];
+	if(!MacroFilePath(pName, aPath, sizeof(aPath)) || IsMacroPinned(pName))
+		return false;
+	return Storage()->RemoveFile(aPath, IStorage::TYPE_SAVE);
 }
 
 bool CControls::RenameMacro(const char *pOldName, const char *pNewName)
