@@ -463,6 +463,10 @@ private:
 	bool m_MacroBindsImported = false;
 	std::vector<vec2> m_vMacroTrajectory;
 	int m_MacroTrajectoryWeapon = -1;
+	int m_MacroTrajectoryClientId = -1;
+	int64_t m_MacroTrajectoryLastUpdate = 0;
+	vec2 m_MacroTrajectoryLastOrigin{};
+	vec2 m_MacroTrajectoryLastAim{};
 	void ApplyHookAutomation(int Dummy);
 	void ApplyEdgeAssist(int Dummy);
 	void ApplyEdgeHook(int Dummy);
