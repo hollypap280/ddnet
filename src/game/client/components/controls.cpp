@@ -778,6 +778,10 @@ void CControls::OnConsoleInit()
 
 	Console()->Register("+auto_triplefly", "", CFGFLAG_CLIENT, ConAutoTripleflyEnable, this, "Hold to assist Triplefly with dummy copy and timed third-tee hook");
 	Console()->Register("-auto_triplefly", "", CFGFLAG_CLIENT, ConAutoTripleflyDisable, this, "Release to stop Triplefly assist");
+	Console()->Register("+fly", "", CFGFLAG_CLIENT, ConAutoTripleflyEnable, this, "Hold to run the macro fly helper");
+	Console()->Register("-fly", "", CFGFLAG_CLIENT, ConAutoTripleflyDisable, this, "Release the macro fly helper");
+	Console()->Register("+macro_fly", "", CFGFLAG_CLIENT, ConAutoTripleflyEnable, this, "Hold to run the macro fly helper");
+	Console()->Register("-macro_fly", "", CFGFLAG_CLIENT, ConAutoTripleflyDisable, this, "Release the macro fly helper");
 	Console()->Register("toggle_auto_triplefly", "", CFGFLAG_CLIENT, ConAutoTriplefly, this, "Toggle Triplefly assist on or off");
 
 	Console()->Register("macro_practice", "", CFGFLAG_CLIENT, ConMacroPractice, this, "Toggle isolated FP practice");
@@ -999,9 +1003,9 @@ void CControls::SendPracticeTeleportToCursor(int Conn)
 namespace
 {
 	constexpr uint32_t MACRO_FILE_MAGIC = 0x444D4143;
-	// Version 11 also stores the hook-collision overlay state.
-	// Version 10 and 9 remain readable through their legacy layouts.
-	constexpr uint32_t MACRO_FILE_VERSION = 11;
+	// Version 12 stores the other local tee's input so rewind/playback can restore its hook state.
+	// Versions 11, 10 and 9 remain readable through their legacy layouts.
+	constexpr uint32_t MACRO_FILE_VERSION = 12;
 	constexpr uint32_t MACRO_MAX_FRAMES = 18000;
 }
 
@@ -2015,6 +2019,7 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 		pSecondary->m_FreezeTime = Frame.m_SecondaryFreezeTime;
 		pSecondary->m_FrozenLastTick = Frame.m_SecondaryFrozenLastTick != 0;
 		pSecondary->m_IsLocal = false;
+		pSecondary->SetInput(&Frame.m_SecondaryInput);
 		CNetObj_PlayerInput IdleInput{};
 		IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
 		IdleInput.m_TargetX = 1;
@@ -2310,6 +2315,7 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 			NewFrame.m_SecondaryHasState = 1;
 			NewFrame.m_SecondaryClientId = -2 - (1 - RecordedConnection);
 			pSecondary->Core()->Write(&NewFrame.m_SecondaryCore);
+			NewFrame.m_SecondaryInput = pSecondary->GetInput();
 			NewFrame.m_SecondaryWeapon = pSecondary->GetActiveWeapon();
 			NewFrame.m_SecondaryAttackTick = pSecondary->GetAttackTick();
 			NewFrame.m_SecondaryFreezeTime = pSecondary->m_FreezeTime;
@@ -3122,6 +3128,7 @@ int CControls::ImportMacroBinds()
 		{"+weapon5", "+macro_weapon5"},
 		{"+nextweapon", "+macro_nextweapon"},
 		{"+prevweapon", "+macro_prevweapon"},
+		{"+fly", "+macro_fly"},
 	};
 
 	auto ConvertBind = [&](const char *pCommand, bool ToMacro) {
