@@ -5040,8 +5040,7 @@ void CControls::RenderMacroTrajectory()
 			Direction, Lifetime, false, true, SOUND_GRENADE_EXPLODE);
 		if(!pProjectile)
 			return;
-		// Use DDNet projectile physics to preview gravity and possible rebounds.
-		pProjectile->SetBouncing(3);
+		// Normal grenades explode on the first map or character impact.
 		m_vMacroTrajectory.push_back(SpawnPos);
 		for(int Tick = 0; Tick < Lifetime; ++Tick)
 		{
