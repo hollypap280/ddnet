@@ -1763,10 +1763,11 @@ void CControls::RebuildMacroPracticeHookLinks()
 		if(!pCharacter)
 			continue;
 
-		CCharacterCore *pCore = pCharacter->Core();
-		aHookedPlayer[ClientId] = pCore->HookedPlayer();
-		pCore->m_AttachedPlayers.clear();
-		pCore->SetHookedPlayer(-1);
+		CCharacterCore Core = pCharacter->GetCore();
+		aHookedPlayer[ClientId] = Core.HookedPlayer();
+		Core.m_AttachedPlayers.clear();
+		Core.SetHookedPlayer(-1);
+		pCharacter->SetCore(Core);
 	}
 
 	for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
@@ -1779,19 +1780,21 @@ void CControls::RebuildMacroPracticeHookLinks()
 		if(!pCharacter)
 			continue;
 
+		CCharacterCore Core = pCharacter->GetCore();
 		if(m_MacroPracticeWorld.GetCharacterById(HookedPlayer))
 		{
-			pCharacter->Core()->SetHookedPlayer(HookedPlayer);
+			Core.SetHookedPlayer(HookedPlayer);
 		}
 		else
 		{
 			// A target that no longer exists in the practice snapshot cannot
 			// remain attached to a stale server/prediction core.
-			pCharacter->Core()->m_HookState = HOOK_RETRACTED;
-			pCharacter->Core()->m_HookPos = pCharacter->Core()->m_Pos;
-			pCharacter->Core()->m_HookDir = vec2(0.0f, 0.0f);
-			pCharacter->Core()->m_HookTick = 0;
+			Core.m_HookState = HOOK_RETRACTED;
+			Core.m_HookPos = Core.m_Pos;
+			Core.m_HookDir = vec2(0.0f, 0.0f);
+			Core.m_HookTick = 0;
 		}
+		pCharacter->SetCore(Core);
 	}
 }
 
@@ -3567,21 +3570,23 @@ bool CControls::RebuildMacroWorldToPosition(int Position)
 		if(!pPrimary)
 			return false;
 
-		pPrimary->Core()->Read(&Frame.m_Core);
+		CCharacterCore PrimaryCore = pPrimary->GetCore();
+		PrimaryCore.Read(&Frame.m_Core);
 		if(Frame.m_HasWeaponInventoryState)
 		{
 			for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
 			{
-				pPrimary->Core()->m_aWeapons[Weapon].m_Got = Frame.m_aWeaponGot[Weapon] != 0;
-				pPrimary->Core()->m_aWeapons[Weapon].m_Ammo = Frame.m_aWeaponAmmo[Weapon];
+				PrimaryCore.m_aWeapons[Weapon].m_Got = Frame.m_aWeaponGot[Weapon] != 0;
+				PrimaryCore.m_aWeapons[Weapon].m_Ammo = Frame.m_aWeaponAmmo[Weapon];
 			}
 		}
 		else if(Frame.m_HasDDNetState)
 		{
 			for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
-				pPrimary->Core()->m_aWeapons[Weapon].m_Ammo = Frame.m_aWeaponAmmo[Weapon];
+				PrimaryCore.m_aWeapons[Weapon].m_Ammo = Frame.m_aWeaponAmmo[Weapon];
 		}
-		pPrimary->m_Pos = pPrimary->Core()->m_Pos;
+		pPrimary->SetCore(PrimaryCore);
+		pPrimary->m_Pos = PrimaryCore.m_Pos;
 		pPrimary->m_PrevPos = pPrimary->m_Pos;
 		pPrimary->m_PrevPrevPos = pPrimary->m_Pos;
 		pPrimary->SetActiveWeapon(Frame.m_Weapon);
@@ -3601,13 +3606,15 @@ bool CControls::RebuildMacroWorldToPosition(int Position)
 			if(!pSecondary)
 				return false;
 
-			pSecondary->Core()->Read(&Frame.m_SecondaryCore);
+			CCharacterCore SecondaryCore = pSecondary->GetCore();
+			SecondaryCore.Read(&Frame.m_SecondaryCore);
 			for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
 			{
-				pSecondary->Core()->m_aWeapons[Weapon].m_Got = Frame.m_aSecondaryWeaponGot[Weapon] != 0;
-				pSecondary->Core()->m_aWeapons[Weapon].m_Ammo = Frame.m_aSecondaryWeaponAmmo[Weapon];
+				SecondaryCore.m_aWeapons[Weapon].m_Got = Frame.m_aSecondaryWeaponGot[Weapon] != 0;
+				SecondaryCore.m_aWeapons[Weapon].m_Ammo = Frame.m_aSecondaryWeaponAmmo[Weapon];
 			}
-			pSecondary->m_Pos = pSecondary->Core()->m_Pos;
+			pSecondary->SetCore(SecondaryCore);
+			pSecondary->m_Pos = SecondaryCore.m_Pos;
 			pSecondary->m_PrevPos = pSecondary->m_Pos;
 			pSecondary->m_PrevPrevPos = pSecondary->m_Pos;
 			pSecondary->SetActiveWeapon(Frame.m_SecondaryWeapon);
