@@ -455,8 +455,8 @@ private:
 	int m_aMacroPickupWeaponOverride[NUM_DUMMIES] = {-1, -1};
 	struct SMacroSavedBind
 	{
-		int m_Key = KEY_UNKNOWN;
-		int m_Modifier = KeyModifier::NONE;
+		int m_Key = 0;
+		int m_Modifier = 0;
 		std::string m_Command;
 	};
 	std::vector<SMacroSavedBind> m_vMacroSavedBinds;
