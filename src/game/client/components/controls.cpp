@@ -23,6 +23,8 @@
 #include <game/client/components/scoreboard.h>
 #include <game/client/gameclient.h>
 #include <game/client/prediction/entities/character.h>
+#include <game/client/prediction/entities/laser.h>
+#include <game/client/prediction/entities/projectile.h>
 #include <game/collision.h>
 #include <game/mapitems.h>
 #include <game/localization.h>
@@ -4907,6 +4909,162 @@ void CControls::RenderMacroHud()
 	TextRender()->Text((ScreenWidth - TargetWidth) * 0.5f, BoxY + 108.0f, TargetFontSize, aTargetLabel);
 	TextRender()->TextColor(TextRender()->DefaultTextColor());
 	Graphics()->MapScreen(PreviousScreen);
+}
+
+
+void CControls::RenderMacroTrajectory()
+{
+	if(!g_Config.m_ClMacroTrajectory)
+	{
+		m_vMacroTrajectory.clear();
+		m_MacroTrajectoryWeapon = -1;
+		return;
+	}
+
+	const int Dummy = std::clamp(g_Config.m_ClDummy, 0, NUM_DUMMIES - 1);
+	const int ClientId = GameClient()->m_aLocalIds[Dummy];
+	CCharacter *pCharacter = m_MacroPracticeActive ?
+		m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId) :
+		GameClient()->m_PredictedWorld.GetCharacterById(ClientId);
+	if(!pCharacter)
+	{
+		m_vMacroTrajectory.clear();
+		m_MacroTrajectoryWeapon = -1;
+		return;
+	}
+
+	const int Weapon = pCharacter->GetActiveWeapon();
+	if(Weapon != WEAPON_GRENADE && Weapon != WEAPON_LASER)
+	{
+		m_vMacroTrajectory.clear();
+		m_MacroTrajectoryWeapon = -1;
+		return;
+	}
+
+	vec2 Aim = m_aMousePos[Dummy];
+	if(length(Aim) < 0.001f)
+		Aim = vec2(0.0f, -1.0f);
+	const vec2 Direction = normalize(Aim);
+	const vec2 Origin = pCharacter->Core()->m_Pos;
+	const int64_t Now = time_get();
+	const bool NeedUpdate = Weapon != m_MacroTrajectoryWeapon ||
+		ClientId != m_MacroTrajectoryClientId ||
+		distance(Origin, m_MacroTrajectoryLastOrigin) > 4.0f ||
+		distance(Direction, m_MacroTrajectoryLastAim) > 0.02f ||
+		Now - m_MacroTrajectoryLastUpdate >= time_freq() / 10;
+	if(!NeedUpdate && !m_vMacroTrajectory.empty())
+		return;
+
+	m_MacroTrajectoryWeapon = Weapon;
+	m_MacroTrajectoryClientId = ClientId;
+	m_MacroTrajectoryLastOrigin = Origin;
+	m_MacroTrajectoryLastAim = Direction;
+	m_MacroTrajectoryLastUpdate = Now;
+	m_vMacroTrajectory.clear();
+
+	CGameWorld PreviewWorld;
+	CGameWorld *pSourceWorld = m_MacroPracticeActive ? &m_MacroPracticeWorld : &GameClient()->m_PredictedWorld;
+	PreviewWorld.CopyWorld(pSourceWorld);
+	if(PreviewWorld.m_pParent && PreviewWorld.m_pParent->m_pChild == &PreviewWorld)
+		PreviewWorld.m_pParent->m_pChild = nullptr;
+	PreviewWorld.m_pParent = nullptr;
+	PreviewWorld.m_pChild = nullptr;
+	for(int Type = 0; Type < CGameWorld::NUM_ENTTYPES; ++Type)
+	{
+		for(CEntity *pEntity = PreviewWorld.FindFirst(Type); pEntity; pEntity = pEntity->TypeNext())
+		{
+			if(pEntity->m_pParent && pEntity->m_pParent->m_pChild == pEntity)
+				pEntity->m_pParent->m_pChild = nullptr;
+			pEntity->m_pParent = nullptr;
+			pEntity->m_pChild = nullptr;
+		}
+	}
+
+	CCharacter *pPreviewCharacter = PreviewWorld.GetCharacterById(pCharacter->GetCid());
+	if(!pPreviewCharacter)
+		return;
+
+	const vec2 SpawnPos = Weapon == WEAPON_GRENADE ?
+		Origin + Direction * pPreviewCharacter->GetProximityRadius() * 0.75f : Origin;
+	const int TuneZone = pPreviewCharacter->GetPureTuneZone();
+	if(Weapon == WEAPON_GRENADE)
+	{
+		const int Lifetime = std::clamp(
+			(int)(PreviewWorld.GetTuning(TuneZone)->m_GrenadeLifetime * SERVER_TICK_SPEED), 1, 250);
+		CProjectile *pProjectile = new CProjectile(
+			&PreviewWorld, WEAPON_GRENADE, pPreviewCharacter->GetCid(), SpawnPos,
+			Direction, Lifetime, false, true, SOUND_GRENADE_EXPLODE);
+		if(!pProjectile)
+			return;
+		// Use DDNet projectile physics to preview gravity and possible rebounds.
+		pProjectile->SetBouncing(3);
+		m_vMacroTrajectory.push_back(SpawnPos);
+		for(int Tick = 0; Tick < Lifetime; ++Tick)
+		{
+			++PreviewWorld.m_GameTick;
+			pProjectile->Tick();
+			const vec2 Pos = pProjectile->GetPos(1.0f / SERVER_TICK_SPEED);
+			m_vMacroTrajectory.push_back(Pos);
+			if(!pProjectile->IsActive())
+				break;
+		}
+	}
+	else
+	{
+		const float LaserReach = PreviewWorld.GetTuning(TuneZone)->m_LaserReach;
+		CLaser *pLaser = new CLaser(&PreviewWorld, SpawnPos, Direction, LaserReach,
+			pPreviewCharacter->GetCid(), WEAPON_LASER);
+		if(!pLaser)
+			return;
+		m_vMacroTrajectory.push_back(pLaser->GetFrom());
+		m_vMacroTrajectory.push_back(pLaser->m_Pos);
+		int LastEvalTick = pLaser->GetEvalTick();
+		for(int Tick = 0; Tick < 500 && pLaser->IsActive(); ++Tick)
+		{
+			++PreviewWorld.m_GameTick;
+			pLaser->Tick();
+			if(pLaser->GetEvalTick() != LastEvalTick)
+			{
+				m_vMacroTrajectory.push_back(pLaser->GetFrom());
+				m_vMacroTrajectory.push_back(pLaser->m_Pos);
+				LastEvalTick = pLaser->GetEvalTick();
+			}
+		}
+	}
+
+	if(m_vMacroTrajectory.size() < 2)
+		return;
+
+	Graphics()->TextureClear();
+	Graphics()->QuadsBegin();
+	if(Weapon == WEAPON_GRENADE)
+		Graphics()->SetColor(1.0f, 0.66f, 0.18f, 0.82f);
+	else
+		Graphics()->SetColor(0.28f, 0.86f, 1.0f, 0.9f);
+	for(size_t i = 1; i < m_vMacroTrajectory.size(); ++i)
+	{
+		const vec2 From = m_vMacroTrajectory[i - 1];
+		const vec2 To = m_vMacroTrajectory[i];
+		const float Distance = distance(From, To);
+		if(Distance < 0.01f)
+			continue;
+		const int Dots = std::clamp((int)(Distance / 8.0f), 1, 160);
+		for(int Dot = 0; Dot <= Dots; ++Dot)
+		{
+			const vec2 Pos = mix(From, To, Dot / (float)Dots);
+			IGraphics::CQuadItem Item(Pos.x - 1.5f, Pos.y - 1.5f, 3.0f, 3.0f);
+			Graphics()->QuadsDrawTL(&Item, 1);
+		}
+	}
+	Graphics()->QuadsEnd();
+
+	const vec2 EndPos = m_vMacroTrajectory.back();
+	Graphics()->QuadsBegin();
+	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 0.95f);
+	IGraphics::CQuadItem EndMarker(EndPos.x - 3.5f, EndPos.y - 3.5f, 7.0f, 7.0f);
+	Graphics()->QuadsDrawTL(&EndMarker, 1);
+	Graphics()->QuadsEnd();
+	Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 
 bool CControls::OnCursorMove(float x, float y, IInput::ECursorType CursorType)
