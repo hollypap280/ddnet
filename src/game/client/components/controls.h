@@ -52,6 +52,7 @@ public:
 	int Sizeof() const override { return sizeof(*this); }
 
 	void OnReset() override;
+	void OnShutdown() override;
 	void OnRender() override;
 	void OnUpdate() override;
 	void OnMessage(int MsgType, void *pRawMsg) override;
