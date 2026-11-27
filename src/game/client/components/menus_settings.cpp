@@ -497,12 +497,6 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			s_RenameInput.Set(pBaseName ? pBaseName + 1 : s_aSelectedMacro);
 			str_copy(s_aRenameInputFor, s_aSelectedMacro);
 		}
-		if(!Controls.MacroRecording() && s_aSelectedMacro[0] && !s_NewMacroName.GetString()[0])
-		{
-			const char *pBaseName = strrchr(s_aSelectedMacro, '/');
-			s_NewMacroName.Set(pBaseName ? pBaseName + 1 : s_aSelectedMacro);
-		}
-
 		MainView.HSplitTop(8.0f, nullptr, &MainView);
 		if(!Controls.MacroRecording() && !Controls.MacroPlaying())
 		{
@@ -510,7 +504,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 			CUIRect NameLabel, NameInput;
 			Row.VSplitLeft(112.0f, &NameLabel, &NameInput);
 			Ui()->DoLabel(&NameLabel, Localize("Имя макроса:"), 12.0f, TEXTALIGN_ML);
-			Ui()->DoEditBox(&s_NewMacroName, &NameInput, 12.0f);
+			Ui()->DoClearableEditBox(&s_NewMacroName, &NameInput, 12.0f);
 		}
 		MainView.HSplitTop(34.0f, &Row, &MainView);
 		CUIRect RecordButton, ButtonGap, PlayButton;
@@ -798,10 +792,10 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		MainView.HSplitTop(30.0f, &Row, &MainView);
 		Ui()->DoLabel(&Row, Localize("Бинды временно переключаются на управление макросом и восстанавливаются после остановки или выхода."), 12.0f, TEXTALIGN_ML);
 		MainView.HSplitTop(30.0f, &Row, &MainView);
-		if(DoButton_CheckBox(&s_TrajectoryToggle, Localize("Показывать траекторию гранаты и лазера"), g_Config.m_ClMacroTrajectory, &Row))
+		if(DoButton_CheckBox(&s_TrajectoryToggle, Localize("Показывать белую траекторию гранаты, лазера и дробовика"), g_Config.m_ClMacroTrajectory, &Row))
 			g_Config.m_ClMacroTrajectory = !g_Config.m_ClMacroTrajectory;
 		MainView.HSplitTop(28.0f, &Row, &MainView);
-		Ui()->DoLabel(&Row, Localize("Показывает путь полёта, попадание и отскоки по текущим настройкам карты."), 11.0f, TEXTALIGN_ML);
+		Ui()->DoLabel(&Row, Localize("Показывает полёт и рикошеты лазера/дробовика, а также путь гранаты."), 11.0f, TEXTALIGN_ML);
 		MainView.HSplitTop(28.0f, &Row, &MainView);
 		Ui()->DoLabel(&Row, Localize("Прозрачные серверные персонажи не получают управление из FP."), 12.0f, TEXTALIGN_ML);
 	}
@@ -812,7 +806,11 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 	static int s_ButtonSubPage = 0;
 	static CButtonContainer s_MacroTab, s_GameTab;
 	static CButtonContainer s_MacroRewindKeyReader, s_MacroRewindKeyClear, s_MacroRewindNow;
+	static CButtonContainer s_MacroGotoKeyReader, s_MacroGotoKeyClear;
+	static CLineInputBuffered<16> s_MacroGotoTickInput;
 	static bool s_DefaultMacroRewindBindInitialized = false;
+	static bool s_DefaultMacroGotoBindInitialized = false;
+	static bool s_MacroGotoTickInputInitialized = false;
 	CUIRect TabRow, MacroTab, TabGap, GameTab;
 	MainView.HSplitTop(28.0f, &TabRow, &MainView);
 	TabRow.VSplitLeft(TabRow.w * 0.5f - 2.0f, &MacroTab, &TabGap);
@@ -898,5 +896,79 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 		const bool CanRewind = GameClient()->m_Controls.MacroRecording();
 		if(DoButton_Menu(&s_MacroRewindNow, Localize("Отмотать сейчас"), 0, &Row) && CanRewind)
 			GameClient()->m_Controls.RewindMacroRecording();
+
+		MainView.HSplitTop(16.0f, nullptr, &MainView);
+		MainView.HSplitTop(34.0f, &Row, &MainView);
+		Row.VSplitLeft(220.0f, &Label, &KeyReader);
+		Ui()->DoLabel(&Label, Localize("Перейти к тику макроса"), 13.0f, TEXTALIGN_ML);
+
+		CBindSlot CurrentGotoBind = EMPTY_BIND_SLOT;
+		for(int Modifier = KeyModifier::NONE; Modifier < KeyModifier::COMBINATION_COUNT && CurrentGotoBind.m_Key == KEY_UNKNOWN; ++Modifier)
+		{
+			for(int Key = KEY_FIRST; Key < KEY_LAST; ++Key)
+			{
+				if(str_comp(GameClient()->m_Binds.Get(Key, Modifier), "macro_goto_configured") == 0)
+				{
+					CurrentGotoBind = CBindSlot(Key, Modifier);
+					break;
+				}
+			}
+		}
+		if(!s_DefaultMacroGotoBindInitialized)
+		{
+			s_DefaultMacroGotoBindInitialized = true;
+			if(CurrentGotoBind.m_Key == KEY_UNKNOWN)
+			{
+				for(int Key = KEY_F6; Key <= KEY_F24; ++Key)
+				{
+					if(!GameClient()->m_Binds.Get(Key, KeyModifier::NONE)[0])
+					{
+						GameClient()->m_Binds.Bind(Key, "macro_goto_configured", false, KeyModifier::NONE);
+						CurrentGotoBind = CBindSlot(Key, KeyModifier::NONE);
+						break;
+					}
+				}
+			}
+		}
+		const CKeyBinder::CKeyReaderResult GotoKeyResult = GameClient()->m_KeyBinder.DoKeyReader(
+			&s_MacroGotoKeyReader, &s_MacroGotoKeyClear, &KeyReader, CurrentGotoBind, false);
+		if(!GotoKeyResult.m_Aborted && GotoKeyResult.m_Bind != CurrentGotoBind)
+		{
+			for(int Modifier = KeyModifier::NONE; Modifier < KeyModifier::COMBINATION_COUNT; ++Modifier)
+			{
+				for(int Key = KEY_FIRST; Key < KEY_LAST; ++Key)
+				{
+					if(str_comp(GameClient()->m_Binds.Get(Key, Modifier), "macro_goto_configured") == 0)
+						GameClient()->m_Binds.Bind(Key, "", false, Modifier);
+				}
+			}
+			if(GotoKeyResult.m_Bind.m_Key != KEY_UNKNOWN)
+			{
+				GameClient()->m_Binds.Bind(GotoKeyResult.m_Bind.m_Key, "macro_goto_configured", false,
+					GotoKeyResult.m_Bind.m_ModifierMask);
+				GameClient()->Echo("Клавиша перехода к тику назначена.");
+			}
+			else
+				GameClient()->Echo("Клавиша перехода к тику удалена.");
+		}
+
+		MainView.HSplitTop(34.0f, &Row, &MainView);
+		Row.VSplitLeft(220.0f, &Label, &KeyReader);
+		Ui()->DoLabel(&Label, Localize("Номер тика (1–18000)"), 13.0f, TEXTALIGN_ML);
+		if(!s_MacroGotoTickInputInitialized)
+		{
+			char aTickInput[16];
+			str_format(aTickInput, sizeof(aTickInput), "%d", g_Config.m_ClMacroGotoTick);
+			s_MacroGotoTickInput.Set(aTickInput);
+			s_MacroGotoTickInputInitialized = true;
+		}
+		Ui()->DoEditBox(&s_MacroGotoTickInput, &KeyReader, 12.0f);
+		int RequestedTick = 0;
+		if(str_toint(s_MacroGotoTickInput.GetString(), &RequestedTick) &&
+			RequestedTick >= 1 && RequestedTick <= 18000)
+			g_Config.m_ClMacroGotoTick = RequestedTick;
+
+		MainView.HSplitTop(36.0f, &Row, &MainView);
+		Ui()->DoLabel(&Row, Localize("Клавиша переносит тренировочного тии в сохранённое состояние выбранного тика; серверный персонаж не телепортируется."), 11.0f, TEXTALIGN_ML);
 	}
 }

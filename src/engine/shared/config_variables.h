@@ -233,7 +233,7 @@ MACRO_CONFIG_INT(ClMacroGotoTick, cl_macro_goto_tick, 1, 1, 18000, CFGFLAG_CLIEN
 MACRO_CONFIG_INT(ClMacroPracticeRate, cl_macro_practice_rate, 50, 1, 50, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Количество тренировочных тиков в секунду")
 MACRO_CONFIG_INT(ClMacroMouseSens, cl_macro_mousesens, 200, 1, 500, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Mouse sensitivity used while recording macros")
 MACRO_CONFIG_INT(ClMacroPracticeShowOthers, cl_macro_practice_show_others, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Показывать неподвижных других тии как цели в макротренировке")
-MACRO_CONFIG_INT(ClMacroTrajectory, cl_macro_trajectory, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Показывать прогноз траектории гранаты и лазера в макротренировке")
+MACRO_CONFIG_INT(ClMacroTrajectory, cl_macro_trajectory, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Показывать прогноз траектории гранаты, лазера и рикошета дробовика")
 MACRO_CONFIG_INT(ClAutoHookAngle, cl_auto_hook_angle, 250, 10, 360, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Ширина угла поиска цели для автохука в градусах")
 MACRO_CONFIG_INT(ClAutoHookRange, cl_auto_hook_range, 360, 32, 360, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Максимальная дальность поиска цели автохуком")
 MACRO_CONFIG_INT(ClAutoHookShowRadius, cl_auto_hook_show_radius, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Показывать радиус действия автохука вокруг тии")

@@ -527,8 +527,6 @@ private:
 	void SimulateMacroPracticeTick(const CNetObj_PlayerInput &Input, const CNetObj_PlayerInput &DummyInput);
 	bool RestoreMacroPracticeFrame(int Index);
 	void UpdateMacroPracticeGhost(CCharacter *pCharacter);
-	bool IsMacroPracticeCharacterHooked(const CCharacter *pCharacter) const;
-	void ParkMacroPracticeCharacter(CCharacter *pCharacter);
 	void RebuildMacroPracticeHookLinks();
 	void PopulateMacroPracticeWorld();
 	bool SwitchMacroPracticeCharacter(int ClientId);
