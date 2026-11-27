@@ -4563,14 +4563,7 @@ void CControls::RenderMacroHud()
 		str_format(aTickLabel, sizeof(aTickLabel), "FP-ТРЕНИРОВКА  |  ТИК %d  |  %d ТИК/С",
 			m_MacroPracticeTick, MacroPracticeRate());
 
-	const float BoxWidth = std::min(640.0f, ScreenWidth - 32.0f);
-	const float BoxHeight = 142.0f;
-	const float BoxX = (ScreenWidth - BoxWidth) * 0.5f;
 	const float BoxY = 76.0f;
-	Graphics()->DrawRect(BoxX, BoxY, BoxWidth, BoxHeight,
-		ColorRGBA(0.0f, 0.0f, 0.0f, 0.82f), IGraphics::CORNER_ALL, 2.0f);
-	Graphics()->DrawRect(BoxX + 4.0f, BoxY + 4.0f, BoxWidth - 8.0f, BoxHeight - 8.0f,
-		ColorRGBA(0.42f, 0.42f, 0.42f, 0.88f), IGraphics::CORNER_ALL, 2.0f);
 
 	const char *pClientName = "SPARKI CLIENT";
 	const float ClientFontSize = 15.0f;
@@ -4599,90 +4592,9 @@ void CControls::RenderMacroHud()
 		pDisplayFrame = &DisplayFrame;
 	}
 
-	// Draw the current private weapon inventory. The selected weapon stays
-	// bright while carried weapons are dimmed, matching DDNet's regular HUD.
-	const int CurrentWeapon = std::clamp(pCurrentPracticeCharacter ? pCurrentPracticeCharacter->GetActiveWeapon() :
-		(pDisplayFrame ? pDisplayFrame->m_Weapon : (int)WEAPON_HAMMER), (int)WEAPON_HAMMER, (int)WEAPON_NINJA);
-	bool aWeaponGot[NUM_WEAPONS]{};
+	// Use DDNet's normal weapon and jump icons, sourced from the current practice tee.
 	if(pCurrentPracticeCharacter)
-	{
-		const CCharacterCore &Core = *pCurrentPracticeCharacter->Core();
-		for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
-			aWeaponGot[Weapon] = Core.m_aWeapons[Weapon].m_Got;
-	}
-	else if(pDisplayFrame && pDisplayFrame->m_HasWeaponInventoryState)
-	{
-		for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
-			aWeaponGot[Weapon] = pDisplayFrame->m_aWeaponGot[Weapon] != 0;
-	}
-	else
-		aWeaponGot[CurrentWeapon] = true;
-
-	float WeaponX = 18.0f;
-	const float WeaponY = 8.0f;
-	const float WeaponSize = 36.0f;
-	const float WeaponStep = 43.0f;
-	for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
-	{
-		if(!aWeaponGot[Weapon])
-			continue;
-		const float Alpha = Weapon == CurrentWeapon ? 1.0f : 0.42f;
-		Graphics()->TextureSet(GameClient()->m_GameSkin.m_aSpritePickupWeapons[Weapon]);
-		Graphics()->QuadsBegin();
-		Graphics()->SetColor(1.0f, 1.0f, 1.0f, Alpha);
-		Graphics()->QuadsSetRotation(pi * 7.0f / 4.0f);
-		IGraphics::CQuadItem WeaponQuad(WeaponX, WeaponY, WeaponSize, WeaponSize);
-		Graphics()->QuadsDrawTL(&WeaponQuad, 1);
-		Graphics()->QuadsEnd();
-		Graphics()->QuadsSetRotation(0.0f);
-		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
-		WeaponX += WeaponStep;
-	}
-
-	// Available air-jump icons are filled; used jumps turn into the empty
-	// icon one by one, just like the ordinary DDNet HUD.
-	if(pCurrentPracticeCharacter)
-	{
-		const CCharacterCore &Core = *pCurrentPracticeCharacter->Core();
-		const int TotalJumps = std::clamp(absolute(Core.m_Jumps), 0, 10);
-		int UsedJumps = Core.m_JumpedTotal;
-		const bool Grounded = Collision()->IsOnGround(Core.m_Pos, CCharacterCore::PhysicalSize());
-		if(Core.m_Jumps > 1)
-			UsedJumps += !Grounded;
-		else if(Core.m_Jumps == 1)
-			UsedJumps = Core.m_Jumped & 2;
-		else if(Core.m_Jumps == -1)
-			UsedJumps = !Grounded;
-
-		if(Core.m_EndlessJump && TotalJumps > 0 && UsedJumps >= TotalJumps)
-			UsedJumps = TotalJumps - 1;
-		int AvailableJumps = std::clamp(TotalJumps - UsedJumps, 0, TotalJumps);
-		if(!(Core.m_Jumped & 2) && AvailableJumps <= 0 && TotalJumps > 0)
-			AvailableJumps = 1;
-
-		const float JumpX = 18.0f;
-		const float JumpY = 54.0f;
-		const float JumpSize = 28.0f;
-		const float JumpStep = 36.0f;
-		Graphics()->TextureSet(GameClient()->m_HudSkin.m_SpriteHudAirjump);
-		Graphics()->QuadsBegin();
-		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
-		for(int i = 0; i < AvailableJumps; ++i)
-		{
-			IGraphics::CQuadItem JumpQuad(JumpX + i * JumpStep, JumpY, JumpSize, JumpSize);
-			Graphics()->QuadsDrawTL(&JumpQuad, 1);
-		}
-		Graphics()->QuadsEnd();
-
-		Graphics()->TextureSet(GameClient()->m_HudSkin.m_SpriteHudAirjumpEmpty);
-		Graphics()->QuadsBegin();
-		for(int i = AvailableJumps; i < TotalJumps; ++i)
-		{
-			IGraphics::CQuadItem JumpQuad(JumpX + i * JumpStep, JumpY, JumpSize, JumpSize);
-			Graphics()->QuadsDrawTL(&JumpQuad, 1);
-		}
-		Graphics()->QuadsEnd();
-	}
+		GameClient()->m_Hud.RenderMacroPracticePlayerState(pCurrentPracticeCharacter);
 
 	char aActionLabel[192];
 	str_copy(aActionLabel, "ДЕЙСТВИЕ: ОЖИДАНИЕ");
