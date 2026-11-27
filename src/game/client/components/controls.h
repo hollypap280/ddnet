@@ -529,6 +529,7 @@ private:
 	void UpdateMacroPracticeGhost(CCharacter *pCharacter);
 	bool IsMacroPracticeCharacterHooked(const CCharacter *pCharacter) const;
 	void ParkMacroPracticeCharacter(CCharacter *pCharacter);
+	void RebuildMacroPracticeHookLinks();
 	void PopulateMacroPracticeWorld();
 	bool SwitchMacroPracticeCharacter(int ClientId);
 	static void ConMacroPractice(IConsole::IResult *pResult, void *pUserData);

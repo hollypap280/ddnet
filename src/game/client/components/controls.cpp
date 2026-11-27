@@ -1750,6 +1750,51 @@ void CControls::ParkMacroPracticeCharacter(CCharacter *pCharacter)
 	pCharacter->m_IsMacroPracticeParked = true;
 }
 
+void CControls::RebuildMacroPracticeHookLinks()
+{
+	// CopyWorld and the extra predicted dummy clone can carry HookedPlayer ids
+	// from a different CWorldCore. Rebuild both sides of every local/remote
+	// hook relationship against the isolated practice world's character table.
+	int aHookedPlayer[MAX_CLIENTS];
+	std::fill(std::begin(aHookedPlayer), std::end(aHookedPlayer), -1);
+	for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
+	{
+		CCharacter *pCharacter = m_MacroPracticeWorld.GetCharacterById(ClientId);
+		if(!pCharacter)
+			continue;
+
+		CCharacterCore *pCore = pCharacter->Core();
+		aHookedPlayer[ClientId] = pCore->HookedPlayer();
+		pCore->m_AttachedPlayers.clear();
+		pCore->SetHookedPlayer(-1);
+	}
+
+	for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
+	{
+		const int HookedPlayer = aHookedPlayer[ClientId];
+		if(HookedPlayer < 0)
+			continue;
+
+		CCharacter *pCharacter = m_MacroPracticeWorld.GetCharacterById(ClientId);
+		if(!pCharacter)
+			continue;
+
+		if(m_MacroPracticeWorld.GetCharacterById(HookedPlayer))
+		{
+			pCharacter->Core()->SetHookedPlayer(HookedPlayer);
+		}
+		else
+		{
+			// A target that no longer exists in the practice snapshot cannot
+			// remain attached to a stale server/prediction core.
+			pCharacter->Core()->m_HookState = HOOK_RETRACTED;
+			pCharacter->Core()->m_HookPos = pCharacter->Core()->m_Pos;
+			pCharacter->Core()->m_HookDir = vec2(0.0f, 0.0f);
+			pCharacter->Core()->m_HookTick = 0;
+		}
+	}
+}
+
 void CControls::PopulateMacroPracticeWorld()
 {
 	m_MacroPracticeWorld.m_LocalClientId = m_MacroPracticeLocalId;
@@ -1846,6 +1891,7 @@ void CControls::PopulateMacroPracticeWorld()
 
 	m_MacroPracticeWorld.RemoveMarkedEntities();
 	m_MacroPracticeWorld.m_GameTick = PracticeTick;
+	RebuildMacroPracticeHookLinks();
 
 	UpdateMacroPracticeGhost(m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId));
 }
