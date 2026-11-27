@@ -1522,7 +1522,7 @@ bool CControls::SwitchMacroPracticeCharacter(int ClientId)
 
 	// The two local tees have independent input state. Restore the selected
 	// tee's own last input instead of resetting it to an idle packet.
-	CNetObj_PlayerInput SelectedInput = pNewCharacter->m_Input;
+	CNetObj_PlayerInput SelectedInput = pNewCharacter->GetInput();
 	SelectedInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
 	if(SelectedInput.m_TargetX == 0 && SelectedInput.m_TargetY == 0)
 		SelectedInput.m_TargetX = 1;
