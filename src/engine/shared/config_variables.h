@@ -226,7 +226,7 @@ MACRO_CONFIG_STR(ClDummy7SkinEyes, dummy7_skin_eyes, protocol7::MAX_SKIN_ARRAY_S
 MACRO_CONFIG_INT(ClAutoHook, cl_auto_hook, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Автоматически цепляться за ближайшего видимого тии в радиусе")
 MACRO_CONFIG_INT(ClAutoTriplefly, cl_auto_triplefly, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Автоматически цепляться за третьего ближайшего подходящего тии")
 MACRO_CONFIG_INT(ClAutoEdgeHook, cl_auto_edge_hook, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Автоматически цепляться крюком у края платформы без прыжка")
-MACRO_CONFIG_INT(ClMacroRewindStep, cl_macro_rewind_step, 50, 1, 18000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Количество тиков для перемотки макроса")
+MACRO_CONFIG_INT(ClMacroRewindStep, cl_macro_rewind_step, 50, 1, 250, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Количество тиков для перемотки макроса")
 MACRO_CONFIG_INT(ClMacroLoop, cl_macro_loop, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Повторять воспроизведение макроса по кругу")
 MACRO_CONFIG_INT(ClMacroStopTick, cl_macro_stop_tick, 0, 0, 18000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Тик, на котором остановить макрос по горячей клавише; 0 отключает")
 MACRO_CONFIG_INT(ClMacroGotoTick, cl_macro_goto_tick, 1, 1, 18000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Тик макроса для перехода по горячей клавише")

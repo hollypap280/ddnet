@@ -69,6 +69,7 @@ public:
 	bool MacroPaused() const { return m_MacroRecording ? m_MacroRecordingPaused : m_MacroPlaybackPaused; }
 	int MacroPosition() const { return m_MacroRecording ? (int)m_vMacroFrames.size() : m_MacroPlaying ? m_MacroDisplayedTick : (int)m_MacroPlaybackIndex; }
 	bool SeekMacroBy(int Offset);
+	bool RewindMacroRecording();
 	void ToggleMacroPause();
 	int ImportMacroBinds();
 	int MacroFrameCount() const { return (int)m_vMacroFrames.size(); }
@@ -458,6 +459,7 @@ private:
 	bool RestoreMacroPracticeFrame(int Index);
 	void UpdateMacroPracticeGhost(CCharacter *pCharacter);
 	bool IsMacroPracticeCharacterHooked(const CCharacter *pCharacter) const;
+	void ParkMacroPracticeCharacter(CCharacter *pCharacter);
 	void PopulateMacroPracticeWorld();
 	bool SwitchMacroPracticeCharacter(int ClientId);
 	static void ConMacroPractice(IConsole::IResult *pResult, void *pUserData);

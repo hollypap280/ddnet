@@ -1175,6 +1175,100 @@ bool CControls::StartMacroPractice()
 	std::fill(std::begin(m_aMacroPracticeSnapshotInitialized), std::end(m_aMacroPracticeSnapshotInitialized), false);
 	std::fill(std::begin(m_aMacroPracticeStartSnapshotInitialized), std::end(m_aMacroPracticeStartSnapshotInitialized), false);
 
+	const int OtherConnection = 1 - Dummy;
+	const int OtherLocalId = GameClient()->m_aLocalIds[OtherConnection];
+	if(OtherLocalId >= 0 && OtherLocalId < MAX_CLIENTS && OtherLocalId != LocalId)
+	{
+		CCharacter *pPracticeOther = m_MacroPracticeWorld.GetCharacterById(OtherLocalId);
+		CCharacter *pSourceOther = GameClient()->m_PredictedWorld.GetCharacterById(OtherLocalId);
+		if(!pSourceOther)
+			pSourceOther = GameClient()->m_GameWorld.GetCharacterById(OtherLocalId);
+
+		CCharacterCore OtherCore{};
+		bool HasOtherCore = false;
+		int OtherWeapon = WEAPON_HAMMER;
+		int OtherAttackTick = 0;
+		int OtherFreezeTime = 0;
+		bool OtherFrozenLastTick = false;
+		int OtherTeleCheckpoint = 0;
+		int OtherTuneZone = 0;
+		int OtherGameTeam = m_MacroPracticeWorld.Teams()->Team(LocalId);
+
+		if(pSourceOther)
+		{
+			OtherCore = pSourceOther->GetCore();
+			HasOtherCore = true;
+			OtherWeapon = pSourceOther->GetActiveWeapon();
+			OtherAttackTick = pSourceOther->GetAttackTick();
+			OtherFreezeTime = pSourceOther->m_FreezeTime;
+			OtherFrozenLastTick = pSourceOther->m_FrozenLastTick;
+			OtherTeleCheckpoint = pSourceOther->m_TeleCheckpoint;
+			OtherTuneZone = pSourceOther->GetPureTuneZone();
+			OtherGameTeam = GameClient()->IsTeamPlay() ?
+				GameClient()->m_aClients[OtherLocalId].m_Team : m_MacroPracticeWorld.Teams()->Team(LocalId);
+		}
+		else if(pPracticeOther)
+		{
+			OtherCore = pPracticeOther->GetCore();
+			HasOtherCore = true;
+			OtherWeapon = pPracticeOther->GetActiveWeapon();
+			OtherAttackTick = pPracticeOther->GetAttackTick();
+			OtherFreezeTime = pPracticeOther->m_FreezeTime;
+			OtherFrozenLastTick = pPracticeOther->m_FrozenLastTick;
+			OtherTeleCheckpoint = pPracticeOther->m_TeleCheckpoint;
+			OtherTuneZone = pPracticeOther->GetPureTuneZone();
+		}
+		else
+		{
+			OtherCore = GameClient()->m_aClients[OtherLocalId].m_Predicted;
+			HasOtherCore = OtherCore.m_Id == OtherLocalId;
+			OtherWeapon = OtherCore.m_ActiveWeapon;
+			OtherGameTeam = GameClient()->IsTeamPlay() ?
+				GameClient()->m_aClients[OtherLocalId].m_Team : m_MacroPracticeWorld.Teams()->Team(LocalId);
+		}
+
+		if(HasOtherCore)
+		{
+			CNetObj_Character OtherCharacter{};
+			OtherCore.Write(&OtherCharacter);
+			OtherCharacter.m_Tick = m_MacroPracticeWorld.GameTick();
+			OtherCharacter.m_Weapon = OtherWeapon;
+			OtherCharacter.m_AttackTick = OtherAttackTick;
+			if(!pPracticeOther)
+			{
+				pPracticeOther = new CCharacter(&m_MacroPracticeWorld, OtherLocalId, &OtherCharacter, nullptr);
+				if(!pPracticeOther)
+				{
+					StopMacroPractice();
+					GameClient()->Echo("Не удалось создать копию второго локального тии.");
+					return false;
+				}
+				m_MacroPracticeWorld.InsertEntity(pPracticeOther);
+			}
+			pPracticeOther->SetCore(OtherCore);
+			pPracticeOther->m_Pos = OtherCore.m_Pos;
+			pPracticeOther->m_PrevPos = OtherCore.m_Pos;
+			pPracticeOther->m_PrevPrevPos = OtherCore.m_Pos;
+			pPracticeOther->SetActiveWeapon(OtherWeapon);
+			pPracticeOther->m_FreezeTime = OtherFreezeTime;
+			pPracticeOther->m_FrozenLastTick = OtherFrozenLastTick;
+			pPracticeOther->m_TeleCheckpoint = OtherTeleCheckpoint;
+			pPracticeOther->SetTuneZone(OtherTuneZone);
+			pPracticeOther->m_GameTeam = OtherGameTeam;
+			pPracticeOther->m_IsLocal = false;
+			m_MacroPracticeWorld.Teams()->Team(OtherLocalId, OtherGameTeam);
+
+			CNetObj_PlayerInput IdleOtherInput{};
+			IdleOtherInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+			IdleOtherInput.m_TargetX = 1;
+			pPracticeOther->SetInput(&IdleOtherInput);
+			pPracticeOther->OnDirectInput(&IdleOtherInput);
+			pPracticeOther->OnPredictedInput(&IdleOtherInput);
+			m_aMacroPracticeSnapshotInitialized[OtherLocalId] = true;
+			ParkMacroPracticeCharacter(pPracticeOther);
+		}
+	}
+
 	str_copy(m_aMacroMapName, GameClient()->Map()->BaseName());
 	if(!m_aMacroMapName[0])
 		str_copy(m_aMacroMapName, "Неизвестная карта");
@@ -1419,6 +1513,29 @@ bool CControls::IsMacroPracticeCharacterHooked(const CCharacter *pCharacter) con
 	return Core.HookedPlayer() >= 0 || !Core.m_AttachedPlayers.empty();
 }
 
+void CControls::ParkMacroPracticeCharacter(CCharacter *pCharacter)
+{
+	if(!pCharacter)
+		return;
+
+	if(m_MacroPlaying || IsMacroPracticeCharacterHooked(pCharacter))
+	{
+		pCharacter->m_IsMacroPracticeParked = false;
+		return;
+	}
+
+	if(!pCharacter->m_IsMacroPracticeParked)
+	{
+		CCharacterCore Core = pCharacter->GetCore();
+		Core.m_Vel = vec2(0.0f, 0.0f);
+		pCharacter->SetCore(Core);
+		pCharacter->m_Pos = Core.m_Pos;
+		pCharacter->m_PrevPos = Core.m_Pos;
+		pCharacter->m_PrevPrevPos = Core.m_Pos;
+	}
+	pCharacter->m_IsMacroPracticeParked = true;
+}
+
 void CControls::PopulateMacroPracticeWorld()
 {
 	m_MacroPracticeWorld.m_LocalClientId = m_MacroPracticeLocalId;
@@ -1456,8 +1573,7 @@ void CControls::PopulateMacroPracticeWorld()
 			if(pPracticeCharacter)
 			{
 				m_aMacroPracticeSnapshotInitialized[ClientId] = true;
-				pPracticeCharacter->m_IsMacroPracticeParked =
-					!m_MacroPlaying && !IsMacroPracticeCharacterHooked(pPracticeCharacter);
+				ParkMacroPracticeCharacter(pPracticeCharacter);
 			}
 			continue;
 		}
@@ -1509,8 +1625,7 @@ void CControls::PopulateMacroPracticeWorld()
 		}
 
 		if(IsOwnDummy && ClientId != m_MacroPracticeLocalId)
-			pPracticeCharacter->m_IsMacroPracticeParked =
-				!m_MacroPlaying && !IsMacroPracticeCharacterHooked(pPracticeCharacter);
+			ParkMacroPracticeCharacter(pPracticeCharacter);
 
 		pPracticeCharacter->m_GameTeam = GameTeam;
 	}
@@ -1552,10 +1667,7 @@ bool CControls::SwitchMacroPracticeCharacter(int ClientId)
 	if(CCharacter *pOldCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId))
 	{
 		pOldCharacter->m_IsLocal = false;
-		// Do not stop a tee that is currently hooking or being hooked. Once
-		// that connection ends, PopulateMacroPracticeWorld parks it in place.
-		pOldCharacter->m_IsMacroPracticeParked = !m_MacroPlaying &&
-			!IsMacroPracticeCharacterHooked(pOldCharacter);
+		ParkMacroPracticeCharacter(pOldCharacter);
 	}
 
 	pNewCharacter->m_IsLocal = true;
@@ -2612,19 +2724,28 @@ void CControls::ConMacroForwardStep(IConsole::IResult *pResult, void *pUserData)
 	pSelf->SeekMacro(pSelf->MacroSeekStep(), true, true);
 }
 
+bool CControls::RewindMacroRecording()
+{
+	if(!m_MacroRecording || !m_MacroPracticeActive)
+	{
+		GameClient()->Echo("Отмотка доступна только во время записи макроса.");
+		return false;
+	}
+	if(!SeekMacro(-MacroSeekStep(), true, false))
+	{
+		GameClient()->Echo("Не удалось отмотать запись. Убедись, что уже записан хотя бы один тик.");
+		return false;
+	}
+	return true;
+}
+
 void CControls::ConMacroRecordRewind(IConsole::IResult *pResult, void *pUserData)
 {
 	(void)pResult;
 	CControls *pSelf = (CControls *)pUserData;
 	if(pSelf->GameClient()->m_Chat.IsActive() || pSelf->GameClient()->m_Menus.IsActive())
 		return;
-	if(!pSelf->m_MacroRecording || !pSelf->m_MacroPracticeActive)
-	{
-		pSelf->GameClient()->Echo("Отмотка этой кнопкой доступна только во время записи макроса.");
-		return;
-	}
-	if(!pSelf->SeekMacro(-pSelf->MacroSeekStep(), true, false))
-		pSelf->GameClient()->Echo("Не удалось отмотать запись. Убедись, что уже записан хотя бы один тик.");
+	pSelf->RewindMacroRecording();
 }
 
 void CControls::ConMacroGoto(IConsole::IResult *pResult, void *pUserData)
@@ -2854,12 +2975,12 @@ void CControls::ConMacroPause(IConsole::IResult *pResult, void *pUserData)
 
 int CControls::MacroSeekStep() const
 {
-	return g_Config.m_ClMacroRewindStep;
+	return std::clamp(g_Config.m_ClMacroRewindStep, 1, 250);
 }
 
 void CControls::SetMacroSeekStep(int Step)
 {
-	g_Config.m_ClMacroRewindStep = std::clamp(Step, 1, 18000);
+	g_Config.m_ClMacroRewindStep = std::clamp(Step, 1, 250);
 }
 
 void CControls::OnMacroPracticeDummySwap()

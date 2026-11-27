@@ -63,7 +63,7 @@ void CMenus::RenderSettings(CUIRect MainView)
 		Localize("Credits"),
 		Localize("Игровые функции"),
 		Localize("Макросы"),
-		Localize("Клавиши")};
+		Localize("Кнопки")};
 	static CButtonContainer s_aTabButtons[SETTINGS_LENGTH];
 
 	for(int i = 0; i < SETTINGS_LENGTH; i++)
@@ -627,12 +627,13 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 {
 	static int s_ButtonSubPage = 0;
 	static CButtonContainer s_MacroTab, s_GameTab;
-	static CButtonContainer s_MacroRewindKeyReader, s_MacroRewindKeyClear;
+	static CButtonContainer s_MacroRewindKeyReader, s_MacroRewindKeyClear, s_MacroRewindNow;
+	static bool s_DefaultMacroRewindBindInitialized = false;
 	CUIRect TabRow, MacroTab, TabGap, GameTab;
 	MainView.HSplitTop(28.0f, &TabRow, &MainView);
 	TabRow.VSplitLeft(TabRow.w * 0.5f - 2.0f, &MacroTab, &TabGap);
 	TabGap.VSplitLeft(4.0f, nullptr, &GameTab);
-	if(DoButton_Menu(&s_MacroTab, Localize("Макросы"), s_ButtonSubPage == 0, &MacroTab))
+	if(DoButton_Menu(&s_MacroTab, Localize("Макрос"), s_ButtonSubPage == 0, &MacroTab))
 		s_ButtonSubPage = 0;
 	if(DoButton_Menu(&s_GameTab, Localize("Игровые функции"), s_ButtonSubPage == 1, &GameTab))
 		s_ButtonSubPage = 1;
@@ -654,6 +655,23 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 				{
 					CurrentBind = CBindSlot(Key, Modifier);
 					break;
+				}
+			}
+		}
+
+		if(!s_DefaultMacroRewindBindInitialized)
+		{
+			s_DefaultMacroRewindBindInitialized = true;
+			if(CurrentBind.m_Key == KEY_UNKNOWN)
+			{
+				for(int Key = KEY_F6; Key <= KEY_F24; ++Key)
+				{
+					if(!GameClient()->m_Binds.Get(Key, KeyModifier::NONE)[0])
+					{
+						GameClient()->m_Binds.Bind(Key, "macro_record_rewind", false, KeyModifier::NONE);
+						CurrentBind = CBindSlot(Key, KeyModifier::NONE);
+						break;
+					}
 				}
 			}
 		}
@@ -682,12 +700,19 @@ void CMenus::RenderSettingsButtons(CUIRect MainView)
 			}
 		}
 
+		MainView.HSplitTop(24.0f, &Row, &MainView);
+		Ui()->DoLabel(&Row, Localize("Нажми на поле справа и выбери клавишу для отмотки записи."), 11.0f, TEXTALIGN_ML);
 		MainView.HSplitTop(12.0f, nullptr, &MainView);
 		MainView.HSplitTop(34.0f, &Row, &MainView);
 		Ui()->DoScrollbarOption(&g_Config.m_ClMacroRewindStep, &g_Config.m_ClMacroRewindStep, &Row,
-			Localize("Шаг отмотки (тиков)"), 1, 18000, &CUi::ms_LogarithmicScrollbarScale,
+			Localize("Шаг отмотки (тиков)"), 1, 250, &CUi::ms_LogarithmicScrollbarScale,
 			CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
 		MainView.HSplitTop(24.0f, &Row, &MainView);
-		Ui()->DoLabel(&Row, Localize("Команда действует только во время записи. Отмотанное будущее удаляется, запись продолжается с выбранного тика."), 11.0f, TEXTALIGN_ML);
+		Ui()->DoLabel(&Row, Localize("Работает только во время записи. Будущее после отмотки удаляется."), 11.0f, TEXTALIGN_ML);
+		MainView.HSplitTop(12.0f, nullptr, &MainView);
+		MainView.HSplitTop(34.0f, &Row, &MainView);
+		const bool CanRewind = GameClient()->m_Controls.MacroRecording();
+		if(DoButton_Menu(&s_MacroRewindNow, Localize("Отмотать сейчас"), 0, &Row) && CanRewind)
+			GameClient()->m_Controls.RewindMacroRecording();
 	}
 }
