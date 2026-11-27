@@ -442,8 +442,8 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 	static CButtonContainer s_RecordButton, s_PlayButton, s_RenameButton, s_DeleteButton;
 	static CButtonContainer s_ImportBindsButton, s_CreateFolderButton, s_BackToRootButton;
 	static CButtonContainer s_PinButton, s_MoveButton, s_TrajectoryToggle;
-	static CButtonContainer s_aMacroButtons[256];
-	static CButtonContainer s_aFolderButtons[64];
+	static CButtonContainer s_aMacroButtons[1024];
+	static CButtonContainer s_aFolderButtons[256];
 	static char s_aSelectedMacro[96] = "";
 	static char s_aRenameInputFor[96] = "";
 	static char s_aMacroFolder[48] = "";
@@ -482,7 +482,7 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		for(const CControls::SMacroInfo &Info : vMacros)
 			if(str_comp(s_aSelectedMacro, Info.m_aName) == 0)
 				SelectionExists = true;
-		if(s_aSelectedMacro[0] && SelectionInCurrentFolder && !SelectionExists)
+		if(!Controls.MacroRecording() && s_aSelectedMacro[0] && SelectionInCurrentFolder && !SelectionExists)
 			s_aSelectedMacro[0] = '\0';
 		if(!s_aSelectedMacro[0] && !vMacros.empty())
 			str_copy(s_aSelectedMacro, vMacros.front().m_aName);
