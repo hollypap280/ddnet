@@ -11,6 +11,7 @@
 #include <generated/protocol.h>
 
 #include <cstddef>
+#include <string>
 #include <vector>
 
 #include <game/client/component.h>
@@ -76,11 +77,17 @@ public:
 	const char *MacroRecordingName() const { return m_aRecordingMacroName; }
 	struct SMacroInfo
 	{
-		char m_aName[64]{};
+		char m_aName[96]{};
 		char m_aMapName[64]{};
 		int m_TickCount = 0;
+		bool m_Pinned = false;
 	};
-	void GetMacroList(std::vector<SMacroInfo> &vMacros);
+	void GetMacroList(std::vector<SMacroInfo> &vMacros, const char *pFolder = nullptr);
+	void GetMacroFolders(std::vector<std::string> &vFolders);
+	bool CreateMacroFolder(const char *pFolder);
+	bool MoveMacroToFolder(const char *pName, const char *pFolder);
+	bool ToggleMacroPin(const char *pName);
+	bool IsMacroPinned(const char *pName);
 	int MacroSeekStep() const;
 	void SetMacroSeekStep(int Step);
 	int MacroPlaybackRate() const { return m_MacroPlaybackRate; }
@@ -446,12 +453,27 @@ private:
 	bool m_aTripleflyTargetFound[NUM_DUMMIES]{};
 
 	int m_aMacroPickupWeaponOverride[NUM_DUMMIES] = {-1, -1};
+	struct SMacroSavedBind
+	{
+		int m_Key = KEY_UNKNOWN;
+		int m_Modifier = KeyModifier::NONE;
+		std::string m_Command;
+	};
+	std::vector<SMacroSavedBind> m_vMacroSavedBinds;
+	bool m_MacroBindsImported = false;
+	std::vector<vec2> m_vMacroTrajectory;
+	int m_MacroTrajectoryWeapon = -1;
 	void ApplyHookAutomation(int Dummy);
 	void ApplyEdgeAssist(int Dummy);
 	void ApplyEdgeHook(int Dummy);
 	int MacroConnectionFromStoredClientId(int StoredClientId) const;
 	bool MacroFilePath(const char *pName, char *pBuffer, unsigned BufferSize) const;
+	bool MacroFolderPath(const char *pFolder, char *pBuffer, unsigned BufferSize) const;
+	bool MacroPinPath(const char *pName, char *pBuffer, unsigned BufferSize) const;
 	static int MacroListCallback(const char *pName, int IsDir, int DirType, void *pUser);
+	static int MacroFolderListCallback(const char *pName, int IsDir, int DirType, void *pUser);
+	void RestoreMacroBinds();
+	void RenderMacroTrajectory();
 	bool SeekMacro(int Offset, bool ShowMessage = true, bool TeleportLive = false);
 	bool RebuildMacroWorldToPosition(int Position);
 	void RebaseMacroPlaybackCounters(int Dummy, int PreviousFrameIndex);
