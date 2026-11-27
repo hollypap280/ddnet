@@ -697,12 +697,14 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 				if(DoButton_Menu(&s_MoveButton, Localize(pMoveLabel), 0, &Row))
 				{
 					const char *pBaseName = pSelectedSlash ? pSelectedSlash + 1 : s_aSelectedMacro;
+					char aBaseName[96];
+					str_copy(aBaseName, pBaseName);
 					if(Controls.MoveMacroToFolder(s_aSelectedMacro, s_aMacroFolder))
 					{
 						if(s_aMacroFolder[0])
-							str_format(s_aSelectedMacro, sizeof(s_aSelectedMacro), "%s/%s", s_aMacroFolder, pBaseName);
+							str_format(s_aSelectedMacro, sizeof(s_aSelectedMacro), "%s/%s", s_aMacroFolder, aBaseName);
 						else
-							str_copy(s_aSelectedMacro, pBaseName);
+							str_copy(s_aSelectedMacro, aBaseName);
 						str_copy(s_aRenameInputFor, "");
 						GameClient()->Echo("Макрос перемещён.");
 					}
