@@ -16,6 +16,7 @@
 #include <engine/storage.h>
 
 #include <generated/protocol.h>
+#include <generated/client_data.h>
 
 #include <game/client/components/camera.h>
 #include <game/client/components/chat.h>
@@ -1327,6 +1328,7 @@ bool CControls::StartMacroPractice()
 		m_MacroPracticeWorld.Clear();
 		m_MacroPracticeLocalId = -1;
 		GameClient()->Echo("Не удалось скопировать персонажа в тренировочный мир.");
+		RestoreMacroBinds();
 		return false;
 	}
 
@@ -2370,7 +2372,7 @@ bool CControls::StartMacroRecording(const char *pName)
 	const bool ReplacingExistingMacro = ExistingFile != nullptr;
 	if(ExistingFile)
 		io_close(ExistingFile);
-	if(ReplacingExistingMacro && IsMacroPinned(aName))
+	if(IsMacroPinned(aName))
 	{
 		GameClient()->Echo("Этот макрос закреплён ⭐. Сначала сними закрепление, чтобы перезаписать его.");
 		return false;
@@ -2378,9 +2380,12 @@ bool CControls::StartMacroRecording(const char *pName)
 	if(strchr(aName, '/'))
 	{
 		char aFolder[48];
-		str_copy(aFolder, aName);
-		char *pSlash = strchr(aFolder, '/');
-		*pSlash = '\\0';
+		const char *pSlash = strchr(aName, '/');
+		const size_t FolderLength = pSlash ? (size_t)(pSlash - aName) : 0;
+		if(FolderLength == 0 || FolderLength >= sizeof(aFolder))
+			return false;
+		mem_copy(aFolder, aName, FolderLength);
+		aFolder[FolderLength] = '\\0';
 		if(!CreateMacroFolder(aFolder))
 		{
 			GameClient()->Echo("Не удалось открыть папку макросов.");
@@ -2420,7 +2425,7 @@ void CControls::StopMacroRecording(bool RestorePlaybackView)
 	if(WasRecording)
 	{
 		m_MacroRecording = false;
-		char aName[64];
+		char aName[96];
 		str_copy(aName, m_aRecordingMacroName);
 		if(m_vMacroFrames.empty())
 		{
@@ -2534,8 +2539,11 @@ bool CControls::SaveMacro(const char *pName)
 	if(pSlash)
 	{
 		char aFolder[48];
-		str_copy(aFolder, pName);
-		aFolder[pSlash - pName] = '\\0';
+		const size_t FolderLength = (size_t)(pSlash - pName);
+		if(FolderLength == 0 || FolderLength >= sizeof(aFolder))
+			return false;
+		mem_copy(aFolder, pName, FolderLength);
+		aFolder[FolderLength] = '\\0';
 		if(!CreateMacroFolder(aFolder))
 			return false;
 	}
@@ -2837,25 +2845,36 @@ bool CControls::DeleteMacro(const char *pName)
 
 bool CControls::RenameMacro(const char *pOldName, const char *pNewName)
 {
-	char aOldPath[128];
-	char aNewPath[128];
+	char aOldPath[160];
+	char aNewPath[160];
+	char aOldPinPath[180];
+	char aNewPinPath[180];
 	if(!MacroFilePath(pOldName, aOldPath, sizeof(aOldPath)) ||
-		!MacroFilePath(pNewName, aNewPath, sizeof(aNewPath)))
+		!MacroFilePath(pNewName, aNewPath, sizeof(aNewPath)) ||
+		!MacroPinPath(pOldName, aOldPinPath, sizeof(aOldPinPath)) ||
+		!MacroPinPath(pNewName, aNewPinPath, sizeof(aNewPinPath)))
 		return false;
 	if(str_comp(pOldName, pNewName) == 0)
 		return true;
 
 	IOHANDLE Existing = Storage()->OpenFile(aNewPath, IOFLAG_READ, IStorage::TYPE_SAVE);
-	if(Existing)
+	if(Existing || Storage()->FileExists(aNewPinPath, IStorage::TYPE_SAVE))
 	{
 		io_close(Existing);
 		GameClient()->Echo("Макрос с таким названием уже существует.");
 		return false;
 	}
 
+	const bool WasPinned = Storage()->FileExists(aOldPinPath, IStorage::TYPE_SAVE);
 	if(!Storage()->RenameFile(aOldPath, aNewPath, IStorage::TYPE_SAVE))
 	{
 		GameClient()->Echo("Не удалось переименовать макрос.");
+		return false;
+	}
+	if(WasPinned && !Storage()->RenameFile(aOldPinPath, aNewPinPath, IStorage::TYPE_SAVE))
+	{
+		Storage()->RenameFile(aNewPath, aOldPath, IStorage::TYPE_SAVE);
+		GameClient()->Echo("Не удалось сохранить закрепление макроса при переименовании.");
 		return false;
 	}
 	return true;
