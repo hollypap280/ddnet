@@ -15,6 +15,7 @@ public:
 	CLaser(CGameWorld *pGameWorld, vec2 Pos, vec2 Direction, float StartEnergy, int Owner, int Type);
 
 	void Tick() override;
+	bool IsActive() const { return m_Energy >= 0.0f; }
 
 	const vec2 &GetFrom() const { return m_From; }
 	const int &GetOwner() const { return m_Owner; }
