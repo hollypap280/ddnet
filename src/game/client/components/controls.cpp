@@ -1650,6 +1650,7 @@ void CControls::StopMacroPractice()
 	}
 	m_MacroPlaybackHistoryAvailable = false;
 	m_MacroPlaybackLive = false;
+	m_MacroPlaybackManualDummyOverride = false;
 	m_MacroPlaybackLastTick = -1;
 	m_MacroPlaybackSeekTargetIndex = -1;
 	std::fill(std::begin(m_aMacroPlaybackWeaponOverride), std::end(m_aMacroPlaybackWeaponOverride), -1);
@@ -3663,7 +3664,10 @@ bool CControls::SeekMacro(int Offset, bool ShowMessage, bool TeleportLive)
 	else
 	{
 		const bool WasPlaybackPaused = m_MacroPlaybackPaused;
-		if(m_MacroPracticeBaselineValid)
+		// A macro converted from live server playback has no original full-world
+		// baseline. Restore the saved tee snapshots directly instead of replaying
+		// from the moment the FP world was created.
+		if(m_MacroPracticeBaselineValid && !m_MacroPlaybackOwnsPractice)
 		{
 			if(!RebuildMacroWorldToPosition(Target + 1))
 				return false;
