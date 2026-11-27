@@ -687,16 +687,16 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 					GameClient()->Echo(Pinned ? "Закреплённый макрос нельзя удалить. Сними звезду." : "Не удалось удалить макрос.");
 			}
 
-			const char *pSelectedSlash = strrchr(s_aSelectedMacro, '/');
-			const std::string SelectedFolder = pSelectedSlash ?
-				std::string(s_aSelectedMacro, pSelectedSlash - s_aSelectedMacro) : std::string();
-			if(SelectedFolder != s_aMacroFolder)
+			const char *pSelectedSlashForMove = strrchr(s_aSelectedMacro, '/');
+			const std::string SelectedFolderForMove = pSelectedSlashForMove ?
+				std::string(s_aSelectedMacro, pSelectedSlashForMove - s_aSelectedMacro) : std::string();
+			if(SelectedFolderForMove != s_aMacroFolder)
 			{
 				MainView.HSplitTop(30.0f, &Row, &MainView);
 				const char *pMoveLabel = s_aMacroFolder[0] ? "Переместить в эту папку" : "Переместить в корень";
 				if(DoButton_Menu(&s_MoveButton, Localize(pMoveLabel), 0, &Row))
 				{
-					const char *pBaseName = pSelectedSlash ? pSelectedSlash + 1 : s_aSelectedMacro;
+					const char *pBaseName = pSelectedSlashForMove ? pSelectedSlashForMove + 1 : s_aSelectedMacro;
 					char aBaseName[96];
 					str_copy(aBaseName, pBaseName);
 					if(Controls.MoveMacroToFolder(s_aSelectedMacro, s_aMacroFolder))
