@@ -2398,7 +2398,7 @@ bool CControls::StartMacroRecording(const char *pName)
 		if(FolderLength == 0 || FolderLength >= sizeof(aFolder))
 			return false;
 		mem_copy(aFolder, aName, FolderLength);
-		aFolder[FolderLength] = '\\0';
+		aFolder[FolderLength] = '\0';
 		if(!CreateMacroFolder(aFolder))
 		{
 			GameClient()->Echo("Не удалось открыть папку макросов.");
@@ -2556,7 +2556,7 @@ bool CControls::SaveMacro(const char *pName)
 		if(FolderLength == 0 || FolderLength >= sizeof(aFolder))
 			return false;
 		mem_copy(aFolder, pName, FolderLength);
-		aFolder[FolderLength] = '\\0';
+		aFolder[FolderLength] = '\0';
 		if(!CreateMacroFolder(aFolder))
 			return false;
 	}
@@ -5034,7 +5034,7 @@ void CControls::RenderMacroTrajectory()
 	if(Weapon == WEAPON_GRENADE)
 	{
 		const int Lifetime = std::clamp(
-			(int)(PreviewWorld.GetTuning(TuneZone)->m_GrenadeLifetime * SERVER_TICK_SPEED), 1, 250);
+			(int)(PreviewWorld.GetTuning(TuneZone)->m_GrenadeLifetime * (float)SERVER_TICK_SPEED), 1, 250);
 		CProjectile *pProjectile = new CProjectile(
 			&PreviewWorld, WEAPON_GRENADE, pPreviewCharacter->GetCid(), SpawnPos,
 			Direction, Lifetime, false, true, SOUND_GRENADE_EXPLODE);
