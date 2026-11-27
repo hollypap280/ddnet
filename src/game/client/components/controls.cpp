@@ -1158,7 +1158,6 @@ bool CControls::StartMacroPractice()
 		return false;
 	}
 
-	pCharacter->SetCoreWorld(&m_MacroPracticeWorld);
 	pCharacter->m_IsLocal = true;
 	m_MacroPracticeActive = true;
 	m_MacroPracticeDummySwapPending = false;
@@ -1523,8 +1522,13 @@ void CControls::ParkMacroPracticeCharacter(CCharacter *pCharacter)
 	if(!pCharacter)
 		return;
 
-	if(m_MacroPlaying || IsMacroPracticeCharacterHooked(pCharacter))
+	const CCharacterCore &Core = *pCharacter->Core();
+	const bool OnGround = Collision()->IsOnGround(Core.m_Pos, CCharacterCore::PhysicalSize());
+	const bool HookActive = Core.m_HookState != HOOK_IDLE && Core.m_HookState != HOOK_RETRACTED;
+	if(m_MacroPlaying || IsMacroPracticeCharacterHooked(pCharacter) || !OnGround || HookActive || length(Core.m_Vel) > 0.05f)
 	{
+		// Do not freeze a tee in mid-air after a short hook pull. Let its
+		// existing momentum and gravity run until it lands and settles.
 		pCharacter->m_IsMacroPracticeParked = false;
 		return;
 	}
@@ -1565,8 +1569,6 @@ void CControls::PopulateMacroPracticeWorld()
 	for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
 	{
 		CCharacter *pPracticeCharacter = m_MacroPracticeWorld.GetCharacterById(ClientId);
-		if(pPracticeCharacter)
-			pPracticeCharacter->SetCoreWorld(&m_MacroPracticeWorld);
 		const auto &Info = GameClient()->m_Snap.m_aCharacters[ClientId];
 
 		// The active practice tee is already owned by the private world.
@@ -1686,11 +1688,9 @@ bool CControls::SwitchMacroPracticeCharacter(int ClientId)
 	CCharacter *pOldCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId);
 	if(pOldCharacter)
 	{
-		pOldCharacter->SetCoreWorld(&m_MacroPracticeWorld);
 		pOldCharacter->m_IsLocal = false;
 	}
 
-	pNewCharacter->SetCoreWorld(&m_MacroPracticeWorld);
 	pNewCharacter->m_IsLocal = true;
 	pNewCharacter->m_IsMacroPracticeParked = false;
 	if(ClientId == GameClient()->m_aLocalIds[0])
@@ -1775,7 +1775,6 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 			Core.m_aWeapons[Weapon].m_Ammo = Frame.m_aWeaponAmmo[Weapon];
 	}
 	pPrimary->SetCore(Core);
-	pPrimary->SetCoreWorld(&m_MacroPracticeWorld);
 	pPrimary->m_Pos = Core.m_Pos;
 	pPrimary->m_PrevPos = Core.m_Pos;
 	pPrimary->m_PrevPrevPos = Core.m_Pos;
@@ -1820,7 +1819,6 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 			SecondaryCore.m_aWeapons[Weapon].m_Ammo = Frame.m_aSecondaryWeaponAmmo[Weapon];
 		}
 		pSecondary->SetCore(SecondaryCore);
-		pSecondary->SetCoreWorld(&m_MacroPracticeWorld);
 		pSecondary->m_Pos = SecondaryCore.m_Pos;
 		pSecondary->m_PrevPos = SecondaryCore.m_Pos;
 		pSecondary->m_PrevPrevPos = SecondaryCore.m_Pos;
@@ -3085,11 +3083,6 @@ bool CControls::RebuildMacroWorldToPosition(int Position)
 	// Replace the complete practice world, not just the active tee. This
 	// restores the second tee, all moving entities, pickups and switchers.
 	m_MacroPracticeWorld.CopyWorld(&m_MacroPracticeStartWorld);
-	for(int ClientId = 0; ClientId < MAX_CLIENTS; ++ClientId)
-	{
-		if(CCharacter *pCharacter = m_MacroPracticeWorld.GetCharacterById(ClientId))
-			pCharacter->SetCoreWorld(&m_MacroPracticeWorld);
-	}
 	m_MacroPracticeWorld.m_pParent = nullptr;
 	m_MacroPracticeWorld.m_pChild = nullptr;
 	m_MacroPracticeStartWorld.m_pParent = nullptr;
