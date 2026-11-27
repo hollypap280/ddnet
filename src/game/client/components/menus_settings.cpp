@@ -610,6 +610,12 @@ void CMenus::RenderSettingsMacros(CUIRect MainView)
 		MainView.HSplitTop(24.0f, &Row, &MainView);
 		Ui()->DoLabel(&Row, Localize("Можно записывать от 1 тика/с; сохранённый макрос запускается с обычной скоростью."), 11.0f, TEXTALIGN_ML);
 		MainView.HSplitTop(34.0f, &Row, &MainView);
+		Ui()->DoScrollbarOption(&g_Config.m_ClMacroRewindStep, &g_Config.m_ClMacroRewindStep, &Row,
+			Localize("Отмотка записи (тиков)"), 1, 18000, &CUi::ms_LogarithmicScrollbarScale,
+			CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+		MainView.HSplitTop(24.0f, &Row, &MainView);
+		Ui()->DoLabel(&Row, Localize("Клавиша настраивается в разделе управления «Макросы» и действует только во время записи."), 11.0f, TEXTALIGN_ML);
+		MainView.HSplitTop(34.0f, &Row, &MainView);
 		if(DoButton_Menu(&s_ImportBindsButton, Localize("Импортировать мои бинды"), 0, &Row))
 			Controls.ImportMacroBinds();
 		MainView.HSplitTop(30.0f, &Row, &MainView);

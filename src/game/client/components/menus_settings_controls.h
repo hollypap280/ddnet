@@ -14,6 +14,7 @@
 enum class EBindOptionGroup
 {
 	GAME,
+	MACRO,
 	VOTING,
 	CHAT,
 	DUMMY,

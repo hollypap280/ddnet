@@ -777,6 +777,7 @@ void CControls::OnConsoleInit()
 	Console()->Register("+macro_seek", "", CFGFLAG_CLIENT, ConMacroSeek, this, "Jump forward by the configured number of macro ticks");
 	Console()->Register("macro_rewind_step", "", CFGFLAG_CLIENT, ConMacroRewindStep, this, "Rewind once by the configured number of macro ticks");
 	Console()->Register("macro_forward_step", "", CFGFLAG_CLIENT, ConMacroForwardStep, this, "Advance once by the configured number of macro ticks");
+	Console()->Register("macro_record_rewind", "", CFGFLAG_CLIENT, ConMacroRecordRewind, this, "Rewind only the active macro recording by the configured number of ticks");
 	Console()->Register("macro_import_binds", "", CFGFLAG_CLIENT, [](IConsole::IResult *pResult, void *pUserData) {
 		(void)pResult;
 		((CControls *)pUserData)->ImportMacroBinds();
@@ -1409,6 +1410,15 @@ void CControls::UpdateMacroPracticeGhost(CCharacter *pCharacter)
 	GameClient()->m_Ghost.SetMacroPracticeWorld(&m_MacroPracticeWorld);
 }
 
+bool CControls::IsMacroPracticeCharacterHooked(const CCharacter *pCharacter) const
+{
+	if(!pCharacter)
+		return false;
+
+	const CCharacterCore &Core = *pCharacter->Core();
+	return Core.HookedPlayer() >= 0 || !Core.m_AttachedPlayers.empty();
+}
+
 void CControls::PopulateMacroPracticeWorld()
 {
 	m_MacroPracticeWorld.m_LocalClientId = m_MacroPracticeLocalId;
@@ -1429,6 +1439,8 @@ void CControls::PopulateMacroPracticeWorld()
 		if(ClientId == m_MacroPracticeLocalId)
 		{
 			m_aMacroPracticeSnapshotInitialized[ClientId] = true;
+			if(pPracticeCharacter)
+				pPracticeCharacter->m_IsMacroPracticeParked = false;
 			continue;
 		}
 
@@ -1438,11 +1450,15 @@ void CControls::PopulateMacroPracticeWorld()
 		// it and recreating it at an old server snapshot position.
 		if(IsOwnDummy && !Info.m_Active)
 		{
-			// Only preserve the initialized flag if a private clone already
-			// exists. If the tee appears later, its first active snapshot must
-			// still initialize the newly created clone from its real position.
+			// A temporarily inactive server snapshot must not replace or move
+			// the private tee. Keep it parked unless a local/remote player is
+			// still attached to it by a hook.
 			if(pPracticeCharacter)
+			{
 				m_aMacroPracticeSnapshotInitialized[ClientId] = true;
+				pPracticeCharacter->m_IsMacroPracticeParked =
+					!m_MacroPlaying && !IsMacroPracticeCharacterHooked(pPracticeCharacter);
+			}
 			continue;
 		}
 		if((!g_Config.m_ClMacroPracticeShowOthers && !IsOwnDummy && !m_AutoTripleflyBindActive) || !Info.m_Active)
@@ -1488,8 +1504,13 @@ void CControls::PopulateMacroPracticeWorld()
 			pPracticeCharacter->SetInput(&IdleInput);
 			pPracticeCharacter->OnDirectInput(&IdleInput);
 			pPracticeCharacter->OnPredictedInput(&IdleInput);
+			pPracticeCharacter->m_IsMacroPracticeParked = IsOwnDummy && !m_MacroPlaying;
 			m_aMacroPracticeSnapshotInitialized[ClientId] = true;
 		}
+
+		if(IsOwnDummy && ClientId != m_MacroPracticeLocalId)
+			pPracticeCharacter->m_IsMacroPracticeParked =
+				!m_MacroPlaying && !IsMacroPracticeCharacterHooked(pPracticeCharacter);
 
 		pPracticeCharacter->m_GameTeam = GameTeam;
 	}
@@ -1509,6 +1530,7 @@ bool CControls::SwitchMacroPracticeCharacter(int ClientId)
 		if(CCharacter *pCurrentCharacter = m_MacroPracticeWorld.GetCharacterById(ClientId))
 		{
 			pCurrentCharacter->m_IsLocal = true;
+			pCurrentCharacter->m_IsMacroPracticeParked = false;
 		}
 		m_MacroPracticeDummySwapPending = false;
 		return true;
@@ -1528,9 +1550,16 @@ bool CControls::SwitchMacroPracticeCharacter(int ClientId)
 		SelectedInput.m_TargetX = 1;
 
 	if(CCharacter *pOldCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId))
+	{
 		pOldCharacter->m_IsLocal = false;
+		// Do not stop a tee that is currently hooking or being hooked. Once
+		// that connection ends, PopulateMacroPracticeWorld parks it in place.
+		pOldCharacter->m_IsMacroPracticeParked = !m_MacroPlaying &&
+			!IsMacroPracticeCharacterHooked(pOldCharacter);
+	}
 
 	pNewCharacter->m_IsLocal = true;
+	pNewCharacter->m_IsMacroPracticeParked = false;
 	if(ClientId == GameClient()->m_aLocalIds[0])
 		g_Config.m_ClDummy = 0;
 	else if(ClientId == GameClient()->m_aLocalIds[1])
@@ -1912,10 +1941,6 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		{
 			CNetObj_PlayerInput OtherInput = DummyInput;
 			OtherInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
-			const bool HasDummyAction = OtherInput.m_Direction != 0 || OtherInput.m_Jump != 0 ||
-				OtherInput.m_Hook != 0 || (OtherInput.m_Fire & 1) != 0 || OtherInput.m_WantedWeapon > 0 ||
-				(OtherInput.m_NextWeapon & 1) != 0 || (OtherInput.m_PrevWeapon & 1) != 0;
-			if(HasDummyAction || m_AutoTripleflyBindActive)
 			pPracticeOther->OnPredictedInput(&OtherInput);
 			pPracticeOther->OnDirectInput(&OtherInput);
 		}
@@ -2585,6 +2610,21 @@ void CControls::ConMacroForwardStep(IConsole::IResult *pResult, void *pUserData)
 	if(pSelf->GameClient()->m_Chat.IsActive() || pSelf->GameClient()->m_Menus.IsActive())
 		return;
 	pSelf->SeekMacro(pSelf->MacroSeekStep(), true, true);
+}
+
+void CControls::ConMacroRecordRewind(IConsole::IResult *pResult, void *pUserData)
+{
+	(void)pResult;
+	CControls *pSelf = (CControls *)pUserData;
+	if(pSelf->GameClient()->m_Chat.IsActive() || pSelf->GameClient()->m_Menus.IsActive())
+		return;
+	if(!pSelf->m_MacroRecording || !pSelf->m_MacroPracticeActive)
+	{
+		pSelf->GameClient()->Echo("Отмотка этой кнопкой доступна только во время записи макроса.");
+		return;
+	}
+	if(!pSelf->SeekMacro(-pSelf->MacroSeekStep(), true, false))
+		pSelf->GameClient()->Echo("Не удалось отмотать запись. Убедись, что уже записан хотя бы один тик.");
 }
 
 void CControls::ConMacroGoto(IConsole::IResult *pResult, void *pUserData)

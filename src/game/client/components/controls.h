@@ -457,6 +457,7 @@ private:
 	void SimulateMacroPracticeTick(const CNetObj_PlayerInput &Input, const CNetObj_PlayerInput &DummyInput);
 	bool RestoreMacroPracticeFrame(int Index);
 	void UpdateMacroPracticeGhost(CCharacter *pCharacter);
+	bool IsMacroPracticeCharacterHooked(const CCharacter *pCharacter) const;
 	void PopulateMacroPracticeWorld();
 	bool SwitchMacroPracticeCharacter(int ClientId);
 	static void ConMacroPractice(IConsole::IResult *pResult, void *pUserData);
@@ -471,6 +472,7 @@ private:
 	static void ConMacroSeek(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroRewindStep(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroForwardStep(IConsole::IResult *pResult, void *pUserData);
+	static void ConMacroRecordRewind(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroGoto(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroStopAtTick(IConsole::IResult *pResult, void *pUserData);
 	static void ConMacroGotoConfigured(IConsole::IResult *pResult, void *pUserData);

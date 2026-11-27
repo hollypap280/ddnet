@@ -63,6 +63,8 @@ public:
 	void ApplyMoveRestrictions();
 
 	bool m_IsLocal;
+	// Inactive local FP tee is held at its last position unless a player hook is connected.
+	bool m_IsMacroPracticeParked = false;
 
 	CTeamsCore *TeamsCore();
 	bool Freeze(int Seconds);
