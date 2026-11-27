@@ -994,32 +994,105 @@ struct SMacroListContext
 {
 	CControls *m_pControls;
 	std::vector<CControls::SMacroInfo> *m_pMacros;
+	char m_aFolder[48]{};
 };
+
+struct SMacroFolderListContext
+{
+	std::vector<std::string> *m_pFolders;
+};
+
+static bool IsValidMacroFolderName(const char *pName)
+{
+	if(!pName || !pName[0] || str_length(pName) >= 48 ||
+		str_comp(pName, ".") == 0 || str_comp(pName, "..") == 0)
+		return false;
+	for(int i = 0; pName[i]; ++i)
+	{
+		const unsigned char Ch = (unsigned char)pName[i];
+		if(!((Ch >= 'a' && Ch <= 'z') || (Ch >= 'A' && Ch <= 'Z') ||
+			(Ch >= '0' && Ch <= '9') || Ch == '_' || Ch == '-' || Ch == ' ' || Ch >= 0x80))
+			return false;
+	}
+	return true;
+}
+
+bool CControls::MacroFolderPath(const char *pFolder, char *pBuffer, unsigned BufferSize) const
+{
+	if(!pFolder || !pFolder[0])
+	{
+		str_copy(pBuffer, "macros", BufferSize);
+		return true;
+	}
+	if(!IsValidMacroFolderName(pFolder))
+		return false;
+	str_format(pBuffer, BufferSize, "macros/%s", pFolder);
+	return true;
+}
 
 bool CControls::MacroFilePath(const char *pName, char *pBuffer, unsigned BufferSize) const
 {
-	if(!pName || !pName[0])
+	if(!pName || !pName[0] || str_length(pName) >= 96)
 		return false;
-	char aSafeName[64];
+
+	char aSafeName[96];
 	int Out = 0;
-	for(int i = 0; pName[i] && Out < (int)sizeof(aSafeName) - 1; ++i)
+	int SlashCount = 0;
+	int SegmentStart = 0;
+	for(int i = 0; pName[i]; ++i)
 	{
 		const unsigned char Ch = (unsigned char)pName[i];
-		if((Ch >= 'a' && Ch <= 'z') || (Ch >= 'A' && Ch <= 'Z') || (Ch >= '0' && Ch <= '9') ||
-			Ch == '_' || Ch == '-' || Ch == ' ' || Ch >= 0x80)
+		if(Ch == '/')
+		{
+			if(++SlashCount > 1 || Out == SegmentStart)
+				return false;
+			const std::string Segment(aSafeName + SegmentStart, Out - SegmentStart);
+			if(Segment == "." || Segment == "..")
+				return false;
+			aSafeName[Out++] = '/';
+			SegmentStart = Out;
+			continue;
+		}
+		if((Ch >= 'a' && Ch <= 'z') || (Ch >= 'A' && Ch <= 'Z') ||
+			(Ch >= '0' && Ch <= '9') || Ch == '_' || Ch == '-' || Ch == ' ' || Ch >= 0x80)
 			aSafeName[Out++] = (char)Ch;
 		else
 			return false;
 	}
-	aSafeName[Out] = '\0';
-	if(Out == 0)
+	if(Out == SegmentStart)
 		return false;
+	const std::string FinalSegment(aSafeName + SegmentStart, Out - SegmentStart);
+	if(FinalSegment == "." || FinalSegment == "..")
+		return false;
+	aSafeName[Out] = '\0';
 	str_format(pBuffer, BufferSize, "macros/%s.dmacro", aSafeName);
+	return true;
+}
+
+bool CControls::MacroPinPath(const char *pName, char *pBuffer, unsigned BufferSize) const
+{
+	char aMacroPath[160];
+	if(!MacroFilePath(pName, aMacroPath, sizeof(aMacroPath)))
+		return false;
+	str_format(pBuffer, BufferSize, "%s.pin", aMacroPath);
+	return true;
+}
+
+bool CControls::IsMacroPinned(const char *pName)
+{
+	char aPinPath[180];
+	if(!MacroPinPath(pName, aPinPath, sizeof(aPinPath)))
+		return false;
+	IOHANDLE File = Storage()->OpenFile(aPinPath, IOFLAG_READ, IStorage::TYPE_SAVE);
+	if(!File)
+		return false;
+	io_close(File);
 	return true;
 }
 
 int CControls::MacroListCallback(const char *pName, int IsDir, int DirType, void *pUser)
 {
+	(void)DirType;
 	if(IsDir || !pName || !pUser)
 		return 0;
 
@@ -1037,10 +1110,14 @@ int CControls::MacroListCallback(const char *pName, int IsDir, int DirType, void
 
 	SMacroInfo Info;
 	const size_t BaseNameLength = std::min(NameLength - ExtensionLength, sizeof(Info.m_aName) - 1);
-	str_copy(Info.m_aName, pName, BaseNameLength + 1);
+	if(pContext->m_aFolder[0])
+		str_format(Info.m_aName, sizeof(Info.m_aName), "%s/%.*s", pContext->m_aFolder, (int)BaseNameLength, pName);
+	else
+		str_copy(Info.m_aName, pName, BaseNameLength + 1);
 	Info.m_aMapName[0] = '\0';
+	Info.m_Pinned = pControls->IsMacroPinned(Info.m_aName);
 
-	char aPath[128];
+	char aPath[160];
 	if(!pControls->MacroFilePath(Info.m_aName, aPath, sizeof(aPath)))
 		return 0;
 
@@ -1077,14 +1154,107 @@ int CControls::MacroListCallback(const char *pName, int IsDir, int DirType, void
 	return 0;
 }
 
-void CControls::GetMacroList(std::vector<SMacroInfo> &vMacros)
+int CControls::MacroFolderListCallback(const char *pName, int IsDir, int DirType, void *pUser)
+{
+	(void)DirType;
+	if(!IsDir || !pName || !pUser || pName[0] == '.')
+		return 0;
+	if(!IsValidMacroFolderName(pName))
+		return 0;
+	auto *pContext = static_cast<SMacroFolderListContext *>(pUser);
+	if(pContext->m_pFolders)
+		pContext->m_pFolders->emplace_back(pName);
+	return 0;
+}
+
+void CControls::GetMacroList(std::vector<SMacroInfo> &vMacros, const char *pFolder)
 {
 	vMacros.clear();
-	SMacroListContext Context{this, &vMacros};
-	Storage()->ListDirectory(IStorage::TYPE_SAVE, "macros", MacroListCallback, &Context);
+	char aFolderPath[80];
+	if(!MacroFolderPath(pFolder, aFolderPath, sizeof(aFolderPath)))
+		return;
+	SMacroListContext Context{this, &vMacros, {}};
+	if(pFolder && pFolder[0])
+		str_copy(Context.m_aFolder, pFolder);
+	Storage()->ListDirectory(IStorage::TYPE_SAVE, aFolderPath, MacroListCallback, &Context);
 	std::sort(vMacros.begin(), vMacros.end(), [](const SMacroInfo &Left, const SMacroInfo &Right) {
+		if(Left.m_Pinned != Right.m_Pinned)
+			return Left.m_Pinned > Right.m_Pinned;
 		return str_comp_nocase(Left.m_aName, Right.m_aName) < 0;
 	});
+}
+
+void CControls::GetMacroFolders(std::vector<std::string> &vFolders)
+{
+	vFolders.clear();
+	SMacroFolderListContext Context{&vFolders};
+	Storage()->ListDirectory(IStorage::TYPE_SAVE, "macros", MacroFolderListCallback, &Context);
+	std::sort(vFolders.begin(), vFolders.end(), [](const std::string &Left, const std::string &Right) {
+		return str_comp_nocase(Left.c_str(), Right.c_str()) < 0;
+	});
+}
+
+bool CControls::CreateMacroFolder(const char *pFolder)
+{
+	char aPath[80];
+	if(!MacroFolderPath(pFolder, aPath, sizeof(aPath)) || !pFolder || !pFolder[0])
+		return false;
+	Storage()->CreateFolder("macros", IStorage::TYPE_SAVE);
+	return Storage()->CreateFolder(aPath, IStorage::TYPE_SAVE) || Storage()->FolderExists(aPath, IStorage::TYPE_SAVE);
+}
+
+bool CControls::ToggleMacroPin(const char *pName)
+{
+	char aPinPath[180];
+	char aMacroPath[160];
+	if(!MacroFilePath(pName, aMacroPath, sizeof(aMacroPath)) ||
+		!MacroPinPath(pName, aPinPath, sizeof(aPinPath)) ||
+		!Storage()->FileExists(aMacroPath, IStorage::TYPE_SAVE))
+		return false;
+	if(IsMacroPinned(pName))
+		return Storage()->RemoveFile(aPinPath, IStorage::TYPE_SAVE);
+	IOHANDLE File = Storage()->OpenFile(aPinPath, IOFLAG_WRITE, IStorage::TYPE_SAVE);
+	if(!File)
+		return false;
+	io_close(File);
+	return true;
+}
+
+bool CControls::MoveMacroToFolder(const char *pName, const char *pFolder)
+{
+	char aOldPath[160], aNewName[96], aNewPath[160];
+	char aOldPinPath[180], aNewPinPath[180], aFolderPath[80];
+	if(!MacroFilePath(pName, aOldPath, sizeof(aOldPath)) ||
+		!MacroFolderPath(pFolder, aFolderPath, sizeof(aFolderPath)) ||
+		!MacroPinPath(pName, aOldPinPath, sizeof(aOldPinPath)))
+		return false;
+
+	const char *pBaseName = strrchr(pName, '/');
+	pBaseName = pBaseName ? pBaseName + 1 : pName;
+	if(pFolder && pFolder[0])
+		str_format(aNewName, sizeof(aNewName), "%s/%s", pFolder, pBaseName);
+	else
+		str_copy(aNewName, pBaseName);
+	if(str_comp(pName, aNewName) == 0)
+		return true;
+	if(!MacroFilePath(aNewName, aNewPath, sizeof(aNewPath)) ||
+		!MacroPinPath(aNewName, aNewPinPath, sizeof(aNewPinPath)) ||
+		Storage()->FileExists(aNewPath, IStorage::TYPE_SAVE))
+		return false;
+
+	if(pFolder && pFolder[0] && !Storage()->CreateFolder(aFolderPath, IStorage::TYPE_SAVE) &&
+		!Storage()->FolderExists(aFolderPath, IStorage::TYPE_SAVE))
+		return false;
+	if(!Storage()->RenameFile(aOldPath, aNewPath, IStorage::TYPE_SAVE))
+		return false;
+
+	if(Storage()->FileExists(aOldPinPath, IStorage::TYPE_SAVE) &&
+		!Storage()->RenameFile(aOldPinPath, aNewPinPath, IStorage::TYPE_SAVE))
+	{
+		Storage()->RenameFile(aNewPath, aOldPath, IStorage::TYPE_SAVE);
+		return false;
+	}
+	return true;
 }
 
 bool CControls::StartMacroPractice()
