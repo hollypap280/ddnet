@@ -2064,6 +2064,7 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 	CNetObj_PlayerInput TickInput = LiveInput;
 	TickInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
 	bool ReplayRecordedFrame = false;
+	const SMacroFrame *pReplayFrame = nullptr;
 
 	if(m_MacroPlaying)
 	{
@@ -2097,10 +2098,12 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 			return;
 		}
 		const SMacroFrame &Frame = m_vMacroFrames[m_MacroPlaybackIndex];
+		pReplayFrame = &Frame;
 		const int FrameConnection = MacroConnectionFromStoredClientId(Frame.m_ClientId);
-		if(FrameConnection >= 0)
+		if(FrameConnection >= 0 && !m_MacroPlaybackManualDummyOverride)
 			m_aShowHookColl[FrameConnection] = Frame.m_ShowHookColl;
-		const int FrameClientId = FrameConnection >= 0 ? GameClient()->m_aLocalIds[FrameConnection] : m_MacroPracticeLocalId;
+		const int PlaybackConnection = m_MacroPlaybackManualDummyOverride ? g_Config.m_ClDummy : FrameConnection;
+		const int FrameClientId = PlaybackConnection >= 0 ? GameClient()->m_aLocalIds[PlaybackConnection] : m_MacroPracticeLocalId;
 		if(FrameClientId >= 0 && FrameClientId != m_MacroPracticeLocalId &&
 			!SwitchMacroPracticeCharacter(FrameClientId))
 		{
@@ -2265,7 +2268,16 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		DummyInput.m_WantedWeapon == WEAPON_HAMMER + 1 && (DummyInput.m_Fire & 1);
 	if(pPracticeOther && pPracticeOther != pCharacter)
 	{
-		if(HasPrivateDummyInput)
+		if(ReplayRecordedFrame && pReplayFrame && pReplayFrame->m_SecondaryHasState)
+		{
+			CNetObj_PlayerInput OtherInput = pReplayFrame->m_SecondaryInput;
+			OtherInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+			if(OtherInput.m_TargetX == 0 && OtherInput.m_TargetY == 0)
+				OtherInput.m_TargetX = 1;
+			pPracticeOther->OnPredictedInput(&OtherInput);
+			pPracticeOther->OnDirectInput(&OtherInput);
+		}
+		else if(HasPrivateDummyInput)
 		{
 			CNetObj_PlayerInput OtherInput = DummyInput;
 			OtherInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
@@ -2665,7 +2677,7 @@ bool CControls::PlayMacro(const char *pName)
 		io_read(File, &Version, sizeof(Version)) == sizeof(Version) &&
 		io_read(File, &Count, sizeof(Count)) == sizeof(Count) &&
 		Magic == MACRO_FILE_MAGIC && Count > 0 && Count <= MACRO_MAX_FRAMES &&
-		(Version == 9 || Version == 10 || Version == MACRO_FILE_VERSION);
+		(Version == 9 || Version == 10 || Version == 11 || Version == MACRO_FILE_VERSION);
 
 	if(ReadOk)
 		ReadOk = io_read(File, aStoredMapName, sizeof(aStoredMapName)) == sizeof(aStoredMapName);
@@ -2677,17 +2689,41 @@ bool CControls::PlayMacro(const char *pName)
 	const int64_t HeaderBytes = (int64_t)sizeof(Magic) + sizeof(Version) + sizeof(Count) +
 		(int64_t)sizeof(aStoredMapName) + (int64_t)sizeof(RecordedRate);
 	const int64_t FrameBytes = (int64_t)Count *
-		(Version == MACRO_FILE_VERSION ? (int64_t)sizeof(SMacroFrame) : Version == 10 ? (int64_t)sizeof(SMacroFrameV10) : (int64_t)sizeof(SMacroFrameV9));
+		(Version == MACRO_FILE_VERSION ? (int64_t)sizeof(SMacroFrame) : Version == 11 ? (int64_t)sizeof(SMacroFrameV11) : Version == 10 ? (int64_t)sizeof(SMacroFrameV10) : (int64_t)sizeof(SMacroFrameV9));
 	if(ReadOk && FileLength != HeaderBytes + FrameBytes)
 		ReadOk = false;
 
 	std::vector<SMacroFrame> vLoadedFrames;
+	auto InitializeLegacySecondaryInput = [](SMacroFrame &Frame) {
+		CNetObj_PlayerInput Input{};
+		Input.m_PlayerFlags = PLAYERFLAG_PLAYING;
+		Input.m_Direction = Frame.m_SecondaryCore.m_Direction;
+		Input.m_Hook = Frame.m_SecondaryCore.m_HookState != HOOK_IDLE &&
+			Frame.m_SecondaryCore.m_HookState != HOOK_RETRACTED;
+		Input.m_TargetX = Frame.m_SecondaryCore.m_HookDx;
+		Input.m_TargetY = Frame.m_SecondaryCore.m_HookDy;
+		if(Input.m_TargetX == 0 && Input.m_TargetY == 0)
+			Input.m_TargetX = 1;
+		Frame.m_SecondaryInput = Input;
+	};
 	if(ReadOk)
 	{
 		vLoadedFrames.resize(Count);
 		if(Version == MACRO_FILE_VERSION)
 		{
 			ReadOk = io_read(File, vLoadedFrames.data(), FrameBytes) == FrameBytes;
+		}
+		else if(Version == 11)
+		{
+			for(uint32_t i = 0; i < Count && ReadOk; ++i)
+			{
+				SMacroFrameV11 OldFrame{};
+				ReadOk = io_read(File, &OldFrame, sizeof(OldFrame)) == sizeof(OldFrame);
+				if(!ReadOk)
+					break;
+				mem_copy(&vLoadedFrames[i], &OldFrame, sizeof(OldFrame));
+				InitializeLegacySecondaryInput(vLoadedFrames[i]);
+			}
 		}
 		else if(Version == 10)
 		{
@@ -2699,6 +2735,7 @@ bool CControls::PlayMacro(const char *pName)
 					break;
 				mem_copy(&vLoadedFrames[i], &OldFrame, sizeof(OldFrame));
 				vLoadedFrames[i].m_ShowHookColl = 0;
+				InitializeLegacySecondaryInput(vLoadedFrames[i]);
 			}
 		}
 		else
@@ -2783,6 +2820,7 @@ bool CControls::PlayMacro(const char *pName)
 	m_MacroPlaybackRate = SERVER_TICK_SPEED;
 
 	m_MacroPlaybackOriginalDummy = g_Config.m_ClDummy;
+	m_MacroPlaybackManualDummyOverride = false;
 	for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
 	{
 		m_aMacroPlaybackSavedMousePos[Dummy] = m_aMousePos[Dummy];
