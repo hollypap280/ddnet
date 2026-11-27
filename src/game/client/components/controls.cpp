@@ -17,6 +17,7 @@
 
 #include <generated/protocol.h>
 #include <generated/client_data.h>
+#include <generated/client_data.h>
 
 #include <game/client/components/camera.h>
 #include <game/client/components/chat.h>
@@ -5023,7 +5024,8 @@ void CControls::RenderMacroTrajectory()
 		{
 			++PreviewWorld.m_GameTick;
 			pProjectile->Tick();
-			const vec2 Pos = pProjectile->GetPos(1.0f / SERVER_TICK_SPEED);
+			const float ProjectileTime = (PreviewWorld.GameTick() - pProjectile->GetStartTick()) / (float)SERVER_TICK_SPEED;
+			const vec2 Pos = pProjectile->GetPos(ProjectileTime);
 			m_vMacroTrajectory.push_back(Pos);
 			if(!pProjectile->IsActive())
 				break;
