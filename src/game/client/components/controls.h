@@ -426,7 +426,7 @@ private:
 	// a local dummy is currently allowed to move in the private practice world.
 	bool m_aMacroPracticeSnapshotInitialized[MAX_CLIENTS]{};
 	char m_aMacroMapName[64] = "Неизвестная карта";
-	char m_aRecordingMacroName[64] = "";
+	char m_aRecordingMacroName[96] = "";
 	bool m_aManualHook[NUM_DUMMIES]{};
 	bool m_aAutoHookActive[NUM_DUMMIES]{};
 	bool m_aAutoHookFireActive[NUM_DUMMIES]{};
