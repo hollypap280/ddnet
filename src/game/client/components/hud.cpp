@@ -853,18 +853,35 @@ void CHud::PreparePlayerStateQuads()
 	m_Team0ModeOffset = Graphics()->QuadContainerAddSprite(m_HudQuadContainerIndex, 0.f, 0.f, 12.f, 12.f);
 }
 
-void CHud::RenderPlayerState(const int ClientId)
+void CHud::RenderPlayerState(const int ClientId, const CCharacter *pPracticeCharacter)
 {
 	Graphics()->SetColor(1.f, 1.f, 1.f, 1.f);
 
-	// pCharacter contains the predicted character for local players or the last snap for players who are spectated
-	CCharacterCore *pCharacter = &GameClient()->m_aClients[ClientId].m_Predicted;
-	CNetObj_Character *pPlayer = &GameClient()->m_aClients[ClientId].m_RenderCur;
+	// The macro HUD uses the very same state renderer as the regular DDNet HUD.
+	// Only the source of the character state changes: live prediction or the
+	// isolated practice world.
+	CNetObj_Character PracticePlayer{};
+	const CCharacterCore *pCharacter = pPracticeCharacter ? pPracticeCharacter->Core() :
+		&GameClient()->m_aClients[ClientId].m_Predicted;
+	CNetObj_Character *pPlayer = nullptr;
+	if(pPracticeCharacter)
+	{
+		pPracticeCharacter->Core()->Write(&PracticePlayer);
+		PracticePlayer.m_Weapon = pPracticeCharacter->GetActiveWeapon();
+		pPlayer = &PracticePlayer;
+	}
+	else
+		pPlayer = &GameClient()->m_aClients[ClientId].m_RenderCur;
+
+	const bool HasExtendedDisplayInfo = pPracticeCharacter != nullptr ||
+		GameClient()->m_Snap.m_aCharacters[ClientId].m_HasExtendedDisplayInfo;
+	const int ExtendedDisplayFlags = pPracticeCharacter || !HasExtendedDisplayInfo ? 0 :
+		GameClient()->m_Snap.m_aCharacters[ClientId].m_ExtendedData.m_Flags;
 	int TotalJumpsToDisplay = 0;
 	if(g_Config.m_ClShowhudJumpsIndicator)
 	{
 		int AvailableJumpsToDisplay;
-		if(GameClient()->m_Snap.m_aCharacters[ClientId].m_HasExtendedDisplayInfo)
+		if(HasExtendedDisplayInfo)
 		{
 			const bool Grounded = Collision()->IsOnGround(vec2(pPlayer->m_X, pPlayer->m_Y), CCharacterCore::PhysicalSize());
 			int UsedJumps = pCharacter->m_JumpedTotal;
@@ -952,7 +969,7 @@ void CHud::RenderPlayerState(const int ClientId)
 		{
 			const int Max = g_pData->m_Weapons.m_Ninja.m_Duration * Client()->GameTickSpeed() / 1000;
 			float NinjaProgress = std::clamp(pCharacter->m_Ninja.m_ActivationTick + g_pData->m_Weapons.m_Ninja.m_Duration * Client()->GameTickSpeed() / 1000 - Client()->GameTick(g_Config.m_ClDummy), 0, Max) / (float)Max;
-			if(NinjaProgress > 0.0f && GameClient()->m_Snap.m_aCharacters[ClientId].m_HasExtendedDisplayInfo)
+			if(!pPracticeCharacter && NinjaProgress > 0.0f && HasExtendedDisplayInfo)
 			{
 				RenderNinjaBarPos(x, y - 12, 6.f, 24.f, NinjaProgress);
 			}
@@ -1078,19 +1095,19 @@ void CHud::RenderPlayerState(const int ClientId)
 	{
 		y += 12;
 	}
-	if(GameClient()->m_Snap.m_aCharacters[ClientId].m_HasExtendedDisplayInfo && GameClient()->m_Snap.m_aCharacters[ClientId].m_ExtendedData.m_Flags & CHARACTERFLAG_LOCK_MODE)
+	if(HasExtendedDisplayInfo && ExtendedDisplayFlags & CHARACTERFLAG_LOCK_MODE)
 	{
 		Graphics()->TextureSet(GameClient()->m_HudSkin.m_SpriteHudLockMode);
 		Graphics()->RenderQuadContainerAsSprite(m_HudQuadContainerIndex, m_LockModeOffset, x, y);
 		x += 12;
 	}
-	if(GameClient()->m_Snap.m_aCharacters[ClientId].m_HasExtendedDisplayInfo && GameClient()->m_Snap.m_aCharacters[ClientId].m_ExtendedData.m_Flags & CHARACTERFLAG_PRACTICE_MODE)
+	if(HasExtendedDisplayInfo && ExtendedDisplayFlags & CHARACTERFLAG_PRACTICE_MODE)
 	{
 		Graphics()->TextureSet(GameClient()->m_HudSkin.m_SpriteHudPracticeMode);
 		Graphics()->RenderQuadContainerAsSprite(m_HudQuadContainerIndex, m_PracticeModeOffset, x, y);
 		x += 12;
 	}
-	if(GameClient()->m_Snap.m_aCharacters[ClientId].m_HasExtendedDisplayInfo && GameClient()->m_Snap.m_aCharacters[ClientId].m_ExtendedData.m_Flags & CHARACTERFLAG_TEAM0_MODE)
+	if(HasExtendedDisplayInfo && ExtendedDisplayFlags & CHARACTERFLAG_TEAM0_MODE)
 	{
 		Graphics()->TextureSet(GameClient()->m_HudSkin.m_SpriteHudTeam0Mode);
 		Graphics()->RenderQuadContainerAsSprite(m_HudQuadContainerIndex, m_Team0ModeOffset, x, y);
@@ -1107,6 +1124,17 @@ void CHud::RenderPlayerState(const int ClientId)
 		Graphics()->TextureSet(GameClient()->m_HudSkin.m_SpriteHudLiveFrozen);
 		Graphics()->RenderQuadContainerAsSprite(m_HudQuadContainerIndex, m_LiveFrozenOffset, x, y);
 	}
+}
+
+void CHud::RenderMacroPracticePlayerState(const CCharacter *pCharacter)
+{
+	if(!pCharacter)
+		return;
+
+	const CScreenRect PreviousScreen = Graphics()->GetScreen();
+	Graphics()->MapScreenToSize(m_Width, m_Height);
+	RenderPlayerState(0, pCharacter);
+	Graphics()->MapScreen(PreviousScreen);
 }
 
 void CHud::RenderNinjaBarPos(const float x, float y, const float Width, const float Height, float Progress, const float Alpha)
