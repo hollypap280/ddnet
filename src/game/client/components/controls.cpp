@@ -4773,6 +4773,7 @@ void CControls::OnRender()
 		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 	}
 
+	RenderMacroTrajectory();
 	RenderMacroHud();
 }
 
