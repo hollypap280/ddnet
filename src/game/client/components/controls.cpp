@@ -1522,10 +1522,10 @@ void CControls::ParkMacroPracticeCharacter(CCharacter *pCharacter)
 	if(!pCharacter)
 		return;
 
-	const CCharacterCore &Core = *pCharacter->Core();
-	const bool OnGround = Collision()->IsOnGround(Core.m_Pos, CCharacterCore::PhysicalSize());
-	const bool HookActive = Core.m_HookState != HOOK_IDLE && Core.m_HookState != HOOK_RETRACTED;
-	if(m_MacroPlaying || IsMacroPracticeCharacterHooked(pCharacter) || !OnGround || HookActive || length(Core.m_Vel) > 0.05f)
+	const CCharacterCore &CoreState = *pCharacter->Core();
+	const bool OnGround = Collision()->IsOnGround(CoreState.m_Pos, CCharacterCore::PhysicalSize());
+	const bool HookActive = CoreState.m_HookState != HOOK_IDLE && CoreState.m_HookState != HOOK_RETRACTED;
+	if(m_MacroPlaying || IsMacroPracticeCharacterHooked(pCharacter) || !OnGround || HookActive || length(CoreState.m_Vel) > 0.05f)
 	{
 		// Do not freeze a tee in mid-air after a short hook pull. Let its
 		// existing momentum and gravity run until it lands and settles.
