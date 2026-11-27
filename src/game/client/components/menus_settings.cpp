@@ -7,6 +7,7 @@
 #include <base/str.h>
 
 #include <engine/graphics.h>
+#include <engine/input.h>
 #include <engine/shared/config.h>
 
 #include <game/client/components/menu_background.h>
