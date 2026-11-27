@@ -2038,6 +2038,16 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 		pSecondary->m_FrozenLastTick = Frame.m_SecondaryFrozenLastTick != 0;
 		pSecondary->m_IsLocal = false;
 		pSecondary->SetInput(&Frame.m_SecondaryInput);
+		const bool SecondaryHookActive = SecondaryCore.m_HookState != HOOK_IDLE &&
+			SecondaryCore.m_HookState != HOOK_RETRACTED;
+		const bool SecondaryHasInput = Frame.m_SecondaryInput.m_Direction != 0 ||
+			Frame.m_SecondaryInput.m_Jump != 0 || Frame.m_SecondaryInput.m_Hook != 0 ||
+			(Frame.m_SecondaryInput.m_Fire & 1) != 0 || Frame.m_SecondaryInput.m_WantedWeapon != 0 ||
+			(Frame.m_SecondaryInput.m_NextWeapon & 1) != 0 || (Frame.m_SecondaryInput.m_PrevWeapon & 1) != 0;
+		const bool SecondaryHasTether = SecondaryCore.HookedPlayer() >= 0 || !SecondaryCore.m_AttachedPlayers.empty();
+		const bool SecondarySettled = Collision()->IsOnGround(SecondaryCore.m_Pos, CCharacterCore::PhysicalSize()) &&
+			length(SecondaryCore.m_Vel) <= 0.05f && !SecondaryHookActive && !SecondaryHasInput && !SecondaryHasTether;
+		pSecondary->m_IsMacroPracticeParked = SecondarySettled;
 	}
 
 	m_MacroPracticeWorld.m_GameTick = Frame.m_Tick;
@@ -2078,6 +2088,7 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 	CNetObj_PlayerInput TickInput = LiveInput;
 	TickInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
 	bool ReplayRecordedFrame = false;
+	bool ReplayInputSwap = false;
 	const SMacroFrame *pReplayFrame = nullptr;
 
 	if(m_MacroPlaying)
@@ -2116,7 +2127,10 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		const int FrameConnection = MacroConnectionFromStoredClientId(Frame.m_ClientId);
 		if(FrameConnection >= 0 && !m_MacroPlaybackManualDummyOverride)
 			m_aShowHookColl[FrameConnection] = Frame.m_ShowHookColl;
+		const int SecondaryFrameConnection = MacroConnectionFromStoredClientId(Frame.m_SecondaryClientId);
 		const int PlaybackConnection = m_MacroPlaybackManualDummyOverride ? g_Config.m_ClDummy : FrameConnection;
+		ReplayInputSwap = m_MacroPlaybackManualDummyOverride && FrameConnection >= 0 &&
+			SecondaryFrameConnection >= 0 && PlaybackConnection == SecondaryFrameConnection;
 		const int FrameClientId = PlaybackConnection >= 0 ? GameClient()->m_aLocalIds[PlaybackConnection] : m_MacroPracticeLocalId;
 		if(FrameClientId >= 0 && FrameClientId != m_MacroPracticeLocalId &&
 			!SwitchMacroPracticeCharacter(FrameClientId))
@@ -2136,7 +2150,7 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 		// Each frame is input only. The next local DDNet physics tick
 		// calculates position, velocity and collisions without coordinate teleports.
 		m_MacroPracticeWaiting = false;
-		TickInput = Frame.m_Input;
+		TickInput = ReplayInputSwap ? Frame.m_SecondaryInput : Frame.m_Input;
 		TickInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
 
 		// Manual input replaces only the action that the player has touched.
@@ -2284,7 +2298,7 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 	{
 		if(ReplayRecordedFrame && pReplayFrame && pReplayFrame->m_SecondaryHasState)
 		{
-			CNetObj_PlayerInput OtherInput = pReplayFrame->m_SecondaryInput;
+			CNetObj_PlayerInput OtherInput = ReplayInputSwap ? pReplayFrame->m_Input : pReplayFrame->m_SecondaryInput;
 			OtherInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
 			if(OtherInput.m_TargetX == 0 && OtherInput.m_TargetY == 0)
 				OtherInput.m_TargetX = 1;
@@ -3529,7 +3543,7 @@ bool CControls::RebuildMacroWorldToPosition(int Position)
 		pPrimary->m_FreezeTime = Frame.m_FreezeTime;
 		pPrimary->m_FrozenLastTick = Frame.m_FrozenLastTick != 0;
 		pPrimary->SetInput(&Frame.m_Input);
-		pPrimary->m_IsLocal = true;
+		pPrimary->m_IsLocal = PrimaryClientId == m_MacroPracticeLocalId;
 
 		if(Frame.m_SecondaryHasState)
 		{
@@ -3555,7 +3569,18 @@ bool CControls::RebuildMacroWorldToPosition(int Position)
 			pSecondary->m_FreezeTime = Frame.m_SecondaryFreezeTime;
 			pSecondary->m_FrozenLastTick = Frame.m_SecondaryFrozenLastTick != 0;
 			pSecondary->SetInput(&Frame.m_SecondaryInput);
-			pSecondary->m_IsLocal = false;
+			pSecondary->m_IsLocal = SecondaryClientId == m_MacroPracticeLocalId;
+			const bool SecondaryHookActive = Frame.m_SecondaryCore.m_HookState != HOOK_IDLE &&
+				Frame.m_SecondaryCore.m_HookState != HOOK_RETRACTED;
+			const bool SecondaryHasInput = Frame.m_SecondaryInput.m_Direction != 0 ||
+				Frame.m_SecondaryInput.m_Jump != 0 || Frame.m_SecondaryInput.m_Hook != 0 ||
+				(Frame.m_SecondaryInput.m_Fire & 1) != 0 || Frame.m_SecondaryInput.m_WantedWeapon != 0 ||
+				(Frame.m_SecondaryInput.m_NextWeapon & 1) != 0 || (Frame.m_SecondaryInput.m_PrevWeapon & 1) != 0;
+			const bool SecondaryHasTether = Frame.m_SecondaryCore.m_HookedPlayer >= 0 ||
+				!pSecondary->Core()->m_AttachedPlayers.empty();
+			const bool SecondarySettled = Collision()->IsOnGround(pSecondary->Core()->m_Pos, CCharacterCore::PhysicalSize()) &&
+				length(pSecondary->Core()->m_Vel) <= 0.05f && !SecondaryHookActive && !SecondaryHasInput && !SecondaryHasTether;
+			pSecondary->m_IsMacroPracticeParked = SecondarySettled;
 		}
 		m_MacroPracticeTick = Frame.m_Tick;
 	}
