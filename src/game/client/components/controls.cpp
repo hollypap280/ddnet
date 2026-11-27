@@ -3008,6 +3008,9 @@ void CControls::ConMacroGotoConfigured(IConsole::IResult *pResult, void *pUserDa
 
 int CControls::ImportMacroBinds()
 {
+	if(m_MacroBindsImported)
+		return 0;
+
 	struct SImportEntry
 	{
 		const char *m_pOriginal;
@@ -3029,15 +3032,12 @@ int CControls::ImportMacroBinds()
 		{"+prevweapon", "+macro_prevweapon"},
 	};
 
-	// Replace supported gameplay commands inside a compound bind while
-	// preserving other commands, whitespace, quoted strings and escapes.
-	auto ConvertBind = [&](const char *pCommand) {
+	auto ConvertBind = [&](const char *pCommand, bool ToMacro) {
 		const std::string Original = pCommand ? pCommand : "";
 		std::string Converted;
 		size_t SegmentStart = 0;
 		bool InQuotes = false;
 		bool Escaped = false;
-
 		auto AppendSegment = [&](size_t SegmentEnd) {
 			size_t TokenStart = SegmentStart;
 			while(TokenStart < SegmentEnd && std::isspace((unsigned char)Original[TokenStart]))
@@ -3045,30 +3045,26 @@ int CControls::ImportMacroBinds()
 			size_t TokenEnd = TokenStart;
 			while(TokenEnd < SegmentEnd && !std::isspace((unsigned char)Original[TokenEnd]))
 				++TokenEnd;
-
 			const std::string CommandName = Original.substr(TokenStart, TokenEnd - TokenStart);
 			const SImportEntry *pMatched = nullptr;
 			for(const SImportEntry &Entry : s_aEntries)
 			{
-				if(str_comp_nocase(CommandName.c_str(), Entry.m_pOriginal) == 0)
+				const char *pFrom = ToMacro ? Entry.m_pOriginal : Entry.m_pMacro;
+				if(str_comp_nocase(CommandName.c_str(), pFrom) == 0)
 				{
 					pMatched = &Entry;
 					break;
 				}
 			}
-
 			if(pMatched)
 			{
 				Converted.append(Original, SegmentStart, TokenStart - SegmentStart);
-				Converted += pMatched->m_pMacro;
+				Converted += ToMacro ? pMatched->m_pMacro : pMatched->m_pOriginal;
 				Converted.append(Original, TokenEnd, SegmentEnd - TokenEnd);
 			}
 			else
-			{
 				Converted.append(Original, SegmentStart, SegmentEnd - SegmentStart);
-			}
 		};
-
 		for(size_t i = 0; i <= Original.size(); ++i)
 		{
 			const bool AtEnd = i == Original.size();
@@ -3085,7 +3081,6 @@ int CControls::ImportMacroBinds()
 			}
 			if(!AtEnd && Ch == '"')
 				InQuotes = !InQuotes;
-
 			if(AtEnd || (Ch == ';' && !InQuotes))
 			{
 				AppendSegment(i);
@@ -3098,34 +3093,58 @@ int CControls::ImportMacroBinds()
 	};
 
 	int Imported = 0;
+	m_vMacroSavedBinds.clear();
 	for(int Modifier = KeyModifier::NONE; Modifier < KeyModifier::COMBINATION_COUNT; ++Modifier)
 	{
 		for(int KeyId = KEY_FIRST; KeyId < KEY_LAST; ++KeyId)
 		{
 			const CBindSlot Slot(KeyId, Modifier);
 			const char *pCurrentCommand = GameClient()->m_Binds.Get(Slot);
-			const std::string Converted = ConvertBind(pCurrentCommand);
-			if(Converted != pCurrentCommand)
+			const std::string Current = pCurrentCommand ? pCurrentCommand : "";
+			const std::string Converted = ConvertBind(Current.c_str(), true);
+			if(Converted != Current)
 			{
+				m_vMacroSavedBinds.push_back({KeyId, Modifier, Current});
 				GameClient()->m_Binds.Bind(KeyId, Converted.c_str(), false, Modifier);
 				++Imported;
+			}
+			else
+			{
+				// Some older client builds already left +macro_* commands in
+				// config.cfg. Reconstruct their original command so this session
+				// can still restore the user's normal movement binds on exit.
+				const std::string Restored = ConvertBind(Current.c_str(), false);
+				if(Restored != Current)
+					m_vMacroSavedBinds.push_back({KeyId, Modifier, Restored});
 			}
 		}
 	}
 
+	m_MacroBindsImported = !m_vMacroSavedBinds.empty();
 	if(Imported > 0)
 	{
 		char aMessage[160];
 		str_format(aMessage, sizeof(aMessage),
-			"Подключено игровых биндов для макроса: %d. Остальные команды в составных биндах сохранены.",
+			"Временно подключено игровых биндов для макроса: %d. Исходные бинды вернутся после остановки.",
 			Imported);
 		GameClient()->Echo(aMessage);
 	}
+	else if(m_MacroBindsImported)
+		GameClient()->Echo("Макро-управление включено. Исходные бинды будут восстановлены при выходе.");
 	else
-	{
-		GameClient()->Echo("Игровые бинды уже подключены к макросам.");
-	}
+		GameClient()->Echo("Игровые бинды для макроса не найдены.");
 	return Imported;
+}
+
+void CControls::RestoreMacroBinds()
+{
+	if(!m_MacroBindsImported && m_vMacroSavedBinds.empty())
+		return;
+
+	for(const SMacroSavedBind &Bind : m_vMacroSavedBinds)
+		GameClient()->m_Binds.Bind(Bind.m_Key, Bind.m_Command.c_str(), false, Bind.m_Modifier);
+	m_vMacroSavedBinds.clear();
+	m_MacroBindsImported = false;
 }
 
 void CControls::ToggleMacroPause()
