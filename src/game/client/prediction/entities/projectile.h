@@ -30,6 +30,7 @@ public:
 	CProjectileData GetData() const;
 
 	void Tick() override;
+	bool IsActive() const { return !m_MarkedForDestroy; }
 
 	bool Match(CProjectile *pProj);
 	void SetBouncing(int Value);
