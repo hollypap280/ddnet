@@ -1880,11 +1880,28 @@ bool CControls::SwitchMacroPracticeCharacter(int ClientId)
 	CCharacter *pOldCharacter = m_MacroPracticeWorld.GetCharacterById(m_MacroPracticeLocalId);
 	if(pOldCharacter)
 	{
+		CNetObj_PlayerInput InactiveInput{};
+		InactiveInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
+		InactiveInput.m_TargetX = pOldCharacter->GetInput().m_TargetX;
+		InactiveInput.m_TargetY = pOldCharacter->GetInput().m_TargetY;
+		if(InactiveInput.m_TargetX == 0 && InactiveInput.m_TargetY == 0)
+			InactiveInput.m_TargetX = 1;
+		const int HookState = pOldCharacter->Core()->m_HookState;
+		InactiveInput.m_Hook = HookState != HOOK_IDLE && HookState != HOOK_RETRACTED;
+		InactiveInput.m_Fire = pOldCharacter->GetInput().m_Fire & INPUT_STATE_MASK;
+		if(InactiveInput.m_Fire & 1)
+			InactiveInput.m_Fire = (InactiveInput.m_Fire + 1) & INPUT_STATE_MASK;
+		pOldCharacter->OnPredictedInput(&InactiveInput);
+		pOldCharacter->OnDirectInput(&InactiveInput);
+		pOldCharacter->SetInput(&InactiveInput);
 		pOldCharacter->m_IsLocal = false;
 	}
 
 	pNewCharacter->m_IsLocal = true;
 	pNewCharacter->m_IsMacroPracticeParked = false;
+	pNewCharacter->OnPredictedInput(&SelectedInput);
+	pNewCharacter->OnDirectInput(&SelectedInput);
+	pNewCharacter->SetInput(&SelectedInput);
 	if(ClientId == GameClient()->m_aLocalIds[0])
 		g_Config.m_ClDummy = 0;
 	else if(ClientId == GameClient()->m_aLocalIds[1])
@@ -2020,10 +2037,6 @@ bool CControls::RestoreMacroPracticeFrame(int Index)
 		pSecondary->m_FrozenLastTick = Frame.m_SecondaryFrozenLastTick != 0;
 		pSecondary->m_IsLocal = false;
 		pSecondary->SetInput(&Frame.m_SecondaryInput);
-		CNetObj_PlayerInput IdleInput{};
-		IdleInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
-		IdleInput.m_TargetX = 1;
-		pSecondary->SetInput(&IdleInput);
 	}
 
 	m_MacroPracticeWorld.m_GameTick = Frame.m_Tick;
@@ -2274,6 +2287,12 @@ void CControls::SimulateMacroPracticeTick(const CNetObj_PlayerInput &LiveInput, 
 			OtherInput.m_PlayerFlags = PLAYERFLAG_PLAYING;
 			if(OtherInput.m_TargetX == 0 && OtherInput.m_TargetY == 0)
 				OtherInput.m_TargetX = 1;
+			const bool HasSecondaryAction = OtherInput.m_Direction != 0 || OtherInput.m_Jump != 0 ||
+				OtherInput.m_Hook != 0 || (OtherInput.m_Fire & 1) != 0 ||
+				OtherInput.m_WantedWeapon != 0 || (OtherInput.m_NextWeapon & 1) != 0 ||
+				(OtherInput.m_PrevWeapon & 1) != 0;
+			if(HasSecondaryAction)
+				pPracticeOther->m_IsMacroPracticeParked = false;
 			pPracticeOther->OnPredictedInput(&OtherInput);
 			pPracticeOther->OnDirectInput(&OtherInput);
 		}
@@ -3356,7 +3375,7 @@ void CControls::OnMacroPracticeDummySwap()
 		return;
 	}
 
-	if(!m_MacroPracticeActive || m_MacroPlaying)
+	if(!m_MacroPracticeActive)
 		return;
 
 	const int RequestedLocalId = GameClient()->m_aLocalIds[g_Config.m_ClDummy];
@@ -3366,8 +3385,17 @@ void CControls::OnMacroPracticeDummySwap()
 		return;
 	}
 
+	if(m_MacroPlaying)
+		m_MacroPlaybackManualDummyOverride = true;
 	m_MacroPracticeDummySwapPending = true;
-	SwitchMacroPracticeCharacter(RequestedLocalId);
+	if(!SwitchMacroPracticeCharacter(RequestedLocalId))
+	{
+		m_MacroPracticeDummySwapPending = false;
+		GameClient()->Echo("Не удалось переключить тренировочного тии.");
+		return;
+	}
+	m_MacroPracticeLastServerTick = Client()->PredGameTick(g_Config.m_ClDummy);
+	m_MacroPracticeAccumulator = 0.0;
 }
 void CControls::OnMacroObserverInputSent(const CNetObj_PlayerInput &Input)
 {
@@ -3464,6 +3492,71 @@ bool CControls::RebuildMacroWorldToPosition(int Position)
 		SimulateMacroPracticeTick(IdleInput, IdleInput);
 		if(!m_MacroPracticeActive)
 			return false;
+
+		const SMacroFrame &Frame = m_vMacroFrames[i];
+		if(!Frame.m_HasCoordinates)
+			continue;
+
+		int PrimaryConnection = MacroConnectionFromStoredClientId(Frame.m_ClientId);
+		if(PrimaryConnection < 0)
+			PrimaryConnection = g_Config.m_ClDummy;
+		PrimaryConnection = std::clamp(PrimaryConnection, 0, NUM_DUMMIES - 1);
+		const int PrimaryClientId = GameClient()->m_aLocalIds[PrimaryConnection];
+		CCharacter *pPrimary = m_MacroPracticeWorld.GetCharacterById(PrimaryClientId);
+		if(!pPrimary)
+			return false;
+
+		pPrimary->Core()->Read(&Frame.m_Core);
+		if(Frame.m_HasWeaponInventoryState)
+		{
+			for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+			{
+				pPrimary->Core()->m_aWeapons[Weapon].m_Got = Frame.m_aWeaponGot[Weapon] != 0;
+				pPrimary->Core()->m_aWeapons[Weapon].m_Ammo = Frame.m_aWeaponAmmo[Weapon];
+			}
+		}
+		else if(Frame.m_HasDDNetState)
+		{
+			for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+				pPrimary->Core()->m_aWeapons[Weapon].m_Ammo = Frame.m_aWeaponAmmo[Weapon];
+		}
+		pPrimary->m_Pos = pPrimary->Core()->m_Pos;
+		pPrimary->m_PrevPos = pPrimary->m_Pos;
+		pPrimary->m_PrevPrevPos = pPrimary->m_Pos;
+		pPrimary->SetActiveWeapon(Frame.m_Weapon);
+		pPrimary->SetAttackTick(Frame.m_AttackTick);
+		pPrimary->m_FreezeTime = Frame.m_FreezeTime;
+		pPrimary->m_FrozenLastTick = Frame.m_FrozenLastTick != 0;
+		pPrimary->SetInput(&Frame.m_Input);
+		pPrimary->m_IsLocal = true;
+
+		if(Frame.m_SecondaryHasState)
+		{
+			int SecondaryConnection = MacroConnectionFromStoredClientId(Frame.m_SecondaryClientId);
+			if(SecondaryConnection < 0 || SecondaryConnection == PrimaryConnection)
+				SecondaryConnection = 1 - PrimaryConnection;
+			const int SecondaryClientId = GameClient()->m_aLocalIds[SecondaryConnection];
+			CCharacter *pSecondary = m_MacroPracticeWorld.GetCharacterById(SecondaryClientId);
+			if(!pSecondary)
+				return false;
+
+			pSecondary->Core()->Read(&Frame.m_SecondaryCore);
+			for(int Weapon = 0; Weapon < NUM_WEAPONS; ++Weapon)
+			{
+				pSecondary->Core()->m_aWeapons[Weapon].m_Got = Frame.m_aSecondaryWeaponGot[Weapon] != 0;
+				pSecondary->Core()->m_aWeapons[Weapon].m_Ammo = Frame.m_aSecondaryWeaponAmmo[Weapon];
+			}
+			pSecondary->m_Pos = pSecondary->Core()->m_Pos;
+			pSecondary->m_PrevPos = pSecondary->m_Pos;
+			pSecondary->m_PrevPrevPos = pSecondary->m_Pos;
+			pSecondary->SetActiveWeapon(Frame.m_SecondaryWeapon);
+			pSecondary->SetAttackTick(Frame.m_SecondaryAttackTick);
+			pSecondary->m_FreezeTime = Frame.m_SecondaryFreezeTime;
+			pSecondary->m_FrozenLastTick = Frame.m_SecondaryFrozenLastTick != 0;
+			pSecondary->SetInput(&Frame.m_SecondaryInput);
+			pSecondary->m_IsLocal = false;
+		}
+		m_MacroPracticeTick = Frame.m_Tick;
 	}
 
 	m_MacroRecording = WasRecording;
